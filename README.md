@@ -22,4 +22,5 @@ contract**, which is what the evidence was assembled to justify.
 
 - Anything marked `[UNVERIFIED]` is reasoning, not a finding. Test it on the bench before trusting it.
 - Anything marked `[TYPO]` or `[TRAP]` already cost someone else time.
-- Ratified decisions (`[DECISION]`, D1–D8 in the canvas contract) are closed. If one has to change, everything downstream of it changes too.
+- Ratified decisions (`[DECISION]`, D1–D11 in the canvas contract) are closed. If one has to change, everything downstream of it changes too.
+- Implementation language is **Rust** (CPU brush solver) plus GPU compute shaders for the canvas.

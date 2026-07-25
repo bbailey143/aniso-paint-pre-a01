@@ -38,6 +38,9 @@ These were made deliberately, with reasons. Do not reopen them casually; if one 
 | D6 | **Layers** | Single-layer system now; **layer index field reserved in the schema, default 0** | Adding the field now costs nothing; adding it later touches every buffer and pass signature in five engines. No layer UI, no reordering, no panel — just the slot. See §7. |
 | D7 | **Simulation budget** | ~1024² cells of *simultaneously wet* canvas | Derived from A26 performance table scaled to iPad-class GPU, times the ~54-number cell. This is a wetness budget, not a canvas size — see §4. |
 | D8 | **Precision** | Half-float (16-bit) throughout, RGBA16F textures | Forced by mobile texture format support (A26); confirmed sufficient by B04. |
+| D9 | **Fluid route** (Card 8 #4) | **Hybrid: C97 shallow-water as the spine, A26 terms grafted on, B04 heuristic for body flow** | C97 is the only route with paper interaction — capillary creep, edge darkening, backruns — which is the thesis. A26 supplies validated gravity/dripping and the dimensionless-parameter method. B04's brush-is-the-velocity-field covers thick paint, where thin-film breaks. §9's pass list already assumed this; D9 states it. The D15 vorticity route is excluded by §8.1's ban on semi-Lagrangian advection. |
+| D10 | **Undo pool ceiling** | **256 MB fixed; 128-tile cap per stroke; 45 s spread-append window; ring-buffer eviction** | The §6 seam mitigation grows a stroke's undo record for as long as its wetness spreads, which is unbounded without a ceiling. See §6 for the numbers and their derivation. |
+| D11 | **Board tilt** | **Global per-document uniform, not per-cell state. Board tilt and view rotation are separate actions.** | Costs zero bytes/cell, so D7's budget is untouched. Settles Card 9 #3: tipping the board to steer a wash is a real technique, and conflating it with view rotation either runs the artist's washes every time they turn the page or throws the technique away. See §2.5. |
 
 **[OPEN — UI decision, does not block]** Whether the 8-slot palette is fixed per document (pick pigments before painting, like filling pans) or claimed dynamically as colors are used. Fixed is simpler and enables precomputation; dynamic is friendlier to non-planners. The schema below is identical either way.
 
@@ -89,7 +92,20 @@ The volatile band. Only exists on wet tiles; this is where the fluid, pigment, a
 
 Not per-cell dynamic state. The paper engine's height field `h`, capacity `c`, sizing, and capillary radius `r_c` (Card 6) are canvas-wide static textures, generated or loaded once. Every engine reads them; none writes them.
 
-### 2.5 The count
+### 2.5 Global frame state (not per-cell)
+
+**D11.** Board orientation is one small uniform block per document, not a field in the cell:
+
+| Field | Count | Notes |
+|---|---|---|
+| Gravity vector `g⃗ = (gx, gy)` | 2 | Downhill direction in canvas space. Zero when the board lies flat. |
+| Tilt cosine `cos α` | 1 | Scales diffusion (A26). At vertical it reaches zero, so pigment purely follows the flow instead of smearing into mush. |
+
+Costs nothing per cell. `MoveWater` and `BodyFlow` add the gravity term; `MovePigment` and `CapillaryFlow` scale diffusion by `cos α`; the per-pixel local-gravity rotation (A26) happens inside `MoveWater`, perturbing `g⃗` by `∇h` read from the static `PAPER` texture. Paint pooling in the grain therefore falls out of physics, not a texture overlay.
+
+**View rotation never writes this block.** Turning the canvas for a better wrist angle is a render-side transform only. Tipping the board is a separate, deliberate tool.
+
+### 2.6 The count
 
 | Band | Numbers |
 |---|---|
@@ -188,7 +204,16 @@ Mechanism (B04, still correct in 2026): before a stroke first touches a tile, th
 
 **Mitigation (required):** the stroke's dirty-tile set is not frozen at pen-up. As long as wetness that the stroke introduced continues to spread, newly-reached tiles are snapshotted *on first contact by that spread* and appended to the stroke's undo record. The record closes when the spread settles or the next stroke begins. Undo then restores a consistent region. Bench test: stroke into a wet wash, wait 30 s, undo — no seam.
 
-Undo depth, persistence across sessions, and memory ceiling for the undo pool are implementation-time tunables, not contract items.
+**D10 — the pool has a ceiling.** The mitigation above keeps appending tiles for as long as the stroke's wetness keeps spreading, which is unbounded on its own. One wet 64×64 tile snapshot is ~448 KB, so:
+
+| Bound | Value | Why |
+|---|---|---|
+| Pool size | **256 MB, allocated once, never grows** | ≈570 tile-snapshots. Sits alongside the ~117 MB wet budget without crowding an iPad-class GPU. |
+| Per-stroke cap | **128 tiles (~57 MB)** | Half the maximum possible wet area. Stops a single stroke into a full-sheet wash from eating the entire history. |
+| Spread-append window | closes at the tile cap, when the spread settles, or at **45 s** — whichever comes first | Clears the 30 s seam test (§10.5) with margin while still bounding the growth. |
+| Eviction | ring buffer, oldest record first | Depth degrades gracefully under heavy strokes rather than failing outright. |
+
+A typical stroke touches 10–20 tiles (4.5–9 MB), giving roughly 28–57 levels of undo. Persistence across sessions remains an implementation-time tunable.
 
 ---
 
@@ -229,12 +254,16 @@ Who touches what. An engine may read anything; write access is exclusive per pas
 | TransferPigment | Pigment | `g[8] ↔ d[8]` |
 | CapillaryFlow | Fluid | `s`, `M` (expansion) |
 | BodyFlow (oil/acrylic route) | Fluid | `h_p`, `u, v` |
-| DryTick | Canvas | `w`; triggers §5 transitions |
+| DryTick | Canvas | `w`, `h_f`, `s`; triggers §5 transitions |
 | ReWet | Canvas | `a[8] → g[8]`, layer bits |
 | Bake | Canvas | dry2 → `R_floor`, `h_floor` |
 | Composite + Light | Render | display only — writes nothing in this schema |
 
 The Canvas engine owns all state *transitions* (dry, push-down, bake, re-wet, tile promotion/demotion, undo snapshots). Other engines own state *evolution* within a band. This split is the contract.
+
+**Evaporation belongs to DryTick, and to nothing else.** It is the only pass permitted to *remove* water from the system, decrementing `h_f` and `s` as `w` falls. The Fluid engine moves water; DryTick evaporates it; no other pass may destroy it. Without this the §8 conservation readout drifts on its own — and the one gauge trusted to catch every other leak becomes the leak.
+
+`MoveWater`, `MovePigment`, `BodyFlow`, and `CapillaryFlow` additionally **read** the global tilt block (§2.5). None of them writes it; only the board-tilt tool does.
 
 ---
 
@@ -250,12 +279,15 @@ Beyond Card 7's media targets and the five-minute proofs, this contract adds:
 6. **Session flatness:** six hours of layered painting on one region — cell memory identical to minute ten.
 7. **Big canvas:** 4096² document, small wet working area — frame time indistinguishable from a 1024² document.
 8. **Halo creep:** wash spreads across a tile boundary via capillary action without a visible grid artifact.
+9. **Tilt vs rotate (D11):** tip the board to vertical — the wash runs downhill. Return to flat, then rotate the *view* 90° — the wash does not move, and continues to run in the same physical direction when tipped again.
+10. **Undo ceiling (D10):** thirty strokes into a live wash, then undo repeatedly — no failure, no stall, and history depth shortens gracefully instead of the pool overrunning.
 
 ---
 
 ## 11. Open items carried forward
 
 - Full-sheet wet-wash coarsening strategy `[UNVERIFIED]` — bench before hardening (§4.2).
+- **Dry-tile cost is understated.** §4.1 estimates ~30–40 bytes/cell, but a tile carrying the baked floor *plus* both live dry layers is 30 half-floats = **60 bytes/cell** — the normal state for any twice-glazed area. Accepted as-is for now; revisit when the paging budget for 4096²+ canvases is set, since §4.2 rests the big-canvas claim on exactly this number.
 - Fixed vs dynamic palette — UI-stage decision; schema is agnostic.
 - Undo depth / persistence tunables (§6).
 - Solvent tool for oil re-working — future; the reactivatable-bit machinery in §5 is where it plugs in.
@@ -263,4 +295,4 @@ Beyond Card 7's media targets and the five-minute proofs, this contract adds:
 
 ---
 
-*End of contract. The five engines now all have a spec. Next: performance feasibility bench, then the Dart/GPU port plan.*
+*End of contract. The five engines now all have a spec. Next: performance feasibility bench, then the Rust/GPU port plan.*
