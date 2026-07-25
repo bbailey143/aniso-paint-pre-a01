@@ -16,8 +16,43 @@ Two documents are ratified and live here. Everything else is downstream of them.
 | `docs/physics-reference-cards.md` | The evidence. Every number traced to the paper it came from. |
 | `docs/canvas-contract-spec.md` | The structure that evidence justifies. Canvas state, tiles, drying, undo, pass ownership. |
 
-Reading order: cards first, contract second. Per the cards' own instruction,
-paste the **relevant card** into a working session — not the whole file.
+Reading order: cards first, contract second.
+
+## Load only what the job needs
+
+The harvest is split one file per card under [`docs/cards/`](docs/cards/), with
+an index at [`docs/cards/README.md`](docs/cards/README.md). Reading the whole
+thing costs ~14k tokens; one engine's slice costs one to three.
+
+**Always** load `docs/cards/00-invariants.md`. **Then** load the card(s) for the
+engine you are on, and nothing else. The exception is cross-cutting work —
+auditing the contract against the cards, hunting for contradictions between
+engines — which genuinely needs the whole harvest at once.
+
+## Orchestrator and specialists
+
+Five engine specialists live in [`.claude/agents/`](.claude/agents/): `fluid-engine`,
+`pigment-engine`, `brush-engine`, `paper-engine`, `canvas-engine`. Each is
+scoped to its own cards and its own writable fields, and each is told what it
+may read but must not touch.
+
+**The point is not that specialists know more. It is that each one starts with
+an empty context window and returns only its conclusion.** A specialist loads
+8k tokens, builds, and hands back a paragraph — the shader source, the compile
+logs, the failed attempts and the parameter sweeps all evaporate with it. The
+orchestrator accumulates summaries, not transcripts.
+
+Working rules:
+
+- **Specialists build. The orchestrator audits.** No specialist may modify
+  another engine's fields. If one finds a problem outside its lane it describes
+  it and reports back; it does not fix it.
+- **Cross-engine decisions are the orchestrator's.** Ratifying a D-number,
+  changing the cell schema, or resolving a contradiction between two engines
+  never happens inside a specialist.
+- **Spawn for chunky work, not for questions.** A specialist starts cold and
+  re-derives context, which is worth it for building an engine and wasteful for
+  a two-line answer.
 
 ## Who you're working with
 
@@ -75,13 +110,25 @@ Ignore it and correct it if you find it.
 
 - **Make the call.** When asked to suggest a fix, implement it — don't return a menu of options with a decision still owed. State the one-line reason and move.
 - **Check the arithmetic.** The specs carry byte counts, memory budgets and timing numbers. Verify new numbers against the stated ones, and say something when they disagree. Several real contradictions have been caught this way.
+- **Run it twice before believing it.** Any conservation, timing or stability result gets reproduced on an identical command line before it is interpreted. The bench produced three confident diagnoses of the same symptom — precision loss, then instability, then memory corruption — and only the third survived. Reproducibility would have killed the first two immediately.
+- **Say "I don't know" rather than constructing a plausible story.** Both of the wrong diagnoses above were coherent, evidence-backed narratives. So was asserting it was night when the time of day was never available.
 - **Watch for internal conflicts.** A proposal that fails one of the acceptance tests in contract §10 is wrong, however sensible it looks in isolation.
 - **Commit and push when a document changes.** The repo is the source of truth.
 
 ## Current state
 
-Both documents ratified as of July 2026. Next artifact per the contract's
-closing line: **performance feasibility bench**, then the Rust/GPU port plan.
+Both documents ratified as of July 2026, D1–D11 closed.
+
+**Feasibility bench: PASS.** `bench/canvas-spike/` — 3.78 ms per frame at the
+D7 wetness budget against a 16.7 ms target, on a Radeon RX 570 (a conservative
+iPad proxy). The cell schema fits. Findings and four fixed bugs are written up
+in `bench/canvas-spike/RESULTS.md`.
+
+**One thing left open there:** a nondeterminism on the bench's `--precision full`
+control path — identical runs return different conservation numbers. It affects
+a diagnostic switch, not the shipping half-float path, so it blocks a
+measurement rather than the project. Two cheap untried discriminators: localise
+which cells hold the garbage, and try the DX12 backend instead of Vulkan.
 
 Open items are listed in contract §11 and Card 8.
 
