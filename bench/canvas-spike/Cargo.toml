@@ -1,0 +1,19 @@
+[package]
+name = "canvas-spike"
+version = "0.1.0"
+edition = "2021"
+
+# Feasibility bench for the canvas contract (docs/canvas-contract-spec.md).
+# Headless: no window, no brush, no render engine. It answers one question —
+# does the 54-number cell at the D7 wetness budget fit inside a 16.7 ms frame,
+# and does it conserve water and pigment while doing so?
+
+[dependencies]
+wgpu = "22"
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }
+half = "2"
+png = "0.17"
+
+[profile.release]
+opt-level = 3

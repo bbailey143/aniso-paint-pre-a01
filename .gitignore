@@ -46,3 +46,9 @@ scratch/
 *.tiff
 *.mp4
 *.mov
+# --- Rust / cargo ---
+target/
+**/target/
+Cargo.lock
+*.log
+wet_field.png
