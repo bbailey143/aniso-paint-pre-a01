@@ -106,9 +106,56 @@ Divergence now holds at 0.00016 through 50 iterations instead of growing.
 
 ---
 
-## 4. `[BLOCKING]` The film dynamics are unstable, and half-float was hiding it
+## 4. `[RETRACTED]` "The film dynamics are unstable"
 
-This is the finding that matters, and it reverses what the first run suggested.
+**This section's conclusion was wrong. It is kept because the reasoning matters
+and because it shows how a plausible story survived several rounds of evidence.**
+
+The claim was that the film dynamics were unstable and that half-float rounding
+was accidentally damping them. Every experiment below is real and reproducible.
+The conclusion drawn from them was not, because one check was never run:
+**the same command line, twice.**
+
+The f32 runs are **nondeterministic**. Identical binary, identical arguments:
+
+```
+run 1  1024/relax20/full   water drift = +2139.0110 %
+run 2  1024/relax20/full   water drift =  +278.1477 %
+run 3  1024/relax20/full   water drift =  +556.0197 %
+```
+
+Half-float runs, by contrast, repeat exactly. The "instability" was garbage
+memory being read on the f32 path, and every conclusion drawn from comparing
+f16 against f32 was comparing a real number against a random one.
+
+Two tells were visible and went unread:
+
+- Water was already 1.3e37 at frame 199 — **present from the start**, not grown.
+  A physical instability ramps; this was simply there.
+- Pigment and divergence stayed perfectly sane in the same runs. A blowup in the
+  film would have dragged both with it.
+
+`[FIXED]` Nothing guaranteed the wet fields were cleared before their first
+read. Every texture is now explicitly zeroed at startup (`shaders/zero_fill.wgsl`)
+rather than trusting the implementation's lazy-init bookkeeping. That fix alone:
+
+- took half-float water drift from **−18.9 % to −6.4 %** — so a large part of
+  what was blamed on rounding was uninitialised memory;
+- made pigment conservation **exact (−0.0000 %)** on most f32 runs.
+
+`[STILL OPEN]` A rarer nondeterminism survives on the f32 path — common at
+1024², occasional at 512², producing ~1e37 in `h_f` or `s` while pigment stays
+exact. Not yet located. Until it is, **no f32 measurement from this bench can be
+trusted, including any comparison against half-float.**
+
+What this does *not* overturn: the flux algebra is still exact (§2, and pigment
+now reads −0.0000 %), and the relaxation fixes in §3 are still correct and still
+needed.
+
+### The experiments, for the record
+
+The isolation runs below are reproducible but were interpreted through the
+nondeterminism, so their differences are not necessarily meaningful.
 
 Run at full f32, hands off, evaporation zero, the sheet **gains** water — by
 200 %, by 1500 %, and in some configurations it overflows to 1e33 outright. Run
@@ -126,45 +173,39 @@ Isolation runs:
 | relaxation 2 / 5 / 20 | +856 % / +326 % / +11 % |
 | `--dt` 1.0 / 0.5 / 0.25 | +217 % / +420 % / +292 % |
 
-What these say:
+Read correctly, these say only that a corrupted value lands differently
+depending on how much of the sheet is live and how many passes run between the
+corruption and the measurement. The apparent dose-response — relaxation helping,
+absorption helping, diffusion hurting — is what random corruption looks like
+when you vary the amount of work around it. Every one of those numbers is a
+single sample of a distribution, and the distribution is wide.
 
-- **The flux algebra itself is exact.** With diffusion disabled the mask stays
-  put, the film stays thin, and conservation reads −0.0000 %. Clamped edge
-  fluxes computed identically from both sides neither create nor destroy. §8.1
-  holds.
-- **The instability is in the film dynamics, not the ledger.** More relaxation
-  makes it *better*, not worse — so relaxation is acting as the damper, and
-  removing it is catastrophic. Absorption also damps it, by draining the film
-  before it can oscillate. Diffusion feeds it, by expanding the wet mask so
-  there is more standing film to go unstable.
-- **It is not a timestep problem.** Cutting dt does not help, so this is not a
-  simple CFL violation.
-- **Half-float rounding was the missing damping.** At f16 the oscillation is
-  quenched by rounding error — which also eats about 19 % of the sheet. The
-  system only *appeared* stable because two errors were cancelling.
+The one line that survives: **with capillary diffusion off the mask stays put
+and conservation reads −0.0000 %.** That is the flux algebra being exact, and it
+has since been confirmed independently — pigment reads −0.0000 % after the
+zero-init fix.
 
-**Consequence for D8.** Half-float is currently load-bearing for stability. That
-is a dangerous thing to depend on: it means the engine is tuned to a specific
-rounding behaviour, and any precision change, driver change, or GPU that rounds
-differently could destabilise it. It also means the earlier recommendation —
-"promote h_f and s to f32 to fix the drift" — is **wrong as stated**. Doing that
-alone removes the accidental damping and makes things worse.
+**Where D8 actually stands.** Unknown, and it stays unknown until the f32 path
+is trustworthy. What can be said: after zero-init, half-float loses **6.4 % of
+the sheet over 200 hands-off frames, reproducibly**. Whether that is rounding or
+another latent bug of the same family as the three already found has not been
+established.
 
 **Correct order of work:**
 
-1. Make the film dynamics unconditionally stable at f32. Prime suspect is the
-   coupling between the height-gradient forcing in `update_velocities` and the
-   flux application, which currently has no explicit damping beyond C97's drag
-   term of 0.01. Candidates: proper semi-implicit treatment of the height
-   gradient, a stability-preserving limiter on the gradient forcing, or A26's
-   flux-level clamping applied to the velocity update as well as the transport.
-2. **Only then** choose a storage precision, and re-measure drift against a
-   system that is stable on its own merits.
-3. Re-test the split-precision idea. It may well be right — but it cannot be
-   evaluated while rounding error is doing structural work.
+1. **Find the remaining f32 nondeterminism.** Everything waits on it — a control
+   run that returns a different answer each time cannot referee anything.
+2. Re-measure half-float drift against a fixed f32 control.
+3. *Then* decide precision, and re-test the split idea.
 
-Until step 1 lands, treat the conservation numbers as measuring the bug, not the
-schema.
+Until step 1 lands, treat the f32 numbers as noise and the half-float numbers as
+an upper bound on drift that may well shrink again.
+
+**Method note, worth more than the numbers.** Three rounds of this bench
+produced three confident diagnoses — precision loss, then instability, then
+memory corruption. Only the third survived. The check that would have caught the
+first two immediately was running the same command line twice. That is now the
+first thing to do with any conservation result, before interpreting it at all.
 
 ---
 

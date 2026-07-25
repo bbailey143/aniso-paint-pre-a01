@@ -56,7 +56,8 @@ struct Cfg {
     evap: f32,
     /// C97 uses an adaptive step, dt = 1/ceil(max|u|,|v|), so nothing moves more
     /// than one cell. A fixed 1.0 is the CFL limit with no margin at all.
-    dt: f32,    dump: bool,
+    dt: f32,
+    dump: bool,
     /// 0 = half everywhere (D8 as written)
     /// 1 = split: the accumulating water fields (h_f, s, pressure) at f32,
     ///     pigment left at half. The candidate fix.
@@ -65,6 +66,10 @@ struct Cfg {
     /// Adapt the relaxation count to the measured divergence residual instead
     /// of always burning C97's maximum of 50.
     adaptive: bool,
+    /// Run the gauges after every water-touching pass on one frame and print
+    /// the running total. Parameter-level bisection narrowed the leak; this
+    /// says which pass it actually walks in on.
+    probe: i64,
 }
 
 fn parse_cfg() -> Cfg {
@@ -75,9 +80,11 @@ fn parse_cfg() -> Cfg {
         settle_at: 240,
         bots: 12.0,
         evap: 0.0,
-        dt: 1.0,        dump: true,
+        dt: 1.0,
+        dump: true,
         prec: 0,
         adaptive: false,
+        probe: -1,
     };
     if std::env::args().any(|s| s == "--f32") { c.prec = 2; }
     if std::env::args().any(|s| s == "--adaptive") { c.adaptive = true; }
@@ -94,6 +101,7 @@ fn parse_cfg() -> Cfg {
             "--evap" => c.evap = v.parse().unwrap_or(c.evap),
             "--dt" => c.dt = v.parse().unwrap_or(c.dt),
             "--dump" => c.dump = v != "0",
+            "--probe" => c.probe = v.parse().unwrap_or(-1),
             "--precision" => {
                 c.prec = match v.as_str() {
                     "half" => 0,
@@ -330,6 +338,31 @@ async fn run(cfg: Cfg) {
         mapped_at_creation: false,
     });
 
+    // Pass-level conservation probe. Six snapshots of the gauges taken at
+    // points through a single frame, so the total can be watched walking.
+    const NPROBE: usize = 6;
+    const PROBE_NAMES: [&str; NPROBE] = [
+        "after brush_bots",
+        "after update_velocities",
+        "after relax",
+        "after flux_apply_water",
+        "after capillary_flow",
+        "after dry_tick",
+    ];
+    let psize = (nwg * NQ * 4) as u64;
+    let probe_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("probe"),
+        size: psize * NPROBE as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let probe_stage = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("probe stage"),
+        size: psize * NPROBE as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     // Card 3 transport parameters. Ultramarine granulates hardest; burnt umber
     // stains hardest; hansa yellow barely granulates at all.
     let pig: [[f32; 4]; 8] = [
@@ -392,6 +425,33 @@ async fn run(cfg: Cfg) {
             .collect();
         device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: lay, entries: &entries })
     };
+
+    // Clear every field before anything reads one. See shaders/zero_fill.wgsl.
+    {
+        let zsrc = include_str!("../shaders/zero_fill.wgsl");
+        let p_zw = make_pipeline(&device, common, zsrc, "zero_water", fw, fw);
+        let p_zp = make_pipeline(&device, common, zsrc, "zero_pig", fp, fp);
+        let mut enc = device.create_command_encoder(&Default::default());
+        {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("zero"), timestamp_writes: None });
+            for (pipe, views) in [
+                (&p_zw, vec![&wet0.view[0], &wet0.view[1], &wet5.view[0], &wet5.view[1], &press.view[0], &press.view[1]]),
+                (&p_zp, vec![&wet1.view[0], &wet1.view[1], &wet2.view[0], &wet2.view[1],
+                             &wet3.view[0], &wet3.view[1], &wet4.view[0], &wet4.view[1]]),
+            ] {
+                cp.set_pipeline(pipe);
+                let bgs: Vec<wgpu::BindGroup> = views.iter()
+                    .map(|v| mkbg(&pipe.get_bind_group_layout(0), vec![ubuf.as_entire_binding(), tex(v)]))
+                    .collect();
+                for bg in &bgs {
+                    cp.set_bind_group(0, bg, &[]);
+                    cp.dispatch_workgroups(groups, groups, 1);
+                }
+            }
+        }
+        queue.submit(Some(enc.finish()));
+        device.poll(wgpu::Maintain::Wait);
+    }
 
     // Paper is written once. Every engine reads it; none writes it (§2.4).
     {
@@ -471,7 +531,25 @@ async fn run(cfg: Cfg) {
         queue.write_buffer(&ubuf, 0, bytemuck::bytes_of(&params));
 
         let mut enc = device.create_command_encoder(&Default::default());
+        let probing = cfg.probe >= 0 && frame as i64 == cfg.probe;
 
+        macro_rules! probe {
+            ($k:expr) => {
+                if probing {
+                    let bgp = mkbg(&p_red.get_bind_group_layout(0), vec![
+                        ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&wet1.view[p1]), tex(&wet2.view[p1]),
+                        tex(&wet3.view[p2]), tex(&wet4.view[p2]), tex(&wet5.view[p3]), partials.as_entire_binding(),
+                    ]);
+                    {
+                        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
+                        cp.set_pipeline(&p_red);
+                        cp.set_bind_group(0, &bgp, &[]);
+                        cp.dispatch_workgroups(rgroups, rgroups, 1);
+                    }
+                    enc.copy_buffer_to_buffer(&partials, 0, &probe_buf, ($k as u64) * psize, psize);
+                }
+            };
+        }
 
         // 0 — brush bots (synthetic load)
         let bg0 = mkbg(&p_bots.get_bind_group_layout(0), vec![
@@ -485,6 +563,7 @@ async fn run(cfg: Cfg) {
             cp.dispatch_workgroups(groups, groups, 1);
         }
         p0 = 1 - p0; p1 = 1 - p1; p3 = 1 - p3;
+        probe!(0);
 
         // 1 — update velocities
         let bg1 = mkbg(&p_vel.get_bind_group_layout(0), vec![
@@ -496,6 +575,7 @@ async fn run(cfg: Cfg) {
             cp.dispatch_workgroups(groups, groups, 1);
         }
         p0 = 1 - p0;
+        probe!(1);
 
         // 2 — relax divergence, N iterations inside a single pass
         {
@@ -509,6 +589,7 @@ async fn run(cfg: Cfg) {
             }
             p0 = a;
         }
+        probe!(2);
 
         // 3 — flow outward (edge darkening)
         let bg3 = mkbg(&p_outward.get_bind_group_layout(0), vec![
@@ -551,6 +632,7 @@ async fn run(cfg: Cfg) {
             cp.dispatch_workgroups(groups, groups, 1);
         }
         p0 = 1 - p0;
+        probe!(3);
 
         // 7 — suspended <-> settled
         let bg7 = mkbg(&p_xfer.get_bind_group_layout(0), vec![
@@ -576,6 +658,7 @@ async fn run(cfg: Cfg) {
             cp.dispatch_workgroups(groups, groups, 1);
         }
         p0 = 1 - p0; p3 = 1 - p3;
+        probe!(4);
 
         // 9 — dry tick, sole owner of evaporation
         let bg9 = mkbg(&p_dry.get_bind_group_layout(0), vec![
@@ -588,6 +671,7 @@ async fn run(cfg: Cfg) {
             cp.dispatch_workgroups(groups, groups, 1);
         }
         p0 = 1 - p0; p3 = 1 - p3;
+        probe!(5);
 
         // 10 — the gauges
         let bg10 = mkbg(&p_red.get_bind_group_layout(0), vec![
@@ -609,6 +693,9 @@ async fn run(cfg: Cfg) {
             || (hands_off && (frame - cfg.settle_at) % 60 == 0)
             || frame == cfg.frames - 1;
         enc.copy_buffer_to_buffer(&partials, 0, &partials_stage, 0, (nwg * NQ * 4) as u64);
+        if probing {
+            enc.copy_buffer_to_buffer(&probe_buf, 0, &probe_stage, 0, psize * NPROBE as u64);
+        }
 
         let t0 = Instant::now();
         queue.submit(Some(enc.finish()));
@@ -636,6 +723,35 @@ async fn run(cfg: Cfg) {
         } else if hands_off {
             frame_ms.push(wall);
             timed_frames += 1;
+        }
+
+        if probing {
+            let slice = probe_stage.slice(..);
+            let (tx, rx) = std::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+            device.poll(wgpu::Maintain::Wait);
+            if let Ok(Ok(())) = rx.recv() {
+                let data = slice.get_mapped_range();
+                let vals: &[f32] = bytemuck::cast_slice(&data);
+                println!("\n-- pass-level probe, frame {frame} --");
+                println!("  {:<26} {:>16} {:>16} {:>14}", "point", "water", "delta", "wet cells");
+                let mut prev = f64::NAN;
+                for k in 0..NPROBE {
+                    let base = k * nwg * NQ;
+                    let mut hf = 0f64; let mut s = 0f64; let mut wc = 0f64;
+                    for w in 0..nwg {
+                        hf += vals[base + w * NQ] as f64;
+                        s += vals[base + w * NQ + 1] as f64;
+                        wc += vals[base + w * NQ + 11] as f64;
+                    }
+                    let tot = hf + s;
+                    let d = if prev.is_nan() { 0.0 } else { tot - prev };
+                    println!("  {:<26} {:>16.2} {:>+16.4} {:>14.0}", PROBE_NAMES[k], tot, d, wc);
+                    prev = tot;
+                }
+                drop(data);
+            }
+            probe_stage.unmap();
         }
 
         {
@@ -720,6 +836,15 @@ async fn run(cfg: Cfg) {
     for (i, ms) in &ranked {
         let share = if median > 0.0 { ms / median * 100.0 } else { 0.0 };
         println!("  {:<20} {:8.3} ms  {:5.1}%", PASS_NAMES[*i], ms, share);
+    }
+
+    println!("\n-- conservation trace, hands off --");
+    println!("  {:>6} {:>18} {:>18} {:>12} {:>12}", "frame", "water", "pigment", "wet cells", "mean |div|");
+    for (f, q) in &gauge_log {
+        let w = q[0] + q[1];
+        let p: f64 = q[2..10].iter().sum();
+        let md = if q[11] > 0.5 { q[12] / q[11] } else { 0.0 };
+        println!("  {:>6} {:>18.2} {:>18.2} {:>12.0} {:>12.5}", f, w, p, q[11], md);
     }
 
     println!("\n-- conservation, hands off --");

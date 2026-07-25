@@ -7,7 +7,7 @@
 
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
-@group(0) @binding(2) var<storage, read_write> flux: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> flux: array<vec4<f32>>;
 @group(0) @binding(3) var wet0_out: texture_storage_2d<FMT_WATER, write>;
 
 fn flux_at(c: vec2<i32>, n: i32) -> vec4<f32> {
