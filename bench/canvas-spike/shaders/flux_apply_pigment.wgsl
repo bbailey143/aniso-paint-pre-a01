@@ -13,8 +13,8 @@
 @group(0) @binding(2) var wet1_in: texture_2d<f32>;
 @group(0) @binding(3) var wet2_in: texture_2d<f32>;
 @group(0) @binding(4) var<storage, read_write> flux: array<vec4<f32>>;
-@group(0) @binding(5) var wet1_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var wet2_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(5) var wet1_out: texture_storage_2d<FMT_PIG, write>;
+@group(0) @binding(6) var wet2_out: texture_storage_2d<FMT_PIG, write>;
 
 fn flux_at(c: vec2<i32>, n: i32) -> vec4<f32> {
     if (oob(c, n)) { return vec4<f32>(0.0, 0.0, 0.0, 0.0); }

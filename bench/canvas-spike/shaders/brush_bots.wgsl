@@ -8,10 +8,10 @@
 @group(0) @binding(2) var wet1_in: texture_2d<f32>;
 @group(0) @binding(3) var wet2_in: texture_2d<f32>;
 @group(0) @binding(4) var wet5_in: texture_2d<f32>;
-@group(0) @binding(5) var wet0_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var wet1_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(7) var wet2_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(8) var wet5_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(5) var wet0_out: texture_storage_2d<FMT_WATER, write>;
+@group(0) @binding(6) var wet1_out: texture_storage_2d<FMT_PIG, write>;
+@group(0) @binding(7) var wet2_out: texture_storage_2d<FMT_PIG, write>;
+@group(0) @binding(8) var wet5_out: texture_storage_2d<FMT_WATER, write>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {

@@ -8,7 +8,7 @@
 // canvas and 2.5e-4 for thirsty rag paper.
 
 @group(0) @binding(0) var<uniform> P: Params;
-@group(0) @binding(1) var paper_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(1) var paper_out: texture_storage_2d<FMT_PIG, write>;
 
 fn hash2(p: vec2<f32>) -> f32 {
     let k = fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);

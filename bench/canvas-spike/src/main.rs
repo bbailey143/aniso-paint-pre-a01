@@ -17,7 +17,7 @@ use wgpu::util::DeviceExt;
 
 const WORKGROUP: u32 = 8;
 const REDUCE_WG: u32 = 16;
-const NQ: usize = 12;
+const NQ: usize = 13;
 const FRAME_BUDGET_MS: f64 = 16.7;
 
 #[repr(C)]
@@ -54,11 +54,17 @@ struct Cfg {
     settle_at: u32,
     bots: f32,
     evap: f32,
-    dump: bool,
-    /// Run the whole wet band at full 32-bit float instead of D8's half-float.
-    /// Not a shipping option — a control, to tell rounding loss apart from a
-    /// genuine asymmetry in the flux maths.
-    f32mode: bool,
+    /// C97 uses an adaptive step, dt = 1/ceil(max|u|,|v|), so nothing moves more
+    /// than one cell. A fixed 1.0 is the CFL limit with no margin at all.
+    dt: f32,    dump: bool,
+    /// 0 = half everywhere (D8 as written)
+    /// 1 = split: the accumulating water fields (h_f, s, pressure) at f32,
+    ///     pigment left at half. The candidate fix.
+    /// 2 = full f32. A control, not a shipping option.
+    prec: u8,
+    /// Adapt the relaxation count to the measured divergence residual instead
+    /// of always burning C97's maximum of 50.
+    adaptive: bool,
 }
 
 fn parse_cfg() -> Cfg {
@@ -69,12 +75,12 @@ fn parse_cfg() -> Cfg {
         settle_at: 240,
         bots: 12.0,
         evap: 0.0,
-        dump: true,
-        f32mode: false,
+        dt: 1.0,        dump: true,
+        prec: 0,
+        adaptive: false,
     };
-    if std::env::args().any(|s| s == "--f32") {
-        c.f32mode = true;
-    }
+    if std::env::args().any(|s| s == "--f32") { c.prec = 2; }
+    if std::env::args().any(|s| s == "--adaptive") { c.adaptive = true; }
     let a: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i + 1 < a.len() {
@@ -86,7 +92,16 @@ fn parse_cfg() -> Cfg {
             "--settle-at" => c.settle_at = v.parse().unwrap_or(c.settle_at),
             "--bots" => c.bots = v.parse().unwrap_or(c.bots),
             "--evap" => c.evap = v.parse().unwrap_or(c.evap),
+            "--dt" => c.dt = v.parse().unwrap_or(c.dt),
             "--dump" => c.dump = v != "0",
+            "--precision" => {
+                c.prec = match v.as_str() {
+                    "half" => 0,
+                    "split" => 1,
+                    "full" => 2,
+                    _ => c.prec,
+                }
+            }
             _ => {}
         }
         i += 2;
@@ -149,9 +164,10 @@ fn make_pipeline(
     common: &str,
     src: &str,
     label: &str,
-    wide: bool,
+    fw: &str,
+    fp: &str,
 ) -> wgpu::ComputePipeline {
-    let src = if wide { src.replace("rgba16float", "rgba32float") } else { src.to_string() };
+    let src = src.replace("FMT_WATER", fw).replace("FMT_PIG", fp);
     let full = format!("{common}\n{src}");
     let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
@@ -214,9 +230,9 @@ async fn run(cfg: Cfg) {
     // layout asks for a filterable float. Only needed for the --f32 control.
     let mut feats = wgpu::Features::empty();
     if ts_ok { feats |= wgpu::Features::TIMESTAMP_QUERY; }
-    if cfg.f32mode {
+    if cfg.prec >= 1 {
         if !adapter.features().contains(wgpu::Features::FLOAT32_FILTERABLE) {
-            panic!("--f32 needs FLOAT32_FILTERABLE, which this adapter does not expose");
+            panic!("f32 fields need FLOAT32_FILTERABLE, which this adapter does not expose");
         }
         feats |= wgpu::Features::FLOAT32_FILTERABLE;
     }
@@ -237,18 +253,33 @@ async fn run(cfg: Cfg) {
     println!("== canvas contract feasibility bench ==");
     println!("adapter      : {} ({:?}, {:?})", info.name, info.device_type, info.backend);
     println!("grid         : {n} x {n}  ({} cells wet)", n as u64 * n as u64);
-    println!("relax iters  : {}", cfg.relax);
+    println!("relax iters  : {}{}", cfg.relax, if cfg.adaptive { " (max, adaptive)" } else { " (fixed)" });
+    println!("precision    : water {} / pigment {}",
+        if cfg.prec >= 1 { "f32" } else { "f16" },
+        if cfg.prec >= 2 { "f32" } else { "f16" });
     println!("gpu timing   : {}", if ts_ok { "timestamp queries" } else { "UNAVAILABLE - wall clock only" });
 
     // ---- resources -------------------------------------------------------
-    let f16 = if cfg.f32mode { wgpu::TextureFormat::Rgba32Float } else { wgpu::TextureFormat::Rgba16Float };
-    let wet0 = make_ping(&device, n, f16, "wet0_");
-    let wet1 = make_ping(&device, n, f16, "wet1_");
-    let wet2 = make_ping(&device, n, f16, "wet2_");
-    let wet3 = make_ping(&device, n, f16, "wet3_");
-    let wet4 = make_ping(&device, n, f16, "wet4_");
-    let wet5 = make_ping(&device, n, f16, "wet5_");
-    let press = make_ping(&device, n, f16, "press_");
+    let wide = |on: bool| if on { wgpu::TextureFormat::Rgba32Float } else { wgpu::TextureFormat::Rgba16Float };
+    // D8 says half-float throughout. The bench can split that: the two fields
+    // that accumulate every frame (h_f, s) get f32 while pigment stays f16.
+    let water_f32 = cfg.prec >= 1;
+    let pig_f32 = cfg.prec >= 2;
+    let fmt_w = wide(water_f32);
+    let fmt_p = wide(pig_f32);
+    let fw = if water_f32 { "rgba32float" } else { "rgba16float" };
+    let fp = if pig_f32 { "rgba32float" } else { "rgba16float" };
+    let f16 = fmt_p;
+    // WET0 (M, h_f, u, v) and WET5 (s, w, h_p, flags) carry the two fields that
+    // accumulate every frame. Those are the ones that bleed under half-float.
+    let wet0 = make_ping(&device, n, fmt_w, "wet0_");
+    let wet5 = make_ping(&device, n, fmt_w, "wet5_");
+    let press = make_ping(&device, n, fmt_w, "press_");
+    // Pigment. Moved by ratio rather than accumulated directly.
+    let wet1 = make_ping(&device, n, fmt_p, "wet1_");
+    let wet2 = make_ping(&device, n, fmt_p, "wet2_");
+    let wet3 = make_ping(&device, n, fmt_p, "wet3_");
+    let wet4 = make_ping(&device, n, fmt_p, "wet4_");
 
     let paper_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("paper"),
@@ -317,7 +348,7 @@ async fn run(cfg: Cfg) {
         frame: 0,
         bots_active: 1,
         relax_iters: cfg.relax,
-        dt: 1.0,
+        dt: cfg.dt,
         viscosity: 0.1,
         drag: 0.01,
         dry_rate: 0.0015,
@@ -340,18 +371,18 @@ async fn run(cfg: Cfg) {
 
     // ---- pipelines -------------------------------------------------------
     let common = include_str!("../shaders/common.wgsl");
-    let p_paper = make_pipeline(&device, common, include_str!("../shaders/paper_init.wgsl"), "paper_init", cfg.f32mode);
-    let p_bots = make_pipeline(&device, common, include_str!("../shaders/brush_bots.wgsl"), "brush_bots", cfg.f32mode);
-    let p_vel = make_pipeline(&device, common, include_str!("../shaders/update_velocities.wgsl"), "update_velocities", cfg.f32mode);
-    let p_relax = make_pipeline(&device, common, include_str!("../shaders/relax_divergence.wgsl"), "relax_divergence", cfg.f32mode);
-    let p_outward = make_pipeline(&device, common, include_str!("../shaders/flow_outward.wgsl"), "flow_outward", cfg.f32mode);
-    let p_fluxc = make_pipeline(&device, common, include_str!("../shaders/flux_compute.wgsl"), "flux_compute", cfg.f32mode);
-    let p_fluxp = make_pipeline(&device, common, include_str!("../shaders/flux_apply_pigment.wgsl"), "flux_apply_pigment", cfg.f32mode);
-    let p_fluxw = make_pipeline(&device, common, include_str!("../shaders/flux_apply_water.wgsl"), "flux_apply_water", cfg.f32mode);
-    let p_xfer = make_pipeline(&device, common, include_str!("../shaders/transfer_pigment.wgsl"), "transfer_pigment", cfg.f32mode);
-    let p_cap = make_pipeline(&device, common, include_str!("../shaders/capillary_flow.wgsl"), "capillary_flow", cfg.f32mode);
-    let p_dry = make_pipeline(&device, common, include_str!("../shaders/dry_tick.wgsl"), "dry_tick", cfg.f32mode);
-    let p_red = make_pipeline(&device, common, include_str!("../shaders/reduce.wgsl"), "reduce", cfg.f32mode);
+    let p_paper = make_pipeline(&device, common, include_str!("../shaders/paper_init.wgsl"), "paper_init", fw, fp);
+    let p_bots = make_pipeline(&device, common, include_str!("../shaders/brush_bots.wgsl"), "brush_bots", fw, fp);
+    let p_vel = make_pipeline(&device, common, include_str!("../shaders/update_velocities.wgsl"), "update_velocities", fw, fp);
+    let p_relax = make_pipeline(&device, common, include_str!("../shaders/relax_divergence.wgsl"), "relax_divergence", fw, fp);
+    let p_outward = make_pipeline(&device, common, include_str!("../shaders/flow_outward.wgsl"), "flow_outward", fw, fp);
+    let p_fluxc = make_pipeline(&device, common, include_str!("../shaders/flux_compute.wgsl"), "flux_compute", fw, fp);
+    let p_fluxp = make_pipeline(&device, common, include_str!("../shaders/flux_apply_pigment.wgsl"), "flux_apply_pigment", fw, fp);
+    let p_fluxw = make_pipeline(&device, common, include_str!("../shaders/flux_apply_water.wgsl"), "flux_apply_water", fw, fp);
+    let p_xfer = make_pipeline(&device, common, include_str!("../shaders/transfer_pigment.wgsl"), "transfer_pigment", fw, fp);
+    let p_cap = make_pipeline(&device, common, include_str!("../shaders/capillary_flow.wgsl"), "capillary_flow", fw, fp);
+    let p_dry = make_pipeline(&device, common, include_str!("../shaders/dry_tick.wgsl"), "dry_tick", fw, fp);
+    let p_red = make_pipeline(&device, common, include_str!("../shaders/reduce.wgsl"), "reduce", fw, fp);
 
     let mkbg = |lay: &wgpu::BindGroupLayout, res: Vec<wgpu::BindingResource>| {
         let entries: Vec<wgpu::BindGroupEntry> = res
@@ -380,18 +411,10 @@ async fn run(cfg: Cfg) {
     // rather than rebuilding bind groups inside the hot loop.
     let mut relax_bgs: Vec<wgpu::BindGroup> = Vec::new();
     for a in 0..2usize {
-        for b in 0..2usize {
-            relax_bgs.push(mkbg(
-                &p_relax.get_bind_group_layout(0),
-                vec![
-                    ubuf.as_entire_binding(),
-                    tex(&wet0.view[a]),
-                    tex(&press.view[b]),
-                    tex(&wet0.view[1 - a]),
-                    tex(&press.view[1 - b]),
-                ],
-            ));
-        }
+        relax_bgs.push(mkbg(
+            &p_relax.get_bind_group_layout(0),
+            vec![ubuf.as_entire_binding(), tex(&wet0.view[a]), tex(&wet0.view[1 - a])],
+        ));
     }
 
     // ---- timing ----------------------------------------------------------
@@ -425,9 +448,19 @@ async fn run(cfg: Cfg) {
     let mut timed_frames = 0u32;
 
     // Parity of each ping-pong group.
-    let (mut p0, mut p1, mut p2, mut p3, mut pc) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut p0, mut p1, mut p2, mut p3) = (0usize, 0usize, 0usize, 0usize);
 
     let mut gauge_log: Vec<(u32, [f64; NQ])> = Vec::new();
+    // Adaptive relaxation. C97 runs up to 50 iterations with an early exit once
+    // divergence falls under tau = 0.01. A true within-frame exit needs an
+    // indirect dispatch driven by a GPU-side reduction; this instead measures
+    // the residual each frame and sizes the next frame's count from it. The
+    // field is continuous between frames, so a one-frame lag costs nothing —
+    // and unlike a fixed count it responds when the artist floods the sheet.
+    const TAU: f64 = 0.01;
+    let mut relax_n: u32 = cfg.relax;
+    let mut relax_hist: Vec<u32> = Vec::new();
+    let mut div_hist: Vec<f64> = Vec::new();
     let t_start = Instant::now();
 
     for frame in 0..cfg.frames {
@@ -455,8 +488,7 @@ async fn run(cfg: Cfg) {
 
         // 1 — update velocities
         let bg1 = mkbg(&p_vel.get_bind_group_layout(0), vec![
-            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&paper),
-            tex(&wet0.view[1-p0]), tex(&press.view[pc]),
+            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&paper), tex(&wet0.view[1-p0]),
         ]);
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: tsw(qset.as_ref(), 1) });
@@ -469,29 +501,27 @@ async fn run(cfg: Cfg) {
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: tsw(qset.as_ref(), 2) });
             cp.set_pipeline(&p_relax);
-            let mut a = p0; let mut b = pc;
-            for _ in 0..cfg.relax {
-                cp.set_bind_group(0, &relax_bgs[a * 2 + b], &[]);
+            let mut a = p0;
+            for _ in 0..relax_n {
+                cp.set_bind_group(0, &relax_bgs[a], &[]);
                 cp.dispatch_workgroups(groups, groups, 1);
-                a = 1 - a; b = 1 - b;
+                a = 1 - a;
             }
-            p0 = a; pc = b;
+            p0 = a;
         }
 
         // 3 — flow outward (edge darkening)
         let bg3 = mkbg(&p_outward.get_bind_group_layout(0), vec![
-            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&press.view[pc]), tex(&press.view[1-pc]),
+            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&press.view[1]),
         ]);
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: tsw(qset.as_ref(), 3) });
             cp.set_pipeline(&p_outward); cp.set_bind_group(0, &bg3, &[]);
             cp.dispatch_workgroups(groups, groups, 1);
         }
-        pc = 1 - pc;
-
         // 4 — flux compute
         let bg4 = mkbg(&p_fluxc.get_bind_group_layout(0), vec![
-            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&press.view[pc]), flux.as_entire_binding(),
+            ubuf.as_entire_binding(), tex(&wet0.view[p0]), tex(&press.view[1]), flux.as_entire_binding(),
         ]);
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: tsw(qset.as_ref(), 4) });
@@ -575,12 +605,10 @@ async fn run(cfg: Cfg) {
             enc.copy_buffer_to_buffer(&qresolve, 0, &qstage, 0, qsize);
         }
 
-        let read_gauges = frame == cfg.settle_at.saturating_sub(1)
+        let log_gauges = frame == cfg.settle_at.saturating_sub(1)
             || (hands_off && (frame - cfg.settle_at) % 60 == 0)
             || frame == cfg.frames - 1;
-        if read_gauges {
-            enc.copy_buffer_to_buffer(&partials, 0, &partials_stage, 0, (nwg * NQ * 4) as u64);
-        }
+        enc.copy_buffer_to_buffer(&partials, 0, &partials_stage, 0, (nwg * NQ * 4) as u64);
 
         let t0 = Instant::now();
         queue.submit(Some(enc.finish()));
@@ -610,7 +638,7 @@ async fn run(cfg: Cfg) {
             timed_frames += 1;
         }
 
-        if read_gauges {
+        {
             let slice = partials_stage.slice(..);
             let (tx, rx) = std::sync::mpsc::channel();
             slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
@@ -624,8 +652,24 @@ async fn run(cfg: Cfg) {
                         q[k] += vals[w * NQ + k] as f64;
                     }
                 }
-                gauge_log.push((frame, q));
                 drop(data);
+
+                let mean_div = if q[11] > 0.5 { q[12] / q[11] } else { 0.0 };
+                relax_hist.push(relax_n);
+                div_hist.push(mean_div);
+
+                // Size the next frame from the residual this one left behind.
+                // Back off gently, push back hard: overshooting costs a frame of
+                // slightly soft flow, undershooting costs visible divergence.
+                if cfg.adaptive {
+                    if mean_div < TAU * 0.5 {
+                        relax_n = relax_n.saturating_sub(2).max(2);
+                    } else if mean_div > TAU {
+                        relax_n = (relax_n + 6).min(cfg.relax);
+                    }
+                }
+
+                if log_gauges { gauge_log.push((frame, q)); }
             }
             partials_stage.unmap();
         }
@@ -634,11 +678,25 @@ async fn run(cfg: Cfg) {
     let elapsed = t_start.elapsed().as_secs_f64();
 
     // ---- report ----------------------------------------------------------
-    let wet_mb = (n as f64) * (n as f64) * 24.0 * 2.0 / 1_048_576.0;
-    let pingpong_mb = wet_mb * 2.0;
+    let cells = (n as f64) * (n as f64);
+    let bw = if water_f32 { 4.0 } else { 2.0 };
+    let bp = if pig_f32 { 4.0 } else { 2.0 };
+    // WET0 + WET5 = 8 water-side numbers; WET1..4 = 16 pigment numbers.
+    let logical_mb = cells * (8.0 * bw + 16.0 * bp) / 1_048_576.0;
     println!("\n-- memory --");
-    println!("wet band, contract count : {wet_mb:.1} MB  (24 half-floats/cell)");
-    println!("actually allocated       : {pingpong_mb:.1} MB  (read/write separation doubles it)");
+    println!("wet band, logical  : {logical_mb:.1} MB");
+    println!("actually allocated : {:.1} MB  (read/write separation doubles it)", logical_mb * 2.0);
+
+    if !relax_hist.is_empty() {
+        let tail = &relax_hist[relax_hist.len().saturating_sub(timed_frames as usize)..];
+        let mean_n: f64 = tail.iter().map(|v| *v as f64).sum::<f64>() / tail.len().max(1) as f64;
+        let dtail = &div_hist[div_hist.len().saturating_sub(timed_frames as usize)..];
+        let mean_d: f64 = dtail.iter().sum::<f64>() / dtail.len().max(1) as f64;
+        let worst_d = dtail.iter().cloned().fold(0.0f64, f64::max);
+        println!("\n-- relaxation --");
+        println!("iterations used, steady state : mean {mean_n:.1}  (ceiling {})", cfg.relax);
+        println!("residual mean |divergence|    : {mean_d:.5}  (worst frame {worst_d:.5}, tau {TAU})");
+    }
 
     frame_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let pick = |p: f64| -> f64 {

@@ -16,8 +16,8 @@
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
 @group(0) @binding(2) var wet5_in: texture_2d<f32>;
 @group(0) @binding(3) var paper: texture_2d<f32>;
-@group(0) @binding(4) var wet0_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(5) var wet5_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var wet0_out: texture_storage_2d<FMT_WATER, write>;
+@group(0) @binding(5) var wet5_out: texture_storage_2d<FMT_WATER, write>;
 
 const ALPHA: f32 = 0.35;    // absorption rate into the sheet
 const KDIFF: f32 = 0.18;    // capillary spread, must stay under 0.25

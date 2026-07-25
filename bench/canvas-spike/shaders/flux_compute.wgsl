@@ -38,16 +38,34 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let up = vec2<i32>(c.x, c.y - 1);
     let dn = vec2<i32>(c.x, c.y + 1);
 
-    // Final velocity, corrected by the pressure field that relaxation and edge
-    // darkening left behind.
-    let u = clamp(w0.z - 0.5 * (pr(r, n) - pr(l, n)), -1.0, 1.0);
-    let v = clamp(w0.w - 0.5 * (pr(dn, n) - pr(up, n)), -1.0, 1.0);
+    // Final face velocities. Relaxation has already made the field near
+    // divergence-free, so the only thing left to apply is the edge-darkening
+    // bias — the outward lean that puts the dark rim on a drying wash.
+    // Staggered, so each correction is the difference across that one face.
+    let p_here = pr(c, n);
+    let uE = clamp(w0.z - (pr(r, n) - p_here), -1.0, 1.0);
+    let vS = clamp(w0.w - (pr(dn, n) - p_here), -1.0, 1.0);
+
+    // The west and north faces belong to the neighbours, so read their stored
+    // face velocity and apply the same correction from their side. Both cells
+    // sharing a face therefore agree on it exactly, which is what makes the
+    // ledger balance.
+    var uW = 0.0;
+    var vN = 0.0;
+    if (!oob(l, n)) {
+        let wl = textureLoad(wet0_in, l, 0);
+        uW = clamp(wl.z - (p_here - pr(l, n)), -1.0, 1.0);
+    }
+    if (!oob(up, n)) {
+        let wu = textureLoad(wet0_in, up, 0);
+        vN = clamp(wu.w - (p_here - pr(up, n)), -1.0, 1.0);
+    }
 
     var o = vec4<f32>(
-        max(u, 0.0) * h * P.dt,
-        max(-u, 0.0) * h * P.dt,
-        max(v, 0.0) * h * P.dt,
-        max(-v, 0.0) * h * P.dt,
+        max(uE, 0.0) * h * P.dt,    // out through the east face
+        max(-uW, 0.0) * h * P.dt,   // out through the west face
+        max(vS, 0.0) * h * P.dt,    // out through the south face
+        max(-vN, 0.0) * h * P.dt,   // out through the north face
     );
 
     // Nothing leaves the sheet. Without this the conservation gauge bleeds at

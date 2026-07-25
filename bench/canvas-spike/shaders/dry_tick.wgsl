@@ -9,8 +9,8 @@
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
 @group(0) @binding(2) var wet5_in: texture_2d<f32>;
-@group(0) @binding(3) var wet0_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var wet5_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(3) var wet0_out: texture_storage_2d<FMT_WATER, write>;
+@group(0) @binding(4) var wet5_out: texture_storage_2d<FMT_WATER, write>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {

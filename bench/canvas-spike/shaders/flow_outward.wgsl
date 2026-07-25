@@ -6,10 +6,13 @@
 // mask, so flow leans outward. Blur the mask, then p -= eta * (1 - M') * M.
 // This is the pass that puts the dark rim on a dried wash.
 
+// Writes the edge bias on its own, rather than folding it into a pressure field
+// that already carries the film gradient. Keeping them separate is what stops
+// flux_compute double-counting a term update_velocities has already applied.
+
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
-@group(0) @binding(2) var press_in: texture_2d<f32>;
-@group(0) @binding(3) var press_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var press_out: texture_storage_2d<FMT_WATER, write>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -18,7 +21,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (oob(c, n)) { return; }
 
     let m = textureLoad(wet0_in, c, 0).x;
-    let p = textureLoad(press_in, c, 0).x;
 
     // Box blur of the wet mask. C97 uses a Gaussian with K = 10; a 9-tap box
     // at this scale is visually indistinguishable and far cheaper.
@@ -35,6 +37,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let m_blur = select(0.0, acc / cnt, cnt > 0.0);
 
-    let p_new = p - P.edge_eta * (1.0 - m_blur) * m;
-    textureStore(press_out, c, vec4<f32>(p_new, 0.0, 0.0, 0.0));
+    let bias = -P.edge_eta * (1.0 - m_blur) * m;
+    textureStore(press_out, c, vec4<f32>(bias, 0.0, 0.0, 0.0));
 }

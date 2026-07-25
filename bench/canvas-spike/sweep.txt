@@ -1,0 +1,2 @@
+﻿A half + fixed 50        frame= 11.80ms iters= 50.0 worstDiv=  0.08645 water=  -18.9242% pig= -10.2719%
+B half + adaptive        frame= 11.89ms iters= 50.0 worstDiv=  0.45946 water= +753.5816% pig=         %

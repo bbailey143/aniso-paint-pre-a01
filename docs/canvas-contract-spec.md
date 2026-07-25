@@ -286,6 +286,7 @@ Beyond Card 7's media targets and the five-minute proofs, this contract adds:
 
 ## 11. Open items carried forward
 
+- **`[BLOCKING — bench finding]` The wet-film dynamics are not unconditionally stable, and D8's half-float rounding is currently masking it.** At full f32, hands off and evaporation at zero, the sheet gains water without bound; at half-float the same run quietly loses ~19%. Two errors were cancelling. Relaxation and paper absorption both act as dampers; capillary diffusion feeds the instability by widening the wet mask. The flux algebra itself is exact — with diffusion disabled, conservation reads −0.0000%. **The film dynamics must be made stable on their own merits before any storage-precision decision is revisited**, since promoting fields to f32 removes the accidental damping and makes matters worse. See `bench/canvas-spike/RESULTS.md` §4.
 - Full-sheet wet-wash coarsening strategy `[UNVERIFIED]` — bench before hardening (§4.2).
 - **Dry-tile cost is understated.** §4.1 estimates ~30–40 bytes/cell, but a tile carrying the baked floor *plus* both live dry layers is 30 half-floats = **60 bytes/cell** — the normal state for any twice-glazed area. Accepted as-is for now; revisit when the paging budget for 4096²+ canvases is set, since §4.2 rests the big-canvas claim on exactly this number.
 - Fixed vs dynamic palette — UI-stage decision; schema is agnostic.

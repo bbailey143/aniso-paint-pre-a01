@@ -7,8 +7,7 @@
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
 @group(0) @binding(2) var paper: texture_2d<f32>;
-@group(0) @binding(3) var wet0_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var press_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(3) var wet0_out: texture_storage_2d<FMT_WATER, write>;
 
 fn hf_at(c: vec2<i32>, n: i32) -> f32 {
     if (oob(c, n)) { return 0.0; }
@@ -31,7 +30,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     if (m < 0.5 || h <= WET_EPS) {
         textureStore(wet0_out, c, vec4<f32>(w0.x, w0.y, 0.0, 0.0));
-        textureStore(press_out, c, vec4<f32>(h, 0.0, 0.0, 0.0));
         return;
     }
 
@@ -40,13 +38,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let u_ = vec2<i32>(c.x, c.y - 1);
     let d_ = vec2<i32>(c.x, c.y + 1);
 
-    // Pressure gradient from the standing film.
-    var du = -0.5 * (hf_at(r, n) - hf_at(l, n));
-    var dv = -0.5 * (hf_at(d_, n) - hf_at(u_, n));
+    // Staggered (§2.3): u here is the face between c and c+x, v the face
+    // between c and c+y. Every gradient is therefore a plain difference across
+    // that one face, never a central difference straddling two cells — which is
+    // what let a checkerboard mode grow in the first version.
+    var du = -(hf_at(r, n) - h);
+    var dv = -(hf_at(d_, n) - h);
 
     // Paper slope. C97 condition 4 — streaks parallel to flow.
-    du = du - P.paper_influence * 0.5 * (paper_h(r, n) - paper_h(l, n));
-    dv = dv - P.paper_influence * 0.5 * (paper_h(d_, n) - paper_h(u_, n));
+    let ph = paper_h(c, n);
+    du = du - P.paper_influence * (paper_h(r, n) - ph);
+    dv = dv - P.paper_influence * (paper_h(d_, n) - ph);
 
     // D11 board tilt. Zero when the board lies flat.
     du = du + P.gravity_x;
@@ -74,5 +76,4 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     nv = clamp(nv, -1.0, 1.0);
 
     textureStore(wet0_out, c, vec4<f32>(w0.x, w0.y, nu, nv));
-    textureStore(press_out, c, vec4<f32>(h, 0.0, 0.0, 0.0));
 }
