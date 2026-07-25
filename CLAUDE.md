@@ -20,14 +20,24 @@ Reading order: cards first, contract second.
 
 ## Load only what the job needs
 
-The harvest is split one file per card under [`docs/cards/`](docs/cards/), with
-an index at [`docs/cards/README.md`](docs/cards/README.md). Reading the whole
-thing costs ~14k tokens; one engine's slice costs one to three.
+Both documents are split, with an index beside each:
 
-**Always** load `docs/cards/00-invariants.md`. **Then** load the card(s) for the
-engine you are on, and nothing else. The exception is cross-cutting work —
-auditing the contract against the cards, hunting for contradictions between
-engines — which genuinely needs the whole harvest at once.
+- [`docs/cards/`](docs/cards/) — one file per card. Reading the whole harvest
+  costs ~14k tokens; one engine's slice costs one to three.
+- [`docs/contract/`](docs/contract/) — one file per section. Smaller savings
+  (~5k whole), but it makes "load §2.3, §4, §8, §9" an instruction a session can
+  actually follow rather than an aspiration.
+
+**Always** load `docs/cards/00-invariants.md`, plus contract sections
+`08-invariants` and `09-pass-ownership` — the first is what "wrong" means, the
+second is what "yours" means. **Then** load the card(s) and section(s) for the
+engine you are on, and nothing else.
+
+The canonical whole files stay put and are verified character-identical to their
+parts. Load them for cross-cutting work — auditing the contract against the
+cards, hunting for contradictions between engines — which genuinely needs
+everything at once. That is how the missing evaporation owner and the
+unratified fluid route were caught, and no specialist would have seen either.
 
 ## Orchestrator and specialists
 
@@ -96,12 +106,22 @@ Do not reopen these casually. If one must change, everything downstream changes 
 | D9 | Fluid route: hybrid — C97 spine, A26 terms, B04 body flow |
 | D10 | Undo pool: 256 MB fixed, 128-tile per-stroke cap, 45 s append window |
 | D11 | Board tilt is a global uniform. Board tilt and view rotation are separate actions |
+| D12 | Browser/WebGPU ships first, native iPad second. Engine code uses WebGPU **core** only |
 
 ## Stack
 
 **Rust** on the CPU for the brush solver (it's ~16 numbers of state — a pocket
-calculator), **GPU compute shaders** for the canvas (millions of cells).
-Half-float throughout.
+calculator), **GPU compute shaders via wgpu** for the canvas (millions of
+cells). Half-float throughout.
+
+**One source, three targets.** wgpu compiles to Vulkan/DX12 on Windows, Metal
+natively on iPad, and WebGPU in the browser via WebAssembly. Per D12 the browser
+ships first — Safari 26 has WebGPU on iPadOS, so an iPad user reaches this from
+a URL with no App Store in the way. Windows is the development loop only.
+
+The cost of keeping that door open: **engine code uses WebGPU core, no optional
+features.** Timestamp queries and `float32-filterable` are bench-only. WebGPU's
+default limits are real, and the 256 MB single-buffer ceiling is already binding.
 
 Any reference to Dart or Flutter is leftover from an abandoned direction.
 Ignore it and correct it if you find it.

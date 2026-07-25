@@ -13,7 +13,7 @@ they own state *evolution* within a band. That split is the contract.
 ## Load exactly this
 
 - `docs/cards/00-invariants.md` — always
-- `docs/canvas-contract-spec.md` — **all of it.** This one is yours end to end.
+- `docs/contract/` — **all sections.** This document is yours end to end.
 - `docs/cards/04-oil-viscous.md` §"Layers, storage and undo" — B04's tiling and
   GPU undo texture
 - `docs/cards/07-acceptance.md` — for drying times, value shifts, reactivity
@@ -56,3 +56,20 @@ The wet band's evolving values while another engine owns them mid-frame.
 
 What changed, its effect on the per-cell count and the memory budget, and which
 of the §10 acceptance tests it moves.
+
+## Platform constraint (D12)
+
+Engine code targets **WebGPU core only**. The first shipping target is the
+browser — Safari 26 ships WebGPU on iPadOS, so the same Rust + wgpu source runs
+on an iPad from a URL, which is the audience-building path. Native iPad is
+second. Windows is the development loop and nothing more.
+
+Consequences you must respect:
+
+- **No optional wgpu features in engine code.** Timestamp queries,
+  `float32-filterable`, and read-write storage textures live in the bench only.
+- **WebGPU default limits are binding**, not advisory. The 256 MB single-buffer
+  ceiling is the one that bites — the bench already hit it. Anything that scales
+  with canvas area must page rather than allocate one slab.
+- If you need something outside core, say so and hand it back. Do not quietly
+  enable a feature.

@@ -15,7 +15,7 @@ You own the tool in the artist's hand. Nothing else.
 - `docs/cards/05-brush.md` — your card
 - `docs/cards/04-oil-viscous.md` §"B04 — brush ↔ canvas paint transfer" — the
   transfer heuristics and the Teflon clamp
-- `docs/canvas-contract-spec.md` §3 (reservoir/canvas texture alignment), §9
+- `docs/contract/` sections `08-invariants`, `09-pass-ownership`, `03-texture-schema` (reservoir/canvas alignment)
 - `docs/cards/07-acceptance.md` — for the behavioural targets
 
 Do **not** load the full harvest, or cards 01, 02, 03, 06, unless explicitly
@@ -44,6 +44,13 @@ you.
   steps; interpolate and run the full contact-and-transfer sequence at each
   step, never moving more than one cell. Two independent sources say this, and
   the bench already reproduces the artefact — bot paths bead into dots.
+  **This gets worse, not better, on the browser target (D12).** Safari does not
+  support `getCoalescedEvents()`, the API for retrieving the high-frequency
+  samples that occur between animation frames. So on the first shipping
+  platform you receive fewer Pencil samples than a native app would, and
+  resampling stops being an optimisation and becomes the thing standing between
+  a stroke and a row of dots. Pressure and tilt themselves come through fine via
+  Pointer Events, and iPad Pro reports up to 240 Hz on `pointermove`.
 - **Friction must be C1-continuous.** A hard directional if/else makes the
   solver chatter. Use a smooth lobe.
 - **Pin joints that violate non-penetration with an equality constraint.** With
@@ -62,3 +69,20 @@ isn't done.
 
 What changed, which of VL's eleven named behaviours it affects, and how it felt
 on the Huion if it was testable there.
+
+## Platform constraint (D12)
+
+Engine code targets **WebGPU core only**. The first shipping target is the
+browser — Safari 26 ships WebGPU on iPadOS, so the same Rust + wgpu source runs
+on an iPad from a URL, which is the audience-building path. Native iPad is
+second. Windows is the development loop and nothing more.
+
+Consequences you must respect:
+
+- **No optional wgpu features in engine code.** Timestamp queries,
+  `float32-filterable`, and read-write storage textures live in the bench only.
+- **WebGPU default limits are binding**, not advisory. The 256 MB single-buffer
+  ceiling is the one that bites — the bench already hit it. Anything that scales
+  with canvas area must page rather than allocate one slab.
+- If you need something outside core, say so and hand it back. Do not quietly
+  enable a feature.

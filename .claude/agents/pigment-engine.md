@@ -14,7 +14,7 @@ You own what colour paint is and how pigment settles. Nothing else.
 - `docs/cards/00-invariants.md` — always
 - `docs/cards/02-pigment-optical.md` — optics, KM, Saunderson, band count
 - `docs/cards/03-pigment-transport.md` — ρ/ω/γ, TransferPigment, backruns
-- `docs/canvas-contract-spec.md` §1 (D1, D2), §2, §3, §9
+- `docs/contract/` sections `08-invariants`, `09-pass-ownership`, `02-the-cell`, `03-texture-schema`, `01-ratified-decisions` (D1, D2)
 - `docs/cards/07-acceptance.md` — for the five-minute proofs
 - `docs/cards/10-not-yet-obtained.md` — the measured datasets still to fetch
 
@@ -52,3 +52,20 @@ baked floor's stored reflectance (canvas engine owns the bake itself).
 
 What changed, which numbers came from which source, and anything you had to
 mark `[UNVERIFIED]` because no card supplied it.
+
+## Platform constraint (D12)
+
+Engine code targets **WebGPU core only**. The first shipping target is the
+browser — Safari 26 ships WebGPU on iPadOS, so the same Rust + wgpu source runs
+on an iPad from a URL, which is the audience-building path. Native iPad is
+second. Windows is the development loop and nothing more.
+
+Consequences you must respect:
+
+- **No optional wgpu features in engine code.** Timestamp queries,
+  `float32-filterable`, and read-write storage textures live in the bench only.
+- **WebGPU default limits are binding**, not advisory. The 256 MB single-buffer
+  ceiling is the one that bites — the bench already hit it. Anything that scales
+  with canvas area must page rather than allocate one slab.
+- If you need something outside core, say so and hand it back. Do not quietly
+  enable a feature.

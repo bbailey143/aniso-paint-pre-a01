@@ -13,7 +13,7 @@ You own what the paint lands on. Nothing else.
 
 - `docs/cards/00-invariants.md` — always
 - `docs/cards/06-paper-substrate.md` — your card
-- `docs/canvas-contract-spec.md` §2.4, §3 (the `PAPER` texture), §4.3
+- `docs/contract/` sections `08-invariants`, `09-pass-ownership`, `02-the-cell` (§2.4 substrate), `04-tiles`
 - `docs/cards/07-acceptance.md` — for drybrush and granulation targets
 
 Do **not** load the full harvest, or cards 01, 02, 04, 05, unless explicitly
@@ -55,3 +55,20 @@ it.
 ## Report back
 
 What changed, and which acceptance behaviours it moves.
+
+## Platform constraint (D12)
+
+Engine code targets **WebGPU core only**. The first shipping target is the
+browser — Safari 26 ships WebGPU on iPadOS, so the same Rust + wgpu source runs
+on an iPad from a URL, which is the audience-building path. Native iPad is
+second. Windows is the development loop and nothing more.
+
+Consequences you must respect:
+
+- **No optional wgpu features in engine code.** Timestamp queries,
+  `float32-filterable`, and read-write storage textures live in the bench only.
+- **WebGPU default limits are binding**, not advisory. The 256 MB single-buffer
+  ceiling is the one that bites — the bench already hit it. Anything that scales
+  with canvas area must page rather than allocate one slab.
+- If you need something outside core, say so and hand it back. Do not quietly
+  enable a feature.

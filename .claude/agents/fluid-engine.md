@@ -13,7 +13,7 @@ You own how water moves. Nothing else.
 
 - `docs/cards/00-invariants.md` — always
 - `docs/cards/01-fluid.md` — your card
-- `docs/canvas-contract-spec.md` §2.3, §2.5, §4, §8, §9 — the fields you may
+- `docs/contract/` sections `08-invariants`, `09-pass-ownership`, `02-the-cell`, `04-tiles` — the fields you may touch and the invariants you must hold
   touch and the invariants you must hold
 - `docs/cards/07-acceptance.md` — only when judging whether behaviour is right
 
@@ -52,3 +52,20 @@ task and says so.
 Return to the orchestrator: what changed, the measured effect on frame time and
 on the conservation gauges, and anything you found that belongs to another
 engine — described, not fixed.
+
+## Platform constraint (D12)
+
+Engine code targets **WebGPU core only**. The first shipping target is the
+browser — Safari 26 ships WebGPU on iPadOS, so the same Rust + wgpu source runs
+on an iPad from a URL, which is the audience-building path. Native iPad is
+second. Windows is the development loop and nothing more.
+
+Consequences you must respect:
+
+- **No optional wgpu features in engine code.** Timestamp queries,
+  `float32-filterable`, and read-write storage textures live in the bench only.
+- **WebGPU default limits are binding**, not advisory. The 256 MB single-buffer
+  ceiling is the one that bites — the bench already hit it. Anything that scales
+  with canvas area must page rather than allocate one slab.
+- If you need something outside core, say so and hand it back. Do not quietly
+  enable a feature.
