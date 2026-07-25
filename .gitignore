@@ -1,0 +1,48 @@
+# --- OS clutter ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Flutter / Dart ---
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# --- Android / iOS build output ---
+*.apk
+*.aab
+*.ipa
+.gradle/
+local.properties
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+
+# --- Secrets: never commit these ---
+*.env
+.env.*
+*.pem
+*.key
+secrets.*
+
+# --- Scratch / heavy media ---
+scratch/
+*.psd
+*.tif
+*.tiff
+*.mp4
+*.mov
