@@ -1,56 +1,82 @@
-# SOLVED (cause) — the readback lies. The engine was probably right all along.
+# CLOSED — the engine conserves. Round 5's diagnosis is RETRACTED.
 
-**Round 5 found it. Read this section; the rest is the trail that led here.**
+**Round 6 is the one to read. The rest is the trail, kept because the wrong turns
+are the useful part.**
 
-## The proof
+## What is true, and reproduced
 
-Scan the *same* buffer two ways in the *same* submission — once with a compute
-shader on the GPU, once by copying it to the CPU and mapping it:
+Two-stage GPU reduction is wired in (`reduce_final.wgsl`), so a reading now crosses
+to the host as **64 bytes** instead of ~53 KB. Measured through it:
 
-| trial | GPU-side scan | CPU readback |
+| test | result |
+|---|---|
+| blank sheet, twice | **0.000000 water · 0.000000 pigment · 0 wet cells** |
+| one stroke, 200 hands-off frames, ×2 runs | **0.0000 % drift**, water and pigment |
+| one stroke, 1000 hands-off frames | water **−1.6e-5** (−0.00002 %) · pigment **+4.6e-5** (+0.000034 %) |
+
+The 1000-frame residuals move in steps of exactly 1.526e-5 — **one ULP of an f32
+holding 134.6**. That is the reduction's own summation rounding, not the physics.
+Meanwhile wet cells go 2272 → 6346: the water really is spreading the whole time,
+and the total holds while it does. **Invariant 1 passes.**
+
+## The retraction
+
+Round 5 concluded that the CPU copy-and-map path corrupts, planting `2.0` at
+x = 241 of every row, and wrote that up as solved on the strength of one sitting.
+**It does not reproduce.** Re-tested today:
+
+| test | trials | entries equal to 2.0 |
 |---|---|---|
-| 0–11, every one | **0 non-zero** | **1–5 non-zero, first always at x = 241** |
+| fresh device, fresh buffer, clear → copy → map | 6 | **0** |
+| app's own device, fresh buffer | 4 | **0** |
+| the engine's real flux ledger via `dumpFlux()` | 4 | **0** |
+| old 53 KB readback vs new 64-byte path, same partials, same frame | 4 | **0**, and the two paths agree to ~1e-8 relative |
 
-Twelve out of twelve. **The buffer is clean. The copy-and-map path is not.**
+So the corruption story is withdrawn. It was written up after a single session and
+broke [the branch's own rule](../CLAUDE.md): *run it twice before believing it.*
+That rule exists because this hunt has now produced **four** confident diagnoses of
+one symptom, and this is the second to die on re-test.
 
-It plants the constant **2.0** at a fixed place: x = 241 of each 512-wide row —
-byte 3856 of every 8192-byte row. Reproduced with *no aniso-paint code at all*:
-allocate a buffer, `clearBuffer`, copy, map, read. It happens with a shader
-writing zeros, without one, with textures allocated, without them.
+## So what actually fixed it?
 
-## What this explains
+Honest answer: **I don't know which of the two real fixes closed it**, and the
+symptom is gone, so there is nothing left to bisect against. The candidates, both
+committed and both independently justified:
 
-Every "conservation fault" chased through P4–P6 was **N corrupted readback entries
-× 2.0**. That is exactly the integer growth — +2, +4, +8, +16 — that kept appearing
-and never made physical sense. It also explains the phantom `M = 2.0` in texture
-dumps (same copy-and-map path), and very likely the `main` bench's never-solved f32
-nondeterminism, which ran on this same machine.
+1. **The flux ledger is cleared every frame** (`COPY_DST` + `clearBuffer`). It was
+   uninitialised, and two passes read it. That alone seeded exactly 1.0 into cells
+   on a blank sheet.
+2. **The wet band moved to `rgba32float`** (D6 amended). At half-float the sheet
+   lost 6.5 % of its pigment per 200 frames to mantissa rounding.
 
-**The physics was never implicated.** No pass computes 2.0. The gauges that
-condemned the engine were reading corrupted copies of correct memory.
+Either could account for growth on an empty sheet. What is measurable now is that
+there is none.
 
-## The fix, and where it stands
+## What was genuinely wrong, and stays fixed
 
-Never read back enough bytes to reach the bad offset: reduce fully on the GPU and
-copy only ~60 bytes instead of ~53 KB. `shaders/fluid/reduce_final.wgsl` is written
-for exactly this and is **in the tree but NOT wired in** — a first attempt returned
-all zeros (stage 2 reading stage 1's partials, in its own pass, still zero) and it
-needs debugging. `sampleGauges()` is therefore reverted to the single-stage version,
-which still reads through the corrupting path.
+The *instrument* was broken four separate ways, and every one of them produced a
+confident wrong answer before it was caught:
 
-**So: do not trust any absolute conservation number on this machine yet.** The app
-paints correctly — a blue+yellow stroke renders `#00512f` over `#f3f3f3` paper.
+1. `readings` lags unboundedly — it skips any frame with a map in flight. Fine for
+   a HUD, useless for measurement. Use `sampleGauges()`.
+2. The sampler shared its partials buffer with the per-frame readout, so a reading
+   could blend two frames. It has its own buffer now, plus `pauseReadback`.
+3. `dump()` is only valid after a GPU sync.
+4. `reduce_final` itself shipped with two silent bugs, and the second is worth
+   remembering: it declared a `Params` uniform it never read. Under `layout: 'auto'`
+   an unused binding is **dropped from the generated layout**, so binding it is a
+   validation error, the pass is discarded, and the totals are simply never
+   written — which reads back as a perfectly plausible row of zeros. That is what
+   "returns all zeros" meant. (The other bug: `NQ` was 15 here and 13 in
+   `reduce.wgsl`.)
 
 ### Next, in order
 
-1. Debug `reduce_final` (verify `arrayLength`, the bind group, and that stage 1
-   actually landed) and wire it into `sampleGauges`. Then re-measure everything.
-2. Re-run the P4/P5 conservation claims through the small-readback gauge and
-   correct the record.
-3. Restore the P6 stash (`git stash` entry `p6-wip`) — drying, re-wet, glazing —
-   and verify it against a gauge that finally tells the truth.
-4. Confirm on a second machine, and consider filing a Dawn/driver bug with the
-   standalone repro above.
+1. Re-run the P4/P5 conservation claims through the two-stage gauge and correct
+   those commit messages where they overstate.
+2. Restore the P6 stash (`git stash` entry `p6-wip`) — drying, re-wet, glazing —
+   and verify it against the gauge that now tells the truth.
+3. Confirm on a second machine before trusting any of this as machine-independent.
 
 ---
 

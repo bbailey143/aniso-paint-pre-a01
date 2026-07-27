@@ -1,36 +1,48 @@
 // Second reduction stage — sum the per-workgroup partials down to ONE row of
 // NQ totals, on the GPU.
 //
-// [THIS IS THE FIX, AND IT IS AN INSTRUMENT FIX, NOT A PHYSICS ONE]
+// [THIS IS AN INSTRUMENT FIX, NOT A PHYSICS ONE]
 //
-// Reading a large buffer back to the CPU on this machine plants the constant
-// 2.0 at a fixed offset (x = 241 of each 512-wide row; byte 3856 of every
-// 8192-byte row). Proven by scanning the same buffer two ways in the same
-// submission: a GPU-side scan reports zero non-zero entries, 12 times out of 12,
-// while the CPU readback of that identical buffer reports 1-5, always starting
-// at x = 241. The memory is clean; the copy-and-map path is not.
+// Stage 1 leaves one partial per 16x16 workgroup: at a 512 grid that is 1024
+// workgroups x 13 quantities = ~53 KB the host had to copy and fold every frame,
+// just to display five numbers. Folding it here instead means the readback is
+// 64 bytes. Cheaper, and the CPU side stops being able to get the stride wrong.
 //
-// Every "conservation fault" chased through P4-P6 was this: N corrupted entries
-// x 2.0, which is exactly the integer growth (+2, +4, +8, +16) that kept showing
-// up and never made physical sense.
+// [RETRACTED] This shader was first written to dodge a supposed readback
+// corruption (a constant 2.0 planted at a fixed offset). That did not reproduce
+// on re-test — see docs/11. The reduction is kept on its own merits; the
+// corruption claim is withdrawn.
 //
-// The workaround is simply to never read back enough bytes to reach the bad
-// offset. Reducing to NQ floats means the host copies ~60 bytes instead of ~53 KB.
+// [TRAP] Two things sank the first attempt at this shader, and both are quiet:
+//
+//   1. NQ was written 15 here and 13 in reduce.wgsl. The stride is the layout
+//      contract between the two stages; a mismatch reads scrambled lanes.
+//   2. It declared a `Params` uniform at binding 0 and never read it. Under
+//      `layout: 'auto'` a statically-unused binding is dropped from the
+//      generated layout, so binding it is a validation error, the pass is
+//      discarded, and `totals` is simply never written — which reads back as a
+//      perfectly plausible row of zeros rather than as an error.
+//
+// So: no uniform here, and NQ is stated once, next to the reason it must match.
 
-@group(0) @binding(0) var<uniform> P: Params;
-@group(0) @binding(1) var<storage, read> partials: array<f32>;
-@group(0) @binding(2) var<storage, read_write> totals: array<f32>;
+// Must equal NQ in reduce.wgsl — the partials buffer is laid out with this stride.
+const NQ: u32 = 13u;
+// One lane per output slot, padded to 16 so the readback buffer is fully written
+// (never trust lazy init) and stays 64 bytes / 16-byte aligned.
+const LANES: u32 = 16u;
 
-const NQ_F: u32 = 15u;
+@group(0) @binding(0) var<storage, read> partials: array<f32>;
+@group(0) @binding(1) var<storage, read_write> totals: array<f32>;
 
-@compute @workgroup_size(NQ_F, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let q = gid.x;
-  if (q >= NQ_F) { return; }
-  let groups = arrayLength(&partials) / NQ_F;
+@compute @workgroup_size(LANES, 1, 1)
+fn main(@builtin(local_invocation_index) q: u32) {
+  if (q >= LANES) { return; }
+  if (q >= NQ) { totals[q] = 0.0; return; }
+
+  let groups = arrayLength(&partials) / NQ;
   var sum = 0.0;
   for (var g = 0u; g < groups; g = g + 1u) {
-    sum = sum + partials[g * NQ_F + q];
+    sum = sum + partials[g * NQ + q];
   }
   totals[q] = sum;
 }

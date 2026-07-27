@@ -29,9 +29,13 @@ import transferWgsl from './shaders/fluid/transfer_pigment.wgsl?raw';
 import capillaryWgsl from './shaders/fluid/capillary_flow.wgsl?raw';
 import dryWgsl from './shaders/fluid/dry_tick.wgsl?raw';
 import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
+import reduceFinalWgsl from './shaders/fluid/reduce_final.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
 
 const NQ = 13;                 // quantities per reduce workgroup
+// The second reduction stage writes this many lanes (NQ, padded). Keep in step
+// with LANES in reduce_final.wgsl — it is the size of every gauge readback.
+const TOTAL_LANES = 16;
 // Footprint segments per frame. The brush emits one per contacting bristle
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
@@ -134,11 +138,15 @@ export class FluidEngine {
   private ctlBuf: GPUBuffer;
   private mixBuf: GPUBuffer;
   private partialsBuf: GPUBuffer;
+  /** Stage-2 output: one row of NQ totals. This is the ONLY buffer the host
+   * copies from — 64 bytes a frame instead of the ~53 KB of raw partials. */
+  private totalsBuf: GPUBuffer;
   private readbackBuf: GPUBuffer;
   /** The measurement path gets its OWN partials buffer. Sharing one with the
    * per-frame readout let a sample overwrite the partials another read was
    * still copying, so a reading could blend two different frames. */
   private samplePartials: GPUBuffer;
+  private sampleTotals: GPUBuffer;
   /** Pause the per-frame readout while measuring, so nothing else is in flight. */
   pauseReadback = false;
 
@@ -204,13 +212,23 @@ export class FluidEngine {
       size: partialCount * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'partials',
     });
-    this.readbackBuf = device.createBuffer({
-      size: partialCount * 4,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'gauge-readback',
-    });
     this.samplePartials = device.createBuffer({
       size: partialCount * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'sample-partials',
+    });
+    // Stage 2 lands here, and only these 64 bytes ever cross to the host.
+    const totalBytes = TOTAL_LANES * 4;
+    this.totalsBuf = device.createBuffer({
+      size: totalBytes,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'totals',
+    });
+    this.sampleTotals = device.createBuffer({
+      size: totalBytes,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'sample-totals',
+    });
+    this.readbackBuf = device.createBuffer({
+      size: totalBytes,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'gauge-readback',
     });
 
     const mk = (src: string, label: string) => device.createComputePipeline({
@@ -231,6 +249,7 @@ export class FluidEngine {
     this.pipes.capillary = mk(capillaryWgsl, 'capillary_flow');
     this.pipes.dry = mk(dryWgsl, 'dry_tick');
     this.pipes.reduce = mk(reduceWgsl, 'reduce');
+    this.pipes.reduceFinal = mk(reduceFinalWgsl, 'reduce_final');
     this.pipes.zero = mk(zeroWgsl, 'zero_fill');
 
     this.writeParams();
@@ -375,11 +394,11 @@ export class FluidEngine {
     }
 
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
-    // Clear the ledger every frame, before anything reads it. flux_compute is
-    // supposed to write every cell, but the gauges say otherwise: with the flux
-    // group enabled a blank sheet grows water and pigment out of nothing, and
-    // with it disabled the sheet is exactly zero. Until that is understood, do
-    // not rely on full write coverage of a buffer two later passes read.
+    // Clear the ledger every frame, before anything reads it. Uninitialised, it
+    // seeded exactly 1.0 into cells on a blank sheet — two passes read what
+    // flux_compute writes, and betting on full write coverage of a buffer that
+    // large cost days. This is one of the two changes that closed the
+    // conservation fault; the sheet now measures flat. See docs/11.
     enc.clearBuffer(this.fluxBuf);
     const pass = enc.beginComputePass({ label: 'fluid' });
 
@@ -444,18 +463,12 @@ export class FluidEngine {
       this.wet0.flip(); this.wet5.flip();
     });
 
-    // 9 — gauges
-    const rg = Math.ceil(this.n / 16);
-    pass.setPipeline(this.pipes.reduce);
-    pass.setBindGroup(0, this.bind(this.pipes.reduce, [
-      U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
-      { buffer: this.partialsBuf },
-    ]));
-    pass.dispatchWorkgroups(rg, rg, 1);
+    // 9 — gauges, reduced all the way down on the GPU
+    this.recordGauge(pass, this.partialsBuf, this.totalsBuf);
     pass.end();
 
     if (!this.readbackBusy && !this.pauseReadback) {
-      enc.copyBufferToBuffer(this.partialsBuf, 0, this.readbackBuf, 0, this.readbackBuf.size);
+      enc.copyBufferToBuffer(this.totalsBuf, 0, this.readbackBuf, 0, this.readbackBuf.size);
     }
     device.queue.submit([enc.finish()]);
 
@@ -471,6 +484,28 @@ export class FluidEngine {
   }
 
   /**
+   * Record both reduction stages into an open compute pass: every cell -> one
+   * partial per workgroup -> one row of NQ totals. Dispatches inside a pass are
+   * ordered and synchronised, so stage 2 sees stage 1's writes.
+   */
+  private recordGauge(pass: GPUComputePassEncoder, partials: GPUBuffer, totals: GPUBuffer) {
+    const rg = Math.ceil(this.n / 16);
+    pass.setPipeline(this.pipes.reduce);
+    pass.setBindGroup(0, this.bind(this.pipes.reduce, [
+      { buffer: this.paramsBuf },
+      this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
+      { buffer: partials },
+    ]));
+    pass.dispatchWorkgroups(rg, rg, 1);
+
+    pass.setPipeline(this.pipes.reduceFinal);
+    pass.setBindGroup(0, this.bind(this.pipes.reduceFinal, [
+      { buffer: partials }, { buffer: totals },
+    ]));
+    pass.dispatchWorkgroups(1, 1, 1);
+  }
+
+  /**
    * Read the gauges NOW. `readings` is filled by a readback that skips frames
    * whenever a map is in flight, so it can describe a state many frames old —
    * fine for a HUD, useless for measurement, and it manufactured a whole
@@ -478,22 +513,15 @@ export class FluidEngine {
    */
   async sampleGauges(): Promise<Gauges> {
     const { device } = this.gpu;
-    const rg = Math.ceil(this.n / 16);
-    const bytes = this.samplePartials.size;
+    const bytes = this.sampleTotals.size;
     const rb = device.createBuffer({
       size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
     const enc = device.createCommandEncoder({ label: 'gauge-sample' });
     const pass = enc.beginComputePass();
-    pass.setPipeline(this.pipes.reduce);
-    pass.setBindGroup(0, this.bind(this.pipes.reduce, [
-      { buffer: this.paramsBuf },
-      this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
-      { buffer: this.samplePartials },
-    ]));
-    pass.dispatchWorkgroups(rg, rg, 1);
+    this.recordGauge(pass, this.samplePartials, this.sampleTotals);
     pass.end();
-    enc.copyBufferToBuffer(this.samplePartials, 0, rb, 0, bytes);
+    enc.copyBufferToBuffer(this.sampleTotals, 0, rb, 0, bytes);
     device.queue.submit([enc.finish()]);
     await rb.mapAsync(GPUMapMode.READ);
     const data = new Float32Array(rb.getMappedRange().slice(0));
@@ -541,12 +569,14 @@ export class FluidEngine {
     return out;
   }
 
-  /** Sum the per-workgroup partials into a reading. Pure; no side effects. */
+  /**
+   * Turn one row of GPU totals into a reading. Pure; no side effects.
+   * The summing now happens in reduce_final — this reads lane by lane, and must
+   * NOT re-fold the row, or the padding lanes would be counted as data.
+   */
   private summarise(data: Float32Array): Gauges {
     const q = new Float64Array(NQ);
-    for (let i = 0; i + NQ <= data.length; i += NQ) {
-      for (let k = 0; k < NQ; k++) q[k] += data[i + k];
-    }
+    for (let k = 0; k < NQ; k++) q[k] = data[k] ?? 0;
     const perSlot = Array.from({ length: 8 }, (_, k) => q[2 + k]);
     const wetCells = q[11];
     return {
