@@ -10,14 +10,16 @@ import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color
 import { PAPERS, type Paper } from '../substrate/papers';
 import { BRUSHES } from '../brush/library';
 import type { BrushDef } from '../brush/types';
+import { DRY_TOOLS } from '../media/library';
+import type { DryMedium } from '../media/types';
 
 export interface PaletteEvents {
   /** Fired whenever the active mix or loading changes. */
   onMixChange?(hex: string | null, recipe: Recipe, loading: number): void;
   /** Fired when the paper substrate changes. */
   onPaperChange?(paper: Paper): void;
-  /** Fired when the evaporation (drying) rate changes. */
-  onDryChange?(evapRate: number): void;
+  /** Fired when the evaporation rate changes. */
+  onEvapChange?(evapRate: number): void;
   /** Fired when the sheet should be wiped. */
   onClear?(): void;
   /** Rinse the brush: pigment out, clean water in. The sheet is untouched. */
@@ -26,6 +28,8 @@ export interface PaletteEvents {
   onRinseLoad?(): void;
   /** Fired when the brush or its size changes. */
   onBrushChange?(def: BrushDef, size: number): void;
+  /** Fired when a dry medium is picked (P7). */
+  onDryMedium?(medium: DryMedium, size: number): void;
 }
 
 export class Palette {
@@ -60,26 +64,62 @@ export class Palette {
   }
 
   private buildSurface() {
-    // Brush picker + size.
+    // The tool rack: wet brushes and dry media side by side. They are different
+    // engines underneath — a brush solves a tuft and pushes fluid, a pencil
+    // scrapes a tip across the tooth — but to the hand they are just tools, so
+    // they select the same way.
     const brushes = this.root.querySelector('#brushes')!;
+    const dries = this.root.querySelector('#dry-tools')!;
+    const clearAll = () => {
+      brushes.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
+      dries.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
+    };
+
     BRUSHES.forEach((b, i) => {
       const el = document.createElement('button');
       el.className = 'pal-btn paper' + (i === 0 ? ' on' : '');
       el.textContent = b.name.replace(' Sable', '');
       el.title = `${b.name} — ${b.kind === 'flat' ? 'two spines (spreads, scratches)' : 'one spine (points)'}`;
       el.addEventListener('click', () => {
-        brushes.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
+        clearAll();
         el.classList.add('on');
         this.brush = b;
+        this.root.classList.remove('dry-mode');
         this.events.onBrushChange?.(b, this.brushSize);
       });
       brushes.appendChild(el);
+    });
+
+    DRY_TOOLS.forEach((t) => {
+      const el = document.createElement('button');
+      el.className = 'pal-btn paper';
+      el.textContent = t.name;
+      el.title = t.medium.kind === 'ink'
+        ? 'Ballpoint — near-flat pressure response, consistent line, barely notices the paper'
+        : `Graphite ${t.name} — ${t.medium.hardness > 0
+            ? 'hard: lays little, catches only the peaks of the tooth'
+            : 'soft: lays heavily and fills the valleys'}`;
+      el.addEventListener('click', () => {
+        clearAll();
+        el.classList.add('on');
+        this.root.classList.add('dry-mode');
+        this.events.onDryMedium?.(t.medium, this.brushSize);
+      });
+      dries.appendChild(el);
     });
     const sizeEl = this.root.querySelector('#brush-size') as HTMLInputElement;
     sizeEl.value = String(this.brushSize);
     sizeEl.addEventListener('input', () => {
       this.brushSize = parseFloat(sizeEl.value);
-      this.events.onBrushChange?.(this.brush, this.brushSize);
+      // Size belongs to whichever tool is in hand — resizing a pencil must not
+      // silently put the brush back.
+      const dryOn = dries.querySelector('.paper.on');
+      if (dryOn) {
+        const t = DRY_TOOLS[Array.from(dries.children).indexOf(dryOn)];
+        this.events.onDryMedium?.(t.medium, this.brushSize);
+      } else {
+        this.events.onBrushChange?.(this.brush, this.brushSize);
+      }
     });
 
     const papers = this.root.querySelector('#papers')!;
@@ -104,7 +144,7 @@ export class Palette {
     const evap = this.root.querySelector('#evap') as HTMLInputElement;
     evap.value = '0';
     evap.addEventListener('input', () => {
-      this.events.onDryChange?.(parseFloat(evap.value));
+      this.events.onEvapChange?.(parseFloat(evap.value));
     });
 
     this.root.querySelector('#wash-clear')!
@@ -161,6 +201,8 @@ export class Palette {
       <div class="surface">
         <div class="pal-sub">brush</div>
         <div id="brushes" class="papers"></div>
+        <div class="pal-sub">dry media</div>
+        <div id="dry-tools" class="papers six"></div>
         <label class="loading-row">
           <span>size</span>
           <input id="brush-size" type="range" min="0.4" max="2.4" step="0.05" />

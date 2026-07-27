@@ -43,6 +43,8 @@ export class CanvasEngine {
   // Active slot -> library id map (up to 8), shared by fluid and composite.
   private slotIds = new Int32Array(8).fill(-1);
   private mixWeights_: Float32Array<ArrayBuffer> = new Float32Array(8);
+  /** What the current dry medium lays, in the same slot space (P7). */
+  private dryWeights_: Float32Array<ArrayBuffer> = new Float32Array(8);
   private thickScale = 5.0;
   private kInstrument = 1.0;
   private reliefStrength = 2.2;
@@ -103,6 +105,7 @@ export class CanvasEngine {
     this.fluid.clear();
     this.slotIds.fill(-1);
     this.mixWeights_.fill(0);
+    this.dryWeights_.fill(0);
   }
 
   /** Regenerate the paper substrate for a chosen sheet. */
@@ -118,6 +121,10 @@ export class CanvasEngine {
     pass.dispatchWorkgroups(Math.ceil(SIM / 8), Math.ceil(SIM / 8));
     pass.end();
     this.gpu.device.queue.submit([enc.finish()]);
+
+    // Dry media gate against the sheet's own tooth range, so they need to know
+    // how rough it is, not just how high each point is (see dry_deposit.wgsl).
+    this.fluid.setParams({ toothAmp: p.toothAmp });
   }
 
   /**
@@ -130,20 +137,40 @@ export class CanvasEngine {
    * slot 0". Once a pigment owns a slot it keeps it for the life of the document.
    */
   setMix(recipe: Recipe) {
-    this.mixWeights_.fill(0);
+    this.resolve(recipe, this.mixWeights_);
+    this.fluid.setSlots(Array.from(this.slotIds));
+  }
+
+  /**
+   * The pigment a dry medium lays (P7). Kept apart from the palette mix so a
+   * pencil and the paint on the brush can coexist: switching tools must not
+   * silently redefine what the brush is loaded with. Both share the one slot
+   * map, which is correct — a document has a single map of what its slots mean.
+   */
+  setDryMix(recipe: Recipe) {
+    this.resolve(recipe, this.dryWeights_);
+    this.fluid.setSlots(Array.from(this.slotIds));
+  }
+
+  /** Normalise a recipe into slot weights, claiming slots as needed. */
+  private resolve(recipe: Recipe, out: Float32Array) {
+    out.fill(0);
     let total = 0;
     for (const v of recipe.values()) total += Math.max(0, v);
-    if (total <= 0) { return; }
-
+    if (total <= 0) return;
     for (const [slug, parts] of recipe) {
       if (parts <= 0) continue;
       const id = SLUG_TO_ID.get(slug);
       if (id === undefined) continue;
       const slot = this.slotFor(id);
       if (slot < 0) continue;             // palette full; see the note below
-      this.mixWeights_[slot] = parts / total;
+      out[slot] = parts / total;
     }
-    this.fluid.setSlots(Array.from(this.slotIds));
+  }
+
+  /** Lay dry media. No fluid pass runs; this goes straight to the dry floor. */
+  depositDry(segments: Float32Array<ArrayBuffer>, segCount: number) {
+    this.fluid.depositDry(segments, segCount, this.dryWeights_);
   }
 
   /**

@@ -14,6 +14,8 @@ import type { StylusSample } from './pointer';
 import { MAX_SEGS, SEG_FLOATS } from '../engine/fluid';
 import { Brush } from '../brush/brush';
 import type { BrushDef, BrushInput } from '../brush/types';
+import { DryTool } from '../media/dry-tool';
+import type { DryMedium } from '../media/types';
 
 /** Frame footprint capacity. Larger than one GPU chunk — the fluid engine
  * dispatches it in chunks, so a fast flick is not truncated. */
@@ -22,6 +24,12 @@ const FRAME_SEGS = MAX_SEGS * 6;
 export class StrokeEngine {
   private buf: Float32Array<ArrayBuffer> = new Float32Array(FRAME_SEGS * SEG_FLOATS);
   private count = 0;
+  /** Dry media get their own footprint buffer, because the two go to different
+   * GPU passes: wet through the fluid band, dry straight to the floor (P7). */
+  private dryBuf: Float32Array<ArrayBuffer> = new Float32Array(FRAME_SEGS * SEG_FLOATS);
+  private dryCount = 0;
+  /** Null while a wet tool is selected. */
+  private dry: DryTool | null = null;
   private last: { x: number; y: number; s: StylusSample } | null = null;
   private brush: Brush;
   private size: number;
@@ -41,9 +49,19 @@ export class StrokeEngine {
 
   setBrush(def: BrushDef, size = this.size) {
     this.size = size;
+    this.dry = null;                       // back to a wet tool
     this.brush = new Brush(def, size);
     this.brush.reservoir.charge(this.mix, this.loading);
   }
+
+  /** Switch to a dry medium (P7). The brush is left as it was, loaded, so
+   * picking the pencil up and putting it down again does not lose the paint. */
+  setDryMedium(m: DryMedium, size = this.size) {
+    this.size = size;
+    this.dry = new DryTool(m, size);
+  }
+
+  get isDry(): boolean { return this.dry !== null; }
 
   /** Dip the brush. Called when the mix or load changes, and at stroke start. */
   charge(mix: Float32Array, loading: number) {
@@ -63,6 +81,12 @@ export class StrokeEngine {
   }
 
   begin(gx: number, gy: number, s: StylusSample) {
+    if (this.dry) {
+      // Nothing to charge — a pencil does not run out mid-line.
+      this.dry.begin();
+      this.last = { x: gx, y: gy, s };
+      return;
+    }
     // A fresh dip each stroke: the brush goes back to the palette between
     // strokes, and within a stroke it runs down. That depletion is what makes a
     // long stroke fade rather than run forever.
@@ -72,7 +96,8 @@ export class StrokeEngine {
   }
 
   end() {
-    this.brush.end();
+    if (this.dry) this.dry.end();
+    else this.brush.end();
     this.last = null;
   }
 
@@ -112,7 +137,19 @@ export class StrokeEngine {
         tiltAzimuth: s.tiltAzimuth,
         twist: s.twist,
       };
-      this.brush.solve(this.toInput(x, y, interp, dx / steps, dy / steps));
+      const input = this.toInput(x, y, interp, dx / steps, dy / steps);
+      if (this.dry) {
+        // One contact per resampled step, spanning from the previous one. A dry
+        // tip has no bristles to smear across the gap, so the segment IS the
+        // mark — emit a point and a fast stroke becomes a dotted line.
+        const tPrev = (i - 1) / steps;
+        const prev = { x: from.x + dx * tPrev, y: from.y + dy * tPrev };
+        if (this.dryCount < FRAME_SEGS) {
+          this.dryCount = this.dry.emit(this.dryBuf, this.dryCount, FRAME_SEGS, prev, input);
+        }
+        continue;
+      }
+      this.brush.solve(input);
       if (this.count < FRAME_SEGS) {
         this.count = this.brush.emitFootprint(this.buf, this.count, FRAME_SEGS);
       }
@@ -125,5 +162,12 @@ export class StrokeEngine {
     const count = this.count;
     this.count = 0;
     return { data: this.buf, count };
+  }
+
+  /** Same, for the dry-media channel (P7). */
+  drainDry(): { data: Float32Array<ArrayBuffer>; count: number } {
+    const count = this.dryCount;
+    this.dryCount = 0;
+    return { data: this.dryBuf, count };
   }
 }

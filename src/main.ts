@@ -42,11 +42,17 @@ async function main() {
       stroke.charge(engine.mixWeights, loading);
     },
     onPaperChange(paper) { engine.setPaper(paper); },
-    onDryChange(evapRate) { engine.setFluid({ evapRate }); },
+    onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
     onClear() { engine.clear(); },
     onBrushChange(def, size) {
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading);
+    },
+    // A dry medium carries its own pigment — a pencil is graphite whatever is
+    // on the palette — so it sets its own slot weights and leaves the mix alone.
+    onDryMedium(medium, size) {
+      stroke.setDryMedium(medium, size);
+      engine.setDryMix(new Map(medium.pigments));
     },
     // Rinse: pigment out, clean water in. The brush stays loaded — it is now a
     // water brush, which is what you wet paper with. The sheet is untouched.
@@ -106,6 +112,11 @@ async function main() {
   let gaugeTick = 0;
   function frame() {
     resizeToDisplay(gpu);
+    // Dry media first: they deposit straight onto the floor and never enter the
+    // fluid band, so a pencil line laid this frame is already under any wash
+    // the same frame moves.
+    const dry = stroke.drainDry();
+    if (dry.count > 0) engine.depositDry(dry.data, dry.count);
     const { data, count } = stroke.drain();
     engine.step(data, count);
     engine.render();

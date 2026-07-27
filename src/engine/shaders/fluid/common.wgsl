@@ -7,7 +7,9 @@ struct Params {
   grid: u32,
   frame: u32,
   relaxIters: u32,
-  _p0: u32,
+  /** The active sheet's peak-to-valley tooth amplitude, 0..1. Dry media need
+   * it to tell "smooth" from "rough" — see dry_deposit.wgsl. */
+  toothAmp: f32,
 
   dt: f32,
   viscosity: f32,   // C97 mu

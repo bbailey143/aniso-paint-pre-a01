@@ -32,6 +32,7 @@ import bakePushWgsl from './shaders/fluid/bake_push.wgsl?raw';
 import dryStoreWgsl from './shaders/fluid/dry_store.wgsl?raw';
 import wetClearWgsl from './shaders/fluid/wet_clear.wgsl?raw';
 import rewetWgsl from './shaders/fluid/rewet.wgsl?raw';
+import dryDepositWgsl from './shaders/fluid/dry_deposit.wgsl?raw';
 import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
 import reduceFinalWgsl from './shaders/fluid/reduce_final.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
@@ -59,6 +60,9 @@ export interface FluidParams {
   cosAlpha: number;
   edgeEta: number;
   paperInfluence: number;
+  /** The active sheet's tooth amplitude. Set by the canvas from the paper row;
+   * dry media read it to tell a smooth sheet from a rough one. */
+  toothAmp: number;
   /** Fraction of the newest dry layer returning to suspension per unit time. */
   rewetRate: number;
   /**
@@ -81,6 +85,7 @@ export const DEFAULT_FLUID: FluidParams = {
   cosAlpha: 1.0,
   edgeEta: 0.03,
   paperInfluence: 0.10,
+  toothAmp: 0.45,          // cold press, the default sheet
   // Watercolour is reactivatable — this is what makes a dried wash come back.
   rewetRate: 0.10,
   handoffEnabled: true,
@@ -286,6 +291,7 @@ export class FluidEngine {
     this.pipes.dryStore = mk(dryStoreWgsl, 'dry_store');
     this.pipes.wetClear = mk(wetClearWgsl, 'wet_clear');
     this.pipes.rewet = mk(rewetWgsl, 'rewet');
+    this.pipes.dryDeposit = mk(dryDepositWgsl, 'dry_deposit');
     this.pipes.reduce = mk(reduceWgsl, 'reduce');
     this.pipes.reduceFinal = mk(reduceFinalWgsl, 'reduce_final');
     this.pipes.zero = mk(zeroWgsl, 'zero_fill');
@@ -324,7 +330,7 @@ export class FluidEngine {
     dv.setUint32(0, this.n, true);
     dv.setUint32(4, this.frame, true);
     dv.setUint32(8, this.relaxIters, true);
-    dv.setUint32(12, 0, true);
+    dv.setFloat32(12, p.toothAmp, true);
     dv.setFloat32(16, p.dt, true);
     dv.setFloat32(20, p.viscosity, true);
     dv.setFloat32(24, p.drag, true);
@@ -383,6 +389,57 @@ export class FluidEngine {
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
+  /** Bounding box of a run of segments, padded by each one's radius. */
+  private segBounds(segments: Float32Array, from: number, n: number) {
+    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    for (let i = 0; i < n; i++) {
+      const o = (from + i) * SEG_FLOATS;
+      const r = segments[o + 4] + 1;
+      minX = Math.min(minX, segments[o] - r, segments[o + 2] - r);
+      maxX = Math.max(maxX, segments[o] + r, segments[o + 2] + r);
+      minY = Math.min(minY, segments[o + 1] - r, segments[o + 3] - r);
+      maxY = Math.max(maxY, segments[o + 1] + r, segments[o + 3] + r);
+    }
+    return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0]);
+  }
+
+  /**
+   * Lay dry media (P7) — graphite, ballpoint, and future rows on `DryMedium`.
+   *
+   * Deliberately NOT part of `step()`: no fluid pass runs for a dry medium, so
+   * this deposits into the permanent dry floor and returns. Call it whether or
+   * not the fluid is also stepping — a pencil line over a wet wash is two
+   * independent things happening on the same sheet, which is what it is in life.
+   */
+  depositDry(segments: Float32Array<ArrayBuffer>, segCount: number,
+             mixWeights: Float32Array<ArrayBuffer>) {
+    if (segCount <= 0) return;
+    const { device } = this.gpu;
+    device.queue.writeBuffer(this.mixBuf, 0, mixWeights);
+
+    // Chunked and submitted per chunk for the same reason the wet deposit is:
+    // writeBuffer runs on the queue timeline, so recording several chunks into
+    // one encoder leaves every dispatch reading the LAST write.
+    for (let done = 0; done < segCount; done += MAX_SEGS) {
+      const n = Math.min(segCount - done, MAX_SEGS);
+      device.queue.writeBuffer(
+        this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
+      device.queue.writeBuffer(this.ctlBuf, 0, this.segBounds(segments, done, n));
+
+      const enc = device.createCommandEncoder({ label: 'dry-deposit' });
+      const pass = enc.beginComputePass();
+      this.dispatch(pass, this.pipes.dryDeposit, [
+        { buffer: this.paramsBuf }, { buffer: this.segBuf },
+        { buffer: this.ctlBuf }, { buffer: this.mixBuf },
+        this.dry2a.src, this.dry2b.src, this.paper,
+        this.dry2a.dst, this.dry2b.dst,
+      ]);
+      pass.end();
+      device.queue.submit([enc.finish()]);
+      this.dry2a.flip(); this.dry2b.flip();
+    }
+  }
+
   /**
    * Advance one frame. `segments` are resampled stroke pieces in grid space —
    * the host must space them <= 1 cell apart (Card 6; otherwise strokes bead).
@@ -409,18 +466,7 @@ export class FluidEngine {
       const n = Math.min(total - done, MAX_SEGS);
       device.queue.writeBuffer(
         this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
-
-      let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-      for (let i = 0; i < n; i++) {
-        const o = (done + i) * SEG_FLOATS;
-        const r = segments[o + 4] + 1;
-        minX = Math.min(minX, segments[o] - r, segments[o + 2] - r);
-        maxX = Math.max(maxX, segments[o] + r, segments[o + 2] + r);
-        minY = Math.min(minY, segments[o + 1] - r, segments[o + 3] - r);
-        maxY = Math.max(maxY, segments[o + 1] + r, segments[o + 3] + r);
-      }
-      device.queue.writeBuffer(this.ctlBuf, 0,
-        new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0]));
+      device.queue.writeBuffer(this.ctlBuf, 0, this.segBounds(segments, done, n));
 
       const denc = device.createCommandEncoder({ label: 'deposit-chunk' });
       const dpass = denc.beginComputePass();
