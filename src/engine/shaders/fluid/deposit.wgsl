@@ -14,7 +14,7 @@ struct Seg {
   radius: f32,      // contact radius in cells
   water: f32,       // water deposited at the centreline
   pigment: f32,     // pigment deposited at the centreline
-  _pad: f32,
+  reach: f32,       // 0..1 how deep into the paper's tooth this hair reaches
 };
 
 struct Ctl {
@@ -43,6 +43,7 @@ struct Ctl {
 @group(0) @binding(9) var wet1_out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(10) var wet2_out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(11) var wet5_out: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(12) var paper: texture_2d<f32>;
 
 // Distance from point p to segment ab.
 fn segDist(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -72,6 +73,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var water = 0.0;
     var pig = 0.0;
 
+    // Drybrush / scumbling. A hair pressed lightly only skims the peaks of the
+    // paper; only when it is driven deeper does it reach into the valleys. So
+    // deposition is gated on the paper's own height field against how far this
+    // hair reaches, which is what breaks a fast or light stroke into a ragged
+    // broken mark on rough paper and lets a slow firm one lay solid. [C97 4.7]
+    let toothH = textureLoad(paper, c, 0).x;
+
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
       let d = segDist(pos, s.a, s.b);
@@ -80,8 +88,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // relaxation then has to chase.
         let fall = 1.0 - d / s.radius;
         let f = fall * fall;
-        water = water + f * s.water;
-        pig = pig + f * s.pigment;
+        // Peaks-first contact. A C1 ramp, not a hard cut, or the mark stipples.
+        let need = 1.0 - clamp(s.reach, 0.0, 1.0);
+        let gate = smoothstep(need - 0.18, need + 0.18, toothH);
+        let take = f * gate;
+        water = water + take * s.water;
+        pig = pig + take * s.pigment;
       }
     }
 

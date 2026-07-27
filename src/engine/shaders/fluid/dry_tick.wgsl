@@ -33,6 +33,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var m = w0.x;
   if (hf <= WET_EPS && s <= WET_EPS && w <= 0.0) { m = 0.0; }
 
+  // Flag the wet -> dry TRANSITION for this frame only. The handoff passes that
+  // follow move the cell's pigment down into the dry layers, and they must fire
+  // exactly once: firing again would push an already-empty dry1 into dry2 and
+  // destroy the layer. Flagging the edge (was wet, now dry) is self-clearing,
+  // because the next frame the cell is already dry and takes the other branch.
+  var justDried = 0.0;
+  if (w0.x >= 0.5 && m < 0.5) { justDried = 1.0; }
+
   textureStore(wet0_out, c, vec4<f32>(m, hf, w0.z, w0.w));
-  textureStore(wet5_out, c, vec4<f32>(s, w, w5.z, w5.w));
+  textureStore(wet5_out, c, vec4<f32>(s, w, w5.z, justDried));
 }

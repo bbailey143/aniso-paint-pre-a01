@@ -168,7 +168,10 @@ export class Brush {
             buf[o + 4] = hairR;
             buf[o + 5] = w;
             buf[o + 6] = pig;
-            buf[o + 7] = 0;
+            // How deep this hair reaches into the paper's tooth. A hair barely
+            // in the slab only skims the peaks (drybrush); one driven well below
+            // the surface reaches the valleys and lays a solid mark.
+            buf[o + 7] = press;
             count++;
           }
         }

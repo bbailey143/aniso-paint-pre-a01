@@ -28,10 +28,14 @@ import fluxWaterWgsl from './shaders/fluid/flux_apply_water.wgsl?raw';
 import transferWgsl from './shaders/fluid/transfer_pigment.wgsl?raw';
 import capillaryWgsl from './shaders/fluid/capillary_flow.wgsl?raw';
 import dryWgsl from './shaders/fluid/dry_tick.wgsl?raw';
+import bakePushWgsl from './shaders/fluid/bake_push.wgsl?raw';
+import dryStoreWgsl from './shaders/fluid/dry_store.wgsl?raw';
+import wetClearWgsl from './shaders/fluid/wet_clear.wgsl?raw';
+import rewetWgsl from './shaders/fluid/rewet.wgsl?raw';
 import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
 
-const NQ = 13;                 // quantities per reduce workgroup
+const NQ = 15;               // quantities per reduce workgroup (see reduce.wgsl)
 // Footprint segments per frame. The brush emits one per contacting bristle
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
@@ -48,6 +52,22 @@ export interface FluidParams {
   cosAlpha: number;
   edgeEta: number;
   paperInfluence: number;
+  /** Fraction of the newest dry layer returning to suspension per unit time. */
+  rewetRate: number;
+  /**
+   * Wet -> dry pigment handoff (and therefore glazing and re-wetting).
+   *
+   * `[OFF — UNRESOLVED FAULT, P6]` The three-step handoff CREATES pigment: a
+   * stroke left to dry gains 52-94% of its pigment, reproducibly, in whole-number
+   * amounts (so whole cells reaching exactly 1.0). Isolated to the handoff, not
+   * evaporation — drying via dryRate alone with evapRate = 0 shows the same gain.
+   * Ruled out: binding order (checked pass by pass), pass order, ping-pong parity,
+   * clear() (verified it zeroes: 229 -> 0), and the flux ledger (separately
+   * fixed). Root cause not found, so it stays off rather than silently
+   * multiplying paint. With it off the wet band conserves exactly and a wash
+   * still dries visually; what is missing is glazing over dry paint and re-wetting.
+   */
+  handoffEnabled: boolean;
 }
 
 export const DEFAULT_FLUID: FluidParams = {
@@ -61,6 +81,9 @@ export const DEFAULT_FLUID: FluidParams = {
   cosAlpha: 1.0,
   edgeEta: 0.03,
   paperInfluence: 0.10,
+  // Watercolour is reactivatable — this is what makes a dried wash come back.
+  rewetRate: 0.10,
+  handoffEnabled: false,
 };
 
 export interface Gauges {
@@ -72,6 +95,10 @@ export interface Gauges {
   wetCells: number;
   meanDivergence: number;
   relaxIters: number;
+  /** Pigment still in the wet band (suspended + settled). */
+  wetPigment: number;
+  /** Pigment in the dry layers. wetPigment + dryPigment must equal pigment. */
+  dryPigment: number;
 }
 
 // [MEASURED — the gauges caught this, and it changes D6 for the wet band]
@@ -126,6 +153,12 @@ export class FluidEngine {
   private wet4: PingPong;
   private wet5: PingPong;
   private press: PingPong;
+  // Dry bands. dry1 is the newest dried application and stays re-wettable;
+  // dry2 accumulates everything older (the auto-bake).
+  private dry1a: PingPong;
+  private dry1b: PingPong;
+  private dry2a: PingPong;
+  private dry2b: PingPong;
 
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
@@ -148,7 +181,7 @@ export class FluidEngine {
   private slotIds: number[] = [];
   private gauges: Gauges = {
     water: 0, film: 0, saturation: 0, pigment: 0, perSlot: new Array(8).fill(0),
-    wetCells: 0, meanDivergence: 0, relaxIters: 8,
+    wetCells: 0, meanDivergence: 0, relaxIters: 8, wetPigment: 0, dryPigment: 0,
   };
   private readbackBusy = false;
   private frame = 0;
@@ -166,6 +199,10 @@ export class FluidEngine {
     this.wet4 = new PingPong(device, n, 'wet4');
     this.wet5 = new PingPong(device, n, 'wet5');
     this.press = new PingPong(device, n, 'press');
+    this.dry1a = new PingPong(device, n, 'dry1a');
+    this.dry1b = new PingPong(device, n, 'dry1b');
+    this.dry2a = new PingPong(device, n, 'dry2a');
+    this.dry2b = new PingPong(device, n, 'dry2b');
 
     // Params: 16 scalars (4 vec4 worth) + 8 vec4 pigment rows = 192 bytes.
     this.paramsBuf = device.createBuffer({
@@ -174,7 +211,10 @@ export class FluidEngine {
     });
     this.fluxBuf = device.createBuffer({
       size: n * n * 4 * 4,
-      usage: GPUBufferUsage.STORAGE, label: 'flux',
+      // COPY_DST so it can be explicitly cleared. The flux ledger is written by
+      // flux_compute and read by two passes after it; anything it does not write
+      // is read as whatever was in that memory. Never bet on lazy init.
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'flux',
     });
     this.segBuf = device.createBuffer({
       size: MAX_SEGS * SEG_FLOATS * 4,
@@ -215,6 +255,10 @@ export class FluidEngine {
     this.pipes.transfer = mk(transferWgsl, 'transfer_pigment');
     this.pipes.capillary = mk(capillaryWgsl, 'capillary_flow');
     this.pipes.dry = mk(dryWgsl, 'dry_tick');
+    this.pipes.bakePush = mk(bakePushWgsl, 'bake_push');
+    this.pipes.dryStore = mk(dryStoreWgsl, 'dry_store');
+    this.pipes.wetClear = mk(wetClearWgsl, 'wet_clear');
+    this.pipes.rewet = mk(rewetWgsl, 'rewet');
     this.pipes.reduce = mk(reduceWgsl, 'reduce');
     this.pipes.zero = mk(zeroWgsl, 'zero_fill');
 
@@ -227,6 +271,8 @@ export class FluidEngine {
     return {
       wet0: this.wet0.src, wet1: this.wet1.src, wet2: this.wet2.src,
       wet3: this.wet3.src, wet4: this.wet4.src, wet5: this.wet5.src,
+      dry1a: this.dry1a.src, dry1b: this.dry1b.src,
+      dry2a: this.dry2a.src, dry2b: this.dry2b.src,
     };
   }
 
@@ -262,7 +308,7 @@ export class FluidEngine {
     dv.setFloat32(48, p.edgeEta, true);
     dv.setFloat32(52, p.paperInfluence, true);
     dv.setFloat32(56, this.frame / 60, true);
-    dv.setFloat32(60, 0, true);
+    dv.setFloat32(60, p.rewetRate, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
@@ -283,7 +329,50 @@ export class FluidEngine {
     });
   }
 
-  private dispatch(pass: GPUComputePassEncoder, pipe: GPUComputePipeline, res: GPUBindingResource[]) {
+  /** Debug: pass names in here are skipped. Used to bisect conservation faults. */
+  readonly skip = new Set<string>();
+
+  /**
+   * Read the gauges synchronously-ish: run the reduction over the CURRENT state,
+   * copy it, and await the map. Returns fresh numbers.
+   *
+   * The per-frame readout deliberately drops frames (only one map may be in
+   * flight), so `readings` can lag by an unbounded number of frames — fine for a
+   * HUD, useless for measurement. Sampling a stale gauge as a baseline manufactures
+   * drift that isn't there: it cost a full bisect here before the "leak" turned
+   * out to be the instrument. Anything that interprets conservation must use this.
+   */
+  async sampleGauges(): Promise<Gauges> {
+    const { device } = this.gpu;
+    const rg = Math.ceil(this.n / 16);
+    const bytes = this.partialsBuf.size;
+    const rb = device.createBuffer({
+      size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = device.createCommandEncoder({ label: 'gauge-sample' });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(this.pipes.reduce);
+    pass.setBindGroup(0, this.bind(this.pipes.reduce, [
+      { buffer: this.paramsBuf },
+      this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
+      { buffer: this.partialsBuf },
+      this.dry1a.src, this.dry1b.src, this.dry2a.src, this.dry2b.src,
+    ]));
+    pass.dispatchWorkgroups(rg, rg, 1);
+    pass.end();
+    enc.copyBufferToBuffer(this.partialsBuf, 0, rb, 0, bytes);
+    device.queue.submit([enc.finish()]);
+
+    await rb.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(rb.getMappedRange().slice(0));
+    rb.unmap();
+    rb.destroy();
+    return this.summarise(data);
+  }
+
+  private dispatch(pass: GPUComputePassEncoder, pipe: GPUComputePipeline, res: GPUBindingResource[],
+                   name?: string) {
+    if (name && this.skip.has(name)) return;
     const g = Math.ceil(this.n / 8);
     pass.setPipeline(pipe);
     pass.setBindGroup(0, this.bind(pipe, res));
@@ -294,13 +383,15 @@ export class FluidEngine {
   clear() {
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass({ label: 'zero' });
-    const all = [this.wet0, this.wet1, this.wet2, this.wet3, this.wet4, this.wet5, this.press];
+    const all = [this.wet0, this.wet1, this.wet2, this.wet3, this.wet4, this.wet5, this.press,
+                 this.dry1a, this.dry1b, this.dry2a, this.dry2b];
     for (const pp of all) {
       for (const v of pp.view) {
         this.dispatch(pass, this.pipes.zero, [{ buffer: this.paramsBuf }, v]);
       }
     }
     pass.end();
+    enc.clearBuffer(this.fluxBuf);
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
@@ -349,6 +440,7 @@ export class FluidEngine {
         U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
+        this.paper,
       ]);
       dpass.end();
       device.queue.submit([denc.finish()]);
@@ -358,53 +450,106 @@ export class FluidEngine {
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
     const pass = enc.beginComputePass({ label: 'fluid' });
 
+    const run = (name: string, fn: () => void) => { if (!this.skip.has(name)) fn(); };
+
     // 2 — UpdateVelocities
-    this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);
-    this.wet0.flip();
+    run('vel', () => {
+      this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);
+      this.wet0.flip();
+    });
 
     // 3 — RelaxDivergence, N iterations
-    for (let i = 0; i < this.relaxIters; i++) {
-      this.dispatch(pass, this.pipes.relax, [U, this.wet0.src, this.wet0.dst]);
-      this.wet0.flip();
-    }
+    run('relax', () => {
+      for (let i = 0; i < this.relaxIters; i++) {
+        this.dispatch(pass, this.pipes.relax, [U, this.wet0.src, this.wet0.dst]);
+        this.wet0.flip();
+      }
+    });
 
     // 4 — FlowOutward (edge darkening bias into its own scratch field)
-    this.dispatch(pass, this.pipes.outward, [U, this.wet0.src, this.press.dst]);
-    this.press.flip();
+    run('outward', () => {
+      this.dispatch(pass, this.pipes.outward, [U, this.wet0.src, this.press.dst]);
+      this.press.flip();
+    });
 
     // 5 — flux ledger, then pigment BEFORE water (denominator order matters)
-    this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
-    this.dispatch(pass, this.pipes.fluxPig, [
-      U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
-      this.wet1.dst, this.wet2.dst,
-    ]);
-    this.wet1.flip(); this.wet2.flip();
-    this.dispatch(pass, this.pipes.fluxWater, [U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst]);
-    this.wet0.flip();
+    run('flux', () => {
+      this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
+      this.dispatch(pass, this.pipes.fluxPig, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
+        this.wet1.dst, this.wet2.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip();
+      this.dispatch(pass, this.pipes.fluxWater, [U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst]);
+      this.wet0.flip();
+    });
 
     // 6 — TransferPigment (g <-> d): granulation and lifting
-    this.dispatch(pass, this.pipes.transfer, [
-      U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.paper,
-      this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
-    ]);
-    this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    run('transfer', () => {
+      this.dispatch(pass, this.pipes.transfer, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.paper,
+        this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    });
 
     // 7 — CapillaryFlow (absorption + creep; backruns)
-    this.dispatch(pass, this.pipes.capillary, [
-      U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst, this.wet5.dst,
-    ]);
-    this.wet0.flip(); this.wet5.flip();
+    run('capillary', () => {
+      this.dispatch(pass, this.pipes.capillary, [
+        U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst, this.wet5.dst,
+      ]);
+      this.wet0.flip(); this.wet5.flip();
+    });
 
-    // 8 — DryTick (the only pass that removes water)
-    this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
-    this.wet0.flip(); this.wet5.flip();
+    // 8 — ReWet. Water reaching a dried layer brings its pigment back into
+    // suspension. Runs before DryTick so freshly re-wetted paint gets a frame of
+    // fluid life rather than being immediately re-dried.
+    run('rewet', () => {
+      this.dispatch(pass, this.pipes.rewet, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, this.dry1a.src, this.dry1b.src,
+        this.wet1.dst, this.wet2.dst, this.dry1a.dst, this.dry1b.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.dry1a.flip(); this.dry1b.flip();
+    });
 
-    // 9 — gauges
+    // 9 — DryTick (the only pass that removes water). Flags cells that just dried.
+    run('dry', () => {
+      this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
+      this.wet0.flip(); this.wet5.flip();
+    });
+
+    // 10 — the drying handoff, in three steps because WebGPU core allows only
+    // four storage textures per stage and the whole move writes ten. Order
+    // matters: push dry1 down BEFORE overwriting it, and clear the wet band last
+    // so the pigment is moved rather than duplicated.
+    run('handoff', () => {
+      if (!this.params.handoffEnabled) return;
+      this.dispatch(pass, this.pipes.bakePush, [
+        U, this.wet5.src, this.dry1a.src, this.dry1b.src, this.dry2a.src, this.dry2b.src,
+        this.dry2a.dst, this.dry2b.dst,
+      ]);
+      this.dry2a.flip(); this.dry2b.flip();
+
+      this.dispatch(pass, this.pipes.dryStore, [
+        U, this.wet5.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src,
+        this.dry1a.src, this.dry1b.src, this.dry1a.dst, this.dry1b.dst,
+      ]);
+      this.dry1a.flip(); this.dry1b.flip();
+
+      this.dispatch(pass, this.pipes.wetClear, [
+        U, this.wet5.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src,
+        this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    });
+
+    // 11 — gauges
     const rg = Math.ceil(this.n / 16);
     pass.setPipeline(this.pipes.reduce);
     pass.setBindGroup(0, this.bind(this.pipes.reduce, [
       U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
       { buffer: this.partialsBuf },
+      this.dry1a.src, this.dry1b.src, this.dry2a.src, this.dry2b.src,
     ]));
     pass.dispatchWorkgroups(rg, rg, 1);
     pass.end();
@@ -425,26 +570,32 @@ export class FluidEngine {
     }
   }
 
-  /** Sum the per-workgroup partials on the CPU and update the adaptive count. */
-  private accumulate(data: Float32Array) {
+  /** Sum the per-workgroup partials into a reading. Pure; no side effects. */
+  private summarise(data: Float32Array): Gauges {
     const q = new Float64Array(NQ);
     for (let i = 0; i + NQ <= data.length; i += NQ) {
       for (let k = 0; k < NQ; k++) q[k] += data[i + k];
     }
     const perSlot = Array.from({ length: 8 }, (_, k) => q[2 + k]);
     const wetCells = q[11];
-    const meanDiv = wetCells > 0 ? q[12] / wetCells : 0;
-
-    this.gauges = {
+    return {
       film: q[0],
       saturation: q[1],
       water: q[0] + q[1],
       pigment: perSlot.reduce((a, b) => a + b, 0),
       perSlot,
       wetCells,
-      meanDivergence: meanDiv,
+      meanDivergence: wetCells > 0 ? q[12] / wetCells : 0,
       relaxIters: this.relaxIters,
+      wetPigment: q[13],
+      dryPigment: q[14],
     };
+  }
+
+  /** Per-frame path: update the HUD reading and re-size the relaxation count. */
+  private accumulate(data: Float32Array) {
+    this.gauges = this.summarise(data);
+    const meanDiv = this.gauges.meanDivergence;
 
     // Size next frame's relaxation from this frame's residual. The field is
     // continuous between frames, so a one-frame lag costs nothing — and unlike a
