@@ -69,33 +69,55 @@ Rebelle developer's actual method — being an artist is the advantage here, not
 
 ## P7 — dry media, measured
 
-Reproduced twice, identical to three decimals. `cov` is the fraction of the line
-that is continuous; `mean` is pigment laid per cell. Pressure 0.7 throughout, so
-the only variables are speed, grade, and sheet.
+`cov` is the fraction of the line that is continuous; `mean` is pigment laid per
+cell. Pressure 0.7 throughout, so the only variables are speed, grade, and sheet.
+
+**Measure DIAGONAL strokes.** The first version of this table was taken on
+horizontal ones, which sit squarely on the cell rows and hid a 99 % beading
+artefact that was plainly visible on screen. A horizontal acceptance stroke
+proves almost nothing about rasterisation.
 
 | stroke | rough `cov` / `mean` | hot press `cov` / `mean` |
 |---|---|---|
-| HB, slow | 62 % / 0.086 | 100 % / 0.189 |
-| HB, **fast** | **36 %** / 0.025 | 100 % / 0.121 |
-| 6B, slow | 88 % / 0.302 | 100 % / 0.457 |
-| 6B, fast | 83 % / 0.186 | 100 % / 0.311 |
-| 4H, slow | **7 %** / 0.004 | 100 % / 0.065 |
-| ballpoint, fast | 100 % / 0.221 | 100 % / 0.230 |
+| HB, slow | 78 % / 0.136 | 100 % / 0.286 |
+| HB, **fast** | **49 %** / 0.047 | 100 % / 0.166 |
+| 6B, slow | 90 % / 0.436 | 100 % / 0.694 |
+| 6B, fast | 87 % / 0.249 | 100 % / 0.429 |
+| 4H, slow | **20 %** / 0.011 | 100 % / 0.096 |
+| ballpoint, fast | 100 % / 0.370 | 100 % / 0.385 |
 
 Every target behaviour falls out of the parameter rows, not special cases:
 
-- **Fast on rough breaks up; slow on smooth stays connected.** 62 % → 36 % on
+- **Fast on rough breaks up; slow on smooth stays connected.** 78 % → 49 % on
   rough for the same pencil at a higher speed; 100 % throughout on hot press.
   This is the headline requirement and it is now measurable, not just visible.
-- **A soft lead resists break-up.** 6B loses 5 points to speed (88 → 83) where
-  HB loses 26 (62 → 36). Soft graphite crumbles onto the sheet whatever the hand
+- **A soft lead resists break-up.** 6B loses 3 points to speed (90 → 87) where
+  HB loses 29 (78 → 49). Soft graphite crumbles onto the sheet whatever the hand
   is doing.
-- **A hard lead barely marks rough paper** (7 %) but draws a continuous, very
-  light line on smooth (100 % at 0.065 — a seventh of a 6B). That is a 4H.
-- **A ballpoint ignores both.** 0.221 rough vs 0.230 smooth, 100 % either way.
+- **A hard lead barely marks rough paper** (20 %) but draws a continuous, very
+  light line on smooth (100 % at 0.096 — a seventh of a 6B). That is a 4H.
+- **A ballpoint ignores both.** 0.370 rough vs 0.385 smooth, 100 % either way.
   Flatness is the point of a biro.
 - **Tilt draws with the flank.** A 6B at 70° lays a 6.9–8.0 cell band against
   1.7–2.0 upright.
+
+## Beading — the check that has to be on every stroke test
+
+A stroke narrower than a grid cell cannot be drawn narrower; it can only be
+drawn fainter. Measure **ripple** along a diagonal — `(max − min) / max` of the
+laid amount, sampled cell by cell down the path:
+
+| | before | after |
+|---|---|---|
+| ballpoint, size 0.4 / 0.5 / 1.0 | 99 % | **12 %** |
+| round sable, one stroke, start → 100 → 300 cells | 2.603 → 0.211 → **0.004** | 0.432 → 0.317 → **0.132** |
+
+The two had different causes and neither was what it looked like. The dry one
+was sub-cell aliasing, fixed with analytic coverage plus a minimum contact
+width. The wet one was not beading at all — the brush was emptying 650× over one
+stroke because `downRate` was charged per solve step rather than per unit
+distance, which invariant 2 forbids. Below about 0.01 laid, ordinary cell-to-cell
+variation reads as specks.
 
 Renders as `rgb(55,57,61)` on `rgb(223,223,223)` paper — graphite grey, through
 the same Kubelka-Munk chain as the paint, with no dry-media special case.
