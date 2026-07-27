@@ -154,21 +154,47 @@ export class DryTool {
     // A starved ball lays a thinner line as well as a lighter one. Thick AND
     // thin together is what reads as organic; vary only the darkness and the
     // line looks like a constant-width stroke with the opacity animated.
-    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * (0.78 + 0.22 * flow);
-
-    // A mark narrower than the grid cannot be drawn narrower — only fainter.
     //
-    // Below about a cell the line starts to fall between cell centres and beads
-    // into dots on any diagonal. The deposit shader's coverage term stops that
-    // becoming gaps, but a 0.4-cell tip would still ripple visibly. So widen the
-    // contact to the narrowest the grid carries cleanly and take the SAME total
-    // ink over that wider band: the pen keeps its ink, the line keeps its
-    // continuity, and a finer nib reads as a lighter line rather than a
-    // stuttering one. This is a sampling limit of the 512 grid, not physics —
-    // at a finer simulation resolution the floor drops with it.
-    const MIN_R = 0.9;
+    // The range is wide on purpose. It used to be 0.78-1.0, which is barely a
+    // tenth of the width — and then the minimum-width floor clamped even that
+    // away, so the pen had no width variation at all at the sizes anyone draws
+    // at. With true coverage in the deposit pass there is no floor, so this can
+    // do what it says.
+    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * (0.45 + 0.55 * flow);
+
+    // [REMOVED — it was doing more harm than the aliasing it hid] There used to
+    // be a 0.9-cell minimum contact width here, with the ink spread thinner to
+    // compensate. It stopped fine nibs beading, but at the cost of clamping
+    // EVERY fine nib to the same width: the smallest ballpoint came out as wide
+    // as a large one, and the ball's starve could not thin the line because the
+    // line could not get thinner. The deposit pass now measures true coverage by
+    // supersampling, so a tip finer than a cell resolves as a faint continuous
+    // line rather than a broken one, and the floor is only a numerical guard.
+    const MIN_R = 0.12;
     let spread = 1;
     if (radius < MIN_R) { spread = radius / MIN_R; radius = MIN_R; }
+
+    // A PEN METERS INK BY DISTANCE ROLLED; A PENCIL ABRADES BY CONTACT AREA.
+    //
+    // The deposit pass lays `amount x coverage`, so amount is a surface
+    // concentration and the ink landing per unit length comes out proportional
+    // to the width. For graphite that is right — lay a pencil over on its flank
+    // and it really does shed more, over a wider band. For a pen it is wrong,
+    // and visibly so: the finest nib came out as a barely-there ghost, because
+    // halving the ball halved the ink as well as the width. A ball meters ink by
+    // how far it rolls, and the film thickness is set by the ball-to-paper gap,
+    // not by the ball's diameter. So a fine biro draws a NARROWER line, not a
+    // paler one, which is the whole reason anyone reaches for a 0.5 over a 1.0.
+    //
+    // Hence: for ink, `deposition` is ink per unit LENGTH, and the concentration
+    // is that divided by the width it is being spread over.
+    if ('skipStrength' in m) {
+      // The floor caps how concentrated a sub-cell line may get. Lower means a
+      // fine nib stays darker as it narrows; too low and it saturates into a
+      // hard 1-cell line that cannot get finer. 0.2 is about a fifth of a cell,
+      // which is where the 4x4 supersampling runs out of resolution anyway.
+      amount = amount / Math.max(2 * radius, 0.2);
+    }
 
     const o = at * SEG_FLOATS;
     const ax = prev ? prev.x : s.x;

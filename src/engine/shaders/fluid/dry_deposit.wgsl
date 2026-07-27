@@ -78,25 +78,41 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
       let d = segDist(pos, s.a, s.b);
-      if (d < s.radius + 0.5) {
-        // ANALYTIC COVERAGE — how much of this CELL the tip actually crossed,
-        // not how far the cell centre is from the centreline.
+      if (d < s.radius + 0.9) {
+        // TRUE COVERAGE, by supersampling the cell 4x4.
         //
-        // [TRAP, measured, and it was visible before it was measured] Any
-        // falloff of the form `g(d / radius)` samples a continuous shape at one
-        // point per cell, and a shape narrower than a cell falls between the
-        // sampling points. A ballpoint at size 0.5 is 0.85 cells across, and
-        // down a diagonal line the deposited amount swung 0.284 / 0.002 /
-        // 0.284 / 0.128 — a 99 % ripple, which is exactly the row of beads on
-        // screen. Horizontal test strokes hid it completely, because they sit
-        // squarely on the cell rows; only a diagonal exposes it.
+        // [TRAP, measured twice] Any falloff of the form `g(d / radius)` samples
+        // a continuous shape once per cell, so a shape narrower than a cell
+        // falls between the sampling points: a size-0.5 ballpoint swung
+        // 0.284 / 0.002 / 0.284 down a diagonal, a 99 % ripple, the row of beads
+        // on screen.
         //
-        // Coverage instead of distance fixes it at the root: a cell one radius
-        // out is half covered, half a cell further out is not covered at all,
-        // and every cell along the path gets its true share. A mark thinner
-        // than the grid then comes out FAINTER, which is right, rather than
-        // BROKEN, which is an artefact.
-        let f = clamp((s.radius - d) * max(C.edge, 0.25) + 0.5, 0.0, 1.0);
+        // The first fix approximated coverage as `clamp(radius - d + 0.5)`. That
+        // is exact only for an axis-aligned edge, still rippled ~54 % on a
+        // diagonal, and needed a 0.9-cell minimum contact width to stay quiet —
+        // which then CLAMPED EVERY FINE NIB TO THE SAME WIDTH and erased the
+        // pen's thick-and-thin entirely. The floor hid the symptom by destroying
+        // the signal.
+        //
+        // Counting sub-samples inside the capsule is the real thing: exact to
+        // 1/16 of a cell at any angle, no minimum width, and a tip finer than a
+        // cell renders as a faint continuous line whose DENSITY tracks its true
+        // width. That is how a sub-pixel line is supposed to resolve, and it is
+        // what lets the ball's starve show up as thinning rather than only as
+        // fading.
+        var acc = 0.0;
+        for (var sy = 0u; sy < 4u; sy = sy + 1u) {
+          for (var sx = 0u; sx < 4u; sx = sx + 1u) {
+            let sp = vec2<f32>(f32(c.x) + (f32(sx) + 0.5) * 0.25,
+                               f32(c.y) + (f32(sy) + 0.5) * 0.25);
+            if (segDist(sp, s.a, s.b) <= s.radius) { acc = acc + 1.0; }
+          }
+        }
+        // Gamma on coverage: below 1 spreads the rim (graphite feathers, loose
+        // particles sit around the mark), above 1 tightens it (ink is a paste
+        // and stops where the ball stopped). Safe on thin marks, unlike a
+        // contrast curve, which would erase anything under half a cell.
+        let f = pow(acc * 0.0625, max(C.edge, 0.2));
 
         // THE TOOTH GATE. This is the whole of "rapid strokes on rough paper
         // come out broken, slow deliberate ones come out smooth". `reach` was

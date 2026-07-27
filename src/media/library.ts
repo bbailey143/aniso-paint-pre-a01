@@ -56,9 +56,9 @@ function graphite(name: string, slug: string, hardness: number): GranularDry {
     tipRadius: 1.1,
     tiltWiden: 2.6,               // laid over, a pencil draws with the flank
     pressureExp: 1.1,
-    // Graphite genuinely does feather at the edge of a mark — loose particles
-    // sit around it. Keep the soft rim.
-    edgeSharpness: 1.0,
+    // Gamma on coverage. Graphite genuinely feathers — loose particles sit
+    // around a mark — so spread the rim slightly.
+    edgeSharpness: 0.85,
     // Soft leads lay far more per pass. 6B ~4x an HB, 4H well under it.
     // [UNVERIFIED] Calibrated on the bench to 09-acceptance, not measured from
     // a source: a slow firm HB line reads ~0.25 laid, which renders as a real
@@ -116,13 +116,15 @@ function ballpoint(name: string, slug: string, pigment: string,
     velocityCoupling: 0.16,
     hardness: 0.0,
     particleSize: 0.1,
-    tipRadius: 0.8,
+    // A ballpoint ball is 0.5-1.0 mm. At size 1 that is about half a
+    // simulation cell, and the smallest setting has to be finer still.
+    tipRadius: 0.46,
     tiltWiden: 0.25,             // a biro does not care how you hold it
     pressureExp: 0.25,           // near-flat pressure response — that part was right
     deposition,
-    // Crisp. The soft rim is what made the ink read as WET rather than as a
-    // paste sitting on the surface; a ballpoint edge is sharp.
-    edgeSharpness: 3.2,
+    // Crisp. Above 1 tightens the rim: ink is a paste and stops where the ball
+    // stopped. The soft rim is what made it read as WET rather than as paste.
+    edgeSharpness: 1.45,
 
     // Deep but rare — see the shaping in dry-tool.ts.
     skipStrength: 0.88,

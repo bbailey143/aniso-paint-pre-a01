@@ -95,7 +95,7 @@ export class Palette {
       el.className = 'pal-btn paper';
       el.textContent = t.name;
       el.title = t.medium.kind === 'ink'
-        ? 'Ballpoint — near-flat pressure response, consistent line, barely notices the paper'
+        ? 'Ballpoint — rides the peaks and skips the valleys; the ball starves and recovers as it rolls'
         : `Graphite ${t.name} — ${t.medium.hardness > 0
             ? 'hard: lays little, catches only the peaks of the tooth'
             : 'soft: lays heavily and fills the valleys'}`;
@@ -205,7 +205,7 @@ export class Palette {
         <div id="dry-tools" class="papers six"></div>
         <label class="loading-row">
           <span>size</span>
-          <input id="brush-size" type="range" min="0.4" max="2.4" step="0.05" />
+          <input id="brush-size" type="range" min="0.15" max="2.4" step="0.025" />
         </label>
         <div class="pal-sub">paper</div>
         <div id="papers" class="papers"></div>
