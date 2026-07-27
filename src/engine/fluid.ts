@@ -184,7 +184,8 @@ export class FluidEngine {
       // COPY_DST so it can be cleared. The ledger is written by flux_compute and
       // read by two passes after it; uninitialised, it seeded exactly 1.0 into
       // cells on a blank sheet. Never bet on lazy init.
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'flux',
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+           | GPUBufferUsage.COPY_SRC, label: 'flux',
     });
     this.segBuf = device.createBuffer({
       size: MAX_SEGS * SEG_FLOATS * 4,
@@ -494,6 +495,22 @@ export class FluidEngine {
     const data = new Float32Array(rb.getMappedRange().slice(0));
     rb.unmap(); rb.destroy();
     return this.summarise(data);
+  }
+
+  /** Dump the flux ledger (vec4 per cell: out east, west, south, north). */
+  async dumpFlux(): Promise<Float32Array> {
+    const { device } = this.gpu;
+    const rb = device.createBuffer({
+      size: this.fluxBuf.size,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = device.createCommandEncoder({ label: 'dump-flux' });
+    enc.copyBufferToBuffer(this.fluxBuf, 0, rb, 0, this.fluxBuf.size);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const out = new Float32Array(rb.getMappedRange().slice(0));
+    rb.unmap(); rb.destroy();
+    return out;
   }
 
   /** Dump a whole fluid texture to the CPU as RGBA f32, for inspection. */

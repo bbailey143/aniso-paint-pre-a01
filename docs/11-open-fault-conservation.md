@@ -40,11 +40,64 @@ should be redundant — it is not. That change alone:
 - turned the remaining water fault from wildly nondeterministic into
   **repeatable**: +195 % / +190 % / +182 % over 600 hands-off steps.
 
-**Still open:** water is created in the flux group — 60 units on a blank sheet over
-400 steps, ~190 % on a painted one. Now deterministic and bounded, which makes it a
-tractable next step rather than a ghost hunt. The next move is to dump `flux` itself
-(synced) immediately after `flux_compute` on a blank sheet and find the entries that
-are not zero.
+## Round 3 — the seed event, caught
+
+Stepping a blank sheet one frame at a time and sampling after each, the moment of
+creation is now on record. Nothing had been painted; no deposit ran.
+
+```
+first dirty step: 43
+one cell:  x = 242, y = 266
+           M = 1     h_f = 1.313     s = 0.6875     u = v = 0
+           g[8] = 0  d[8] = 0        h_f + s = 2.0000
+```
+
+**One cell receives exactly 2.0 units of water out of nothing.** It carries no
+pigment, which rules out the deposit path entirely. The film/saturation split is
+just capillary absorption acting on it after the fact.
+
+### The position is the tell
+
+Seed x-coordinates, over many runs and two different grid sizes:
+
+| sim grid | seed x values |
+|---|---|
+| 512 | 239, 240, 240, 240, 241, 241, 241, 242, 242 |
+| 384 | 114, 242, 242, 370 |
+
+Every one satisfies **x ≡ ~114 (mod 128)**. y is uniformly random. 128 cells ×
+16 bytes = **a 2048-byte stride**: the seed lands at a fixed offset inside a
+repeating memory span, and that span does not scale with the grid dimension.
+
+Frequency: **9 runs in 10** produce at least one seed within 60 steps. Always
+exactly 2.0. Never accompanied by pigment.
+
+### What that points at
+
+A fixed offset in a repeating memory stride, a constant value, random in time and
+in y, indifferent to grid size — that is the shape of **memory aliasing or a
+driver-level fault**, not of the shallow-water maths. No pass computes 2.0, and the
+same value showed up earlier as a phantom `M = 2.0` in unsynced reads.
+
+`[UNVERIFIED — this is reasoning, not a finding]` The physics is likely innocent.
+Do not rewrite the solver on the strength of it.
+
+### Next experiments, in order
+
+1. **Try the DX12 backend instead of Vulkan** (`--use-angle`/Dawn backend flag).
+   The `main` bench listed exactly this as a cheap discriminator for its own
+   nondeterminism and never ran it. If the seed disappears, it is the driver.
+2. **Vary the texture usage flags** (`COPY_SRC`/`COPY_DST` change tiling on some
+   drivers) and the format, and see whether the 2048-byte period moves.
+3. **Test on a second GPU.** The whole history here is on one RX 570.
+4. Only if all three come back clean: audit `flux_compute`'s write coverage with a
+   sentinel pattern written before each frame and checked after.
+
+## Where it stands
+
+- Corruption and overflows: **gone** (per-frame flux clear).
+- Blank-sheet pigment creation: **gone**.
+- Water creation: **open**, but fully characterised and reproducible.
 
 ---
 
