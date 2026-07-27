@@ -22,6 +22,7 @@ card(s) for the engine you are on, and nothing else.
 | [`08-substrate.md`](08-substrate.md) | Paper/canvas: tooth, sizing, absorption, granulation. |
 | [`09-acceptance.md`](09-acceptance.md) | Pass/fail behavioural targets and the proof tests. |
 | [`10-decisions.md`](10-decisions.md) | Ratified decisions (D-numbers) for this direction. |
+| [`11-open-fault-conservation.md`](11-open-fault-conservation.md) | **Open fault.** The sheet gains water and pigment, and the gauge that should have caught it lagged. Read before trusting any conservation number here. |
 
 ## Provenance
 
