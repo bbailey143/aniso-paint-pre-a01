@@ -7,7 +7,8 @@
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { PointerInput, type StylusSample } from './input/pointer';
 import { Palette } from './ui/palette';
-import fullscreenWgsl from './engine/shaders/fullscreen.wgsl?raw';
+import { CanvasEngine } from './engine/canvas';
+import { PAPERS } from './substrate/papers';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 
@@ -28,10 +29,18 @@ async function main() {
   }
 
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
-  const sheet = new SheetPass(gpu, fullscreenWgsl);
+  const engine = new CanvasEngine(gpu);
 
-  // ---- Pigment tray + mixing (P2) -----------------------------------------
-  new Palette(document.body);
+  // ---- Pigment tray + surface (P2/P3) -------------------------------------
+  const palette = new Palette(document.body, {
+    onMixChange(_hex, recipe, loading) { engine.fill(recipe, loading); },
+    onPaperChange(paper) { engine.setPaper(paper); },
+  });
+  engine.setPaper(PAPERS[1]);              // cold press default
+  engine.fill(palette.recipe, palette.loading);
+
+  // Dev aid: expose for headless verification.
+  (window as unknown as { __engine: CanvasEngine }).__engine = engine;
 
   // ---- Pen input → live readout -------------------------------------------
   // A short exponential smoothing on velocity so the number is readable rather
@@ -49,73 +58,14 @@ async function main() {
   });
 
   // ---- Frame loop ----------------------------------------------------------
-  const start = performance.now();
   function frame() {
-    if (resizeToDisplay(gpu)) sheet.onResize();
-    sheet.render((performance.now() - start) / 1000);
+    resizeToDisplay(gpu);
+    engine.render();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
   window.addEventListener('resize', () => resizeToDisplay(gpu));
-}
-
-/** The P1 placeholder render: one fullscreen pipeline + a small frame uniform. */
-class SheetPass {
-  private gpu: Gpu;
-  private pipeline: GPURenderPipeline;
-  private uniform: GPUBuffer;
-  private bindGroup: GPUBindGroup;
-
-  constructor(gpu: Gpu, wgsl: string) {
-    this.gpu = gpu;
-    const { device, format } = gpu;
-    const module = device.createShaderModule({ code: wgsl, label: 'fullscreen' });
-
-    this.uniform = device.createBuffer({
-      size: 16, // vec2 resolution + f32 time + pad
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      label: 'frame-uniform',
-    });
-
-    this.pipeline = device.createRenderPipeline({
-      layout: 'auto',
-      label: 'sheet',
-      vertex: { module, entryPoint: 'vs' },
-      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-      primitive: { topology: 'triangle-list' },
-    });
-
-    this.bindGroup = device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.uniform } }],
-    });
-  }
-
-  onResize() { /* auto-sized render targets; nothing to rebuild yet */ }
-
-  render(time: number) {
-    const { device, context } = this.gpu;
-    device.queue.writeBuffer(
-      this.uniform, 0,
-      new Float32Array([this.gpu.canvas.width, this.gpu.canvas.height, time, 0]),
-    );
-
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: context.getCurrentTexture().createView(),
-        clearValue: { r: 0.043, g: 0.047, b: 0.055, a: 1 },
-        loadOp: 'clear',
-        storeOp: 'store',
-      }],
-    });
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
-    pass.draw(3);
-    pass.end();
-    device.queue.submit([encoder.finish()]);
-  }
 }
 
 function showFatal(message: string) {

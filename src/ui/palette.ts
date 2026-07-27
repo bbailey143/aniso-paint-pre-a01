@@ -7,14 +7,18 @@
 
 import { PIGMENTS } from '../color/pigments';
 import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color/km';
+import { PAPERS, type Paper } from '../substrate/papers';
 
 export interface PaletteEvents {
-  /** Fired whenever the active mix changes; hex is the KM colour (or null if empty). */
-  onMixChange?(hex: string | null, recipe: Recipe): void;
+  /** Fired whenever the active mix or loading changes. */
+  onMixChange?(hex: string | null, recipe: Recipe, loading: number): void;
+  /** Fired when the paper substrate changes. */
+  onPaperChange?(paper: Paper): void;
 }
 
 export class Palette {
   readonly recipe: Recipe = new Map();
+  loading = 0.6;
   private root: HTMLElement;
   private mixSwatch!: HTMLElement;
   private rgbSwatch!: HTMLElement;
@@ -36,8 +40,30 @@ export class Palette {
     this.recipeRow = this.root.querySelector('#recipe')!;
 
     this.buildWells();
+    this.buildSurface();
     this.root.querySelector('#mix-clear')!.addEventListener('click', () => this.clear());
     this.refresh();
+  }
+
+  private buildSurface() {
+    const papers = this.root.querySelector('#papers')!;
+    PAPERS.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.className = 'pal-btn paper' + (i === 1 ? ' on' : ''); // cold press default
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        papers.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
+        b.classList.add('on');
+        this.events.onPaperChange?.(p);
+      });
+      papers.appendChild(b);
+    });
+    const slider = this.root.querySelector('#loading') as HTMLInputElement;
+    slider.value = String(this.loading);
+    slider.addEventListener('input', () => {
+      this.loading = parseFloat(slider.value);
+      this.refresh();
+    });
   }
 
   private template(): string {
@@ -60,6 +86,14 @@ export class Palette {
         </div>
         <div id="mix-hex" class="mix-hex">—</div>
         <div id="recipe" class="recipe"></div>
+      </div>
+      <div class="surface">
+        <div class="pal-sub">paper</div>
+        <div id="papers" class="papers"></div>
+        <label class="loading-row">
+          <span>loading</span>
+          <input id="loading" type="range" min="0" max="1" step="0.02" />
+        </label>
       </div>`;
   }
 
@@ -116,6 +150,6 @@ export class Palette {
       this.recipeRow.appendChild(chip);
     }
 
-    this.events.onMixChange?.(km, this.recipe);
+    this.events.onMixChange?.(km, this.recipe, this.loading);
   }
 }

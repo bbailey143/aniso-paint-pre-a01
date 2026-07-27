@@ -123,6 +123,23 @@ a way that is very hard to diagnose.
 Spectrum → XYZ (integrate against CIE observer × illuminant, D65 white point) →
 sRGB matrix → display. [MB21 eqs. 3–7]
 
+### GPU composite (P3, `composite.wgsl`)
+
+Per pixel: gather the cell's 8 pigment amounts, Duncan-mix K/S, run **finite-
+thickness KM (Form 1)** with optical thickness ∝ total pigment loading, composite
+the resulting layer over the paper reflectance (Kubelka's layer equations),
+Saunderson-correct with the medium's `K_instrument`, integrate 38 bands to XYZ, and
+convert to sRGB. Bare cells (amount ≈ 0) render the paper straight through — which
+is why a thin wash reads lighter (more paper) and a heavy load reads deep, from one
+mechanism. Paper tooth is relief-lit from the `PAPER` height gradient. Verified on
+the RX 570: bare paper `[238,238,238]`, blue+yellow wash `#006144`, thin wash
+`#009770`. The CPU tray (`km.ts`) and this shader are kept in lockstep.
+
+`[NOTE]` P3 uses a fixed 1024² document, "contain"-fit into the viewport, and a
+uniform flat-fill test deposit (not a brush — wet media get their real deposit from
+the brush + fluid engines). Paper reflectance is a scalar near-white for now; a
+spectral paper white can replace it once measured.
+
 ## Traps to plan for
 
 - `[TRAP]` **Gamut.** BE16 shows yellows/reds outside sRGB; sRGB also clips some

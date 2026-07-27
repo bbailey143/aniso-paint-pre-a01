@@ -115,3 +115,12 @@ html, body {
 }
 .chip:hover { background: rgba(255,255,255,0.1); }
 .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,0.2); }
+
+.surface { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
+.pal-sub { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+.papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.paper { text-align: center; padding: 4px 2px; }
+.paper.on { color: var(--accent); border-color: var(--accent); }
+.loading-row { display: flex; align-items: center; gap: 8px; }
+.loading-row span { color: var(--ink-dim); }
+.loading-row input[type="range"] { flex: 1; accent-color: var(--accent); }
