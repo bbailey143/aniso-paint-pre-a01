@@ -33,6 +33,10 @@ struct Comp {
 @group(0) @binding(9) var setB: texture_2d<f32>;                // d[4..7] settled
 @group(0) @binding(10) var wet0: texture_2d<f32>;               // M, h_f, u, v
 @group(0) @binding(11) var wet5: texture_2d<f32>;               // s, w, h_p, flags
+@group(0) @binding(12) var dry1a: texture_2d<f32>;              // newest dried layer
+@group(0) @binding(13) var dry1b: texture_2d<f32>;
+@group(0) @binding(14) var dry2a: texture_2d<f32>;              // everything older
+@group(0) @binding(15) var dry2b: texture_2d<f32>;
 
 struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
@@ -73,6 +77,40 @@ fn slotId(i: i32) -> i32 {
   return C.slotB[i - 4];
 }
 
+/** Duncan linear mix of K and S for one band, over the cell's active slots.
+ * Mixing is linear in CONCENTRATION space — that is the whole subtractive law. */
+fn mixKS(amt: array<f32, 8>, invTotal: f32, b: i32) -> vec2f {
+  var K = 0.0;
+  var S = 0.0;
+  var a = amt;
+  for (var s = 0; s < 8; s = s + 1) {
+    let id = slotId(s);
+    if (id < 0) { continue; }
+    let c = max(a[s], 0.0) * invTotal;
+    if (c <= 0.0) { continue; }
+    let v = ks[id * N_BANDS + b];
+    K = K + c * v.x;
+    S = S + c * v.y;
+  }
+  return vec2f(K, max(S, 1e-4));
+}
+
+/** Lay one finite-thickness KM film over a substrate of reflectance Rsub and
+ * return the combined reflectance (C97 Form 1 + Kubelka's layer equations).
+ * This is what makes glazing work: the layer below stays visible through it. */
+fn overLayer(Rsub: f32, KS: vec2f, thickness: f32) -> f32 {
+  let ratio = KS.x / KS.y;
+  let A = 1.0 + ratio;
+  let Bc = sqrt(max(ratio * ratio + 2.0 * ratio, 0.0));
+  let bSx = clamp(Bc * KS.y * thickness, 0.0, 40.0);
+  let sh = sinh_(bSx);
+  let ch = cosh_(bSx);
+  let denom = A * sh + Bc * ch;
+  let Rl = sh / denom;
+  let Tl = Bc / denom;
+  return Rl + (Tl * Tl * Rsub) / (1.0 - Rl * Rsub);
+}
+
 fn srgb_encode(c: f32) -> f32 {
   let v = clamp(c, 0.0, 1.0);
   if (v <= 0.0031308) { return 12.92 * v; }
@@ -107,6 +145,22 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   var total = 0.0;
   for (var i = 0; i < 8; i = i + 1) { total = total + max(amt[i], 0.0); }
 
+  // The dried layers below. Glazing: each is optically its own film, composited
+  // over what is beneath it, so a wash laid over a dry one lets the lower colour
+  // show through instead of replacing it. Layer order is floor -> dry1 -> wet.
+  let e2a = biload(dry2a, uv);
+  let e2b = biload(dry2b, uv);
+  let e1a = biload(dry1a, uv);
+  let e1b = biload(dry1b, uv);
+  let amt2 = array<f32, 8>(e2a.x, e2a.y, e2a.z, e2a.w, e2b.x, e2b.y, e2b.z, e2b.w);
+  let amt1 = array<f32, 8>(e1a.x, e1a.y, e1a.z, e1a.w, e1b.x, e1b.y, e1b.z, e1b.w);
+  var total2 = 0.0;
+  var total1 = 0.0;
+  for (var i = 0; i < 8; i = i + 1) {
+    total2 = total2 + max(amt2[i], 0.0);
+    total1 = total1 + max(amt1[i], 0.0);
+  }
+
   // Paper: (h, c, sizing, rc). Near-white reflectance, dulled a touch by sizing.
   let pap = textureSampleLevel(paper, samp, uv, 0.0);
   let Rpaper = mix(0.93, 0.88, pap.z);   // sized paper sits slightly less brilliant
@@ -120,43 +174,36 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let wetness = clamp(max(w0v.y * 6.0, w5v.x * 3.0), 0.0, 1.0);
   let kIns = mix(C.kInstrument, 0.0, wetness);
 
+  let k1 = col.x;
+  let k2 = col.y;
+  let has2 = total2 >= 1e-4;
+  let has1 = total1 >= 1e-4;
+  let hasW = total >= 1e-4;
+  let inv2 = select(0.0, 1.0 / total2, has2);
+  let inv1 = select(0.0, 1.0 / total1, has1);
+  let invW = select(0.0, 1.0 / total, hasW);
+
   var XYZ = vec3f(0.0);
-  if (total < 1e-4) {
-    // Bare paper.
-    for (var b = 0; b < N_BANDS; b = b + 1) { XYZ = XYZ + Rpaper * cie[b].xyz; }
-  } else {
-    let inv = 1.0 / total;
-    let thickness = total * C.thickScale;
-    let k1 = col.x; let k2 = col.y;
-    for (var b = 0; b < N_BANDS; b = b + 1) {
-      // Duncan linear mix of K and S over the active slots.
-      var K = 0.0; var S = 0.0;
-      for (var s = 0; s < 8; s = s + 1) {
-        let id = slotId(s);
-        if (id < 0) { continue; }
-        let c = max(amt[s], 0.0) * inv;
-        if (c <= 0.0) { continue; }
-        let v = ks[id * N_BANDS + b];
-        K = K + c * v.x;
-        S = S + c * v.y;
-      }
-      S = max(S, 1e-4);
-      let ratio = K / S;
-      let A = 1.0 + ratio;
-      let Bc = sqrt(max(ratio * ratio + 2.0 * ratio, 0.0));
-      let bSx = clamp(Bc * S * thickness, 0.0, 40.0);
-      let sh = sinh_(bSx);
-      let ch = cosh_(bSx);
-      let denom = A * sh + Bc * ch;
-      let Rlayer = sh / denom;
-      let Tlayer = Bc / denom;
-      // Composite the transparent layer over the paper (Kubelka).
-      var R = Rlayer + (Tlayer * Tlayer * Rpaper) / (1.0 - Rlayer * Rpaper);
-      // Saunderson forward (internal -> external), gloss via kInstrument.
-      R = kIns * k1 + ((1.0 - k1) * (1.0 - k2) * R) / (1.0 - k2 * R);
-      R = clamp(R, 0.0, 1.0);
-      XYZ = XYZ + R * cie[b].xyz;
+  for (var b = 0; b < N_BANDS; b = b + 1) {
+    // Start at the sheet and build upward, one glaze at a time.
+    var R = Rpaper;
+
+    if (has2) {
+      let ks2 = mixKS(amt2, inv2, b);
+      R = overLayer(R, ks2, total2 * C.thickScale);
     }
+    if (has1) {
+      let ks1 = mixKS(amt1, inv1, b);
+      R = overLayer(R, ks1, total1 * C.thickScale);
+    }
+    if (hasW) {
+      let ksw = mixKS(amt, invW, b);
+      R = overLayer(R, ksw, total * C.thickScale);
+    }
+
+    // Saunderson forward (internal -> external), gloss via kInstrument.
+    R = kIns * k1 + ((1.0 - k1) * (1.0 - k2) * R) / (1.0 - k2 * R);
+    XYZ = XYZ + clamp(R, 0.0, 1.0) * cie[b].xyz;
   }
 
   // XYZ (D65) -> linear sRGB.

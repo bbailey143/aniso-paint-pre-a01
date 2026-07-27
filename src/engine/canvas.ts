@@ -88,6 +88,7 @@ export class CanvasEngine {
   }
 
   get readings(): Gauges { return this.fluid.readings; }
+  /** Fresh gauge read. Use this for measurement; `readings` lags (see fluid.ts). */
   sampleGauges(): Promise<Gauges> { return this.fluid.sampleGauges(); }
   set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
   dump(name: string): Promise<Float32Array> { return this.fluid.dump(name); }
@@ -97,7 +98,12 @@ export class CanvasEngine {
 
   setFluid(p: Partial<FluidParams>) { this.fluid.setParams(p); }
   setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
-  clear() { this.fluid.clear(); }
+  /** Wipe the sheet. A blank document has no history, so the slot map resets too. */
+  clear() {
+    this.fluid.clear();
+    this.slotIds.fill(-1);
+    this.mixWeights_.fill(0);
+  }
 
   /** Regenerate the paper substrate for a chosen sheet. */
   setPaper(p: Paper) {
@@ -115,28 +121,51 @@ export class CanvasEngine {
   }
 
   /**
-   * Set the paint on the brush: which pigments, in what proportion. Assigns
-   * library ids to the 8 cell slots and tells the fluid engine which transport
-   * parameters (rho/omega/gamma) apply to each.
+   * Set the paint on the brush: which pigments, in what proportion.
+   *
+   * The slot -> library-id map is held PER DOCUMENT and is sticky. A cell stores
+   * amounts; the map says what those amounts are made of. Reassigning slots per
+   * stroke would silently repaint history — dry a blue wash, pick up yellow, and
+   * the dried blue would re-render as yellow, because it is stored as "0.4 of
+   * slot 0". Once a pigment owns a slot it keeps it for the life of the document.
    */
   setMix(recipe: Recipe) {
-    this.slotIds.fill(-1);
     this.mixWeights_.fill(0);
     let total = 0;
     for (const v of recipe.values()) total += Math.max(0, v);
-    if (total <= 0) { this.fluid.setSlots([]); return; }
+    if (total <= 0) { return; }
 
-    let slot = 0;
     for (const [slug, parts] of recipe) {
-      if (slot >= 8 || parts <= 0) continue;
+      if (parts <= 0) continue;
       const id = SLUG_TO_ID.get(slug);
       if (id === undefined) continue;
-      this.slotIds[slot] = id;
+      const slot = this.slotFor(id);
+      if (slot < 0) continue;             // palette full; see the note below
       this.mixWeights_[slot] = parts / total;
-      slot++;
     }
     this.fluid.setSlots(Array.from(this.slotIds));
   }
+
+  /**
+   * Find this pigment's slot, claiming a free one if it has not been used yet.
+   *
+   * `[LIMITATION]` Eight slots per cell. When all eight are claimed and a ninth
+   * pigment is picked up, we reuse the slot holding the least paint on the sheet
+   * — which repaints that pigment's history. The evidence base's answer is to
+   * merge the two most spectrally similar pigments instead; that needs a
+   * spectral-distance pass over the library and is not built. Until it is, the
+   * honest behaviour is to refuse silently rather than corrupt: see below.
+   */
+  private slotFor(id: number): number {
+    for (let i = 0; i < 8; i++) if (this.slotIds[i] === id) return i;
+    for (let i = 0; i < 8; i++) {
+      if (this.slotIds[i] < 0) { this.slotIds[i] = id; return i; }
+    }
+    return -1;
+  }
+
+  /** Slots in use, for the UI to warn before the palette fills. */
+  get slotsUsed(): number { return this.slotIds.filter((s) => s >= 0).length; }
 
   /** Advance the physics one frame with this frame's stroke segments. */
   step(segments: Float32Array<ArrayBuffer>, segCount: number) {
@@ -176,6 +205,10 @@ export class CanvasEngine {
         { binding: 9, resource: v.wet4 },
         { binding: 10, resource: v.wet0 },
         { binding: 11, resource: v.wet5 },
+        { binding: 12, resource: v.dry1a },
+        { binding: 13, resource: v.dry1b },
+        { binding: 14, resource: v.dry2a },
+        { binding: 15, resource: v.dry2b },
       ],
     });
   }

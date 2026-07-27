@@ -28,11 +28,18 @@ import fluxWaterWgsl from './shaders/fluid/flux_apply_water.wgsl?raw';
 import transferWgsl from './shaders/fluid/transfer_pigment.wgsl?raw';
 import capillaryWgsl from './shaders/fluid/capillary_flow.wgsl?raw';
 import dryWgsl from './shaders/fluid/dry_tick.wgsl?raw';
+import bakePushWgsl from './shaders/fluid/bake_push.wgsl?raw';
+import dryStoreWgsl from './shaders/fluid/dry_store.wgsl?raw';
+import wetClearWgsl from './shaders/fluid/wet_clear.wgsl?raw';
+import rewetWgsl from './shaders/fluid/rewet.wgsl?raw';
 import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
 import reduceFinalWgsl from './shaders/fluid/reduce_final.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
 
-const NQ = 13;                 // quantities per reduce workgroup
+// Quantities per reduce workgroup. Stated in THREE places that must agree:
+// here, `NQ` in reduce.wgsl, and `NQ` in reduce_final.wgsl. A mismatch reads
+// scrambled lanes and has already cost a day.
+const NQ = 15;
 // The second reduction stage writes this many lanes (NQ, padded). Keep in step
 // with LANES in reduce_final.wgsl — it is the size of every gauge readback.
 const TOTAL_LANES = 16;
@@ -52,6 +59,15 @@ export interface FluidParams {
   cosAlpha: number;
   edgeEta: number;
   paperInfluence: number;
+  /** Fraction of the newest dry layer returning to suspension per unit time. */
+  rewetRate: number;
+  /**
+   * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
+   *
+   * Off is the fallback, not the intent: with it off a wash still dries
+   * visually, but nothing can be glazed over dry paint and nothing re-wets.
+   */
+  handoffEnabled: boolean;
 }
 
 export const DEFAULT_FLUID: FluidParams = {
@@ -65,6 +81,9 @@ export const DEFAULT_FLUID: FluidParams = {
   cosAlpha: 1.0,
   edgeEta: 0.03,
   paperInfluence: 0.10,
+  // Watercolour is reactivatable — this is what makes a dried wash come back.
+  rewetRate: 0.10,
+  handoffEnabled: true,
 };
 
 export interface Gauges {
@@ -76,6 +95,11 @@ export interface Gauges {
   wetCells: number;
   meanDivergence: number;
   relaxIters: number;
+  /** Pigment still in the wet band (suspended + settled). */
+  wetPigment: number;
+  /** Pigment in the dry layers. wetPigment + dryPigment must equal pigment —
+   * that split is what tells a real leak apart from paint changing band. */
+  dryPigment: number;
 }
 
 // [MEASURED — the gauges caught this, and it changes D6 for the wet band]
@@ -131,6 +155,12 @@ export class FluidEngine {
   private wet4: PingPong;
   private wet5: PingPong;
   private press: PingPong;
+  // Dry bands. dry1 is the newest dried application and stays re-wettable;
+  // dry2 accumulates everything older (the auto-bake the artist never sees).
+  private dry1a: PingPong;
+  private dry1b: PingPong;
+  private dry2a: PingPong;
+  private dry2b: PingPong;
 
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
@@ -163,7 +193,7 @@ export class FluidEngine {
   private slotIds: number[] = [];
   private gauges: Gauges = {
     water: 0, film: 0, saturation: 0, pigment: 0, perSlot: new Array(8).fill(0),
-    wetCells: 0, meanDivergence: 0, relaxIters: 8,
+    wetCells: 0, meanDivergence: 0, relaxIters: 8, wetPigment: 0, dryPigment: 0,
   };
   private readbackBusy = false;
   private frame = 0;
@@ -181,6 +211,10 @@ export class FluidEngine {
     this.wet4 = new PingPong(device, n, 'wet4');
     this.wet5 = new PingPong(device, n, 'wet5');
     this.press = new PingPong(device, n, 'press');
+    this.dry1a = new PingPong(device, n, 'dry1a');
+    this.dry1b = new PingPong(device, n, 'dry1b');
+    this.dry2a = new PingPong(device, n, 'dry2a');
+    this.dry2b = new PingPong(device, n, 'dry2b');
 
     // Params: 16 scalars (4 vec4 worth) + 8 vec4 pigment rows = 192 bytes.
     this.paramsBuf = device.createBuffer({
@@ -248,6 +282,10 @@ export class FluidEngine {
     this.pipes.transfer = mk(transferWgsl, 'transfer_pigment');
     this.pipes.capillary = mk(capillaryWgsl, 'capillary_flow');
     this.pipes.dry = mk(dryWgsl, 'dry_tick');
+    this.pipes.bakePush = mk(bakePushWgsl, 'bake_push');
+    this.pipes.dryStore = mk(dryStoreWgsl, 'dry_store');
+    this.pipes.wetClear = mk(wetClearWgsl, 'wet_clear');
+    this.pipes.rewet = mk(rewetWgsl, 'rewet');
     this.pipes.reduce = mk(reduceWgsl, 'reduce');
     this.pipes.reduceFinal = mk(reduceFinalWgsl, 'reduce_final');
     this.pipes.zero = mk(zeroWgsl, 'zero_fill');
@@ -261,6 +299,8 @@ export class FluidEngine {
     return {
       wet0: this.wet0.src, wet1: this.wet1.src, wet2: this.wet2.src,
       wet3: this.wet3.src, wet4: this.wet4.src, wet5: this.wet5.src,
+      dry1a: this.dry1a.src, dry1b: this.dry1b.src,
+      dry2a: this.dry2a.src, dry2b: this.dry2b.src,
     };
   }
 
@@ -296,7 +336,7 @@ export class FluidEngine {
     dv.setFloat32(48, p.edgeEta, true);
     dv.setFloat32(52, p.paperInfluence, true);
     dv.setFloat32(56, this.frame / 60, true);
-    dv.setFloat32(60, 0, true);
+    dv.setFloat32(60, p.rewetRate, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
@@ -331,7 +371,8 @@ export class FluidEngine {
   clear() {
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass({ label: 'zero' });
-    const all = [this.wet0, this.wet1, this.wet2, this.wet3, this.wet4, this.wet5, this.press];
+    const all = [this.wet0, this.wet1, this.wet2, this.wet3, this.wet4, this.wet5, this.press,
+                 this.dry1a, this.dry1b, this.dry2a, this.dry2b];
     for (const pp of all) {
       for (const v of pp.view) {
         this.dispatch(pass, this.pipes.zero, [{ buffer: this.paramsBuf }, v]);
@@ -387,6 +428,7 @@ export class FluidEngine {
         U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
+        this.paper,
       ]);
       dpass.end();
       device.queue.submit([denc.finish()]);
@@ -457,13 +499,50 @@ export class FluidEngine {
       this.wet0.flip(); this.wet5.flip();
     });
 
-    // 8 — DryTick (the only pass that removes water)
+    // 8 — ReWet. Water reaching a dried layer brings its pigment back into
+    // suspension — the thing that makes watercolour NOT a one-way door. Runs
+    // before DryTick so freshly re-wetted paint gets a frame of fluid life
+    // rather than being handed straight back to the dry band.
+    run('rewet', () => {
+      this.dispatch(pass, this.pipes.rewet, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, this.dry1a.src, this.dry1b.src,
+        this.wet1.dst, this.wet2.dst, this.dry1a.dst, this.dry1b.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.dry1a.flip(); this.dry1b.flip();
+    });
+
+    // 9 — DryTick (the only pass that removes water). Flags cells that just dried.
     run('dry', () => {
       this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
       this.wet0.flip(); this.wet5.flip();
     });
 
-    // 9 — gauges, reduced all the way down on the GPU
+    // 10 — the drying handoff, in three steps because WebGPU core allows only
+    // four storage textures per stage and the whole move writes ten. Order
+    // matters: push dry1 down BEFORE overwriting it, and clear the wet band last,
+    // so the pigment is MOVED rather than duplicated.
+    run('handoff', () => {
+      if (!this.params.handoffEnabled) return;
+      this.dispatch(pass, this.pipes.bakePush, [
+        U, this.wet5.src, this.dry1a.src, this.dry1b.src, this.dry2a.src, this.dry2b.src,
+        this.dry2a.dst, this.dry2b.dst,
+      ]);
+      this.dry2a.flip(); this.dry2b.flip();
+
+      this.dispatch(pass, this.pipes.dryStore, [
+        U, this.wet5.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src,
+        this.dry1a.src, this.dry1b.src, this.dry1a.dst, this.dry1b.dst,
+      ]);
+      this.dry1a.flip(); this.dry1b.flip();
+
+      this.dispatch(pass, this.pipes.wetClear, [
+        U, this.wet5.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src,
+        this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    });
+
+    // 11 — gauges, reduced all the way down on the GPU
     this.recordGauge(pass, this.partialsBuf, this.totalsBuf);
     pass.end();
 
@@ -495,6 +574,10 @@ export class FluidEngine {
       { buffer: this.paramsBuf },
       this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
       { buffer: partials },
+      // The dry layers hold pigment too. Leave them out of the ledger and the
+      // gauge reports a total collapse the moment a wash dries — a phantom leak
+      // that is really just paint changing band.
+      this.dry1a.src, this.dry1b.src, this.dry2a.src, this.dry2b.src,
     ]));
     pass.dispatchWorkgroups(rg, rg, 1);
 
@@ -550,6 +633,7 @@ export class FluidEngine {
     const map: Record<string, PingPong> = {
       wet0: this.wet0, wet1: this.wet1, wet2: this.wet2,
       wet3: this.wet3, wet4: this.wet4, wet5: this.wet5, press: this.press,
+      dry1a: this.dry1a, dry1b: this.dry1b, dry2a: this.dry2a, dry2b: this.dry2b,
     };
     const pp = map[name];
     if (!pp) throw new Error(`no such texture: ${name}`);
@@ -584,6 +668,8 @@ export class FluidEngine {
       pigment: perSlot.reduce((a, b) => a + b, 0), perSlot, wetCells,
       meanDivergence: wetCells > 0 ? q[12] / wetCells : 0,
       relaxIters: this.relaxIters,
+      wetPigment: q[13],
+      dryPigment: q[14],
     };
   }
 

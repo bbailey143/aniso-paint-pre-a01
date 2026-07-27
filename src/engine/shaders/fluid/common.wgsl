@@ -22,7 +22,7 @@ struct Params {
   edgeEta: f32,     // C97 edge-darkening strength
   paperInfluence: f32,
   time: f32,
-  _p1: f32,
+  rewetRate: f32,   // fraction of dry1 returning to suspension per unit time
 
   // Pigment library for the 8 active slots: (rho density, omega staining,
   // gamma granulation, pad) — Card 3. Cells store amounts; library stores

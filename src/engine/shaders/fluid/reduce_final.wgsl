@@ -26,7 +26,7 @@
 // So: no uniform here, and NQ is stated once, next to the reason it must match.
 
 // Must equal NQ in reduce.wgsl — the partials buffer is laid out with this stride.
-const NQ: u32 = 13u;
+const NQ: u32 = 15u;
 // One lane per output slot, padded to 16 so the readback buffer is fully written
 // (never trust lazy init) and stays 64 bytes / 16-byte aligned.
 const LANES: u32 = 16u;

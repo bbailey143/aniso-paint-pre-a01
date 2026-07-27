@@ -1,3 +1,51 @@
+# P6 restored on the new base — the handoff was never the problem either
+
+**Round 7. Read this first, then the round-6 section below it.**
+
+P6 (drying handoff, re-wet, glazing) is re-applied on top of the fixed gauge, and
+`handoffEnabled` is back **ON**. Its blocking finding — *"the handoff CREATES
+pigment, 52–94 %, reproducibly"* — **does not reproduce.** Measured through the
+two-stage gauge:
+
+| test | total pigment | wet band | dry band |
+|---|---|---|---|
+| stroke laid | 124.142 | 124.142 | 0 |
+| dried to zero wet cells | **124.142** | 0.0008 | 124.141 |
+| clean water laid on top | **124.142** | 5.027 | 119.115 |
+| +180 frames | **124.142** | 5.028 | 119.114 |
+
+Exact through the whole wet → dry → re-wet cycle. A second run held 119.3877 flat
+across four drying marks. That is the **third of four** confident diagnoses in this
+hunt to die on re-test; the handoff shaders were correct as written.
+
+**Glazing works, and it is the P6 headline.** A yellow wash dried to `rgb(223,204,0)`;
+blue laid over the *dry* layer renders `rgb(0,64,58)` — a deep green, through
+layered Kubelka-Munk over dried paint, not RGB blending. Totals stayed exactly
+additive (121.233 + 121.242 = 242.475).
+
+## Two findings that stay open
+
+**1. Re-wetting is far too weak. `[MEASURED]`** Only ~4 % of a dried wash comes back.
+The cause is located, not guessed: `rewet.wgsl` scales its rate by standing film
+`h_f / REF_DEPTH`, and the paper drinks the film to zero within about twenty frames
+(measured: film `9.9e-4 → 2.4e-9 → 1.4e-20 → 4.3e-35`, while saturation `s` holds at
+71.63). So the water is all *in* the paper, where re-wetting cannot see it. The
+pigment is in the right place — 98.8 % sits in the re-wettable `dry1` layer, not the
+baked `dry2` — so this is a gate problem, not a storage one. The obvious move is to
+let `s` drive re-wetting as well as `h_f`, but no card supplies that coupling, so it
+is **not** invented here.
+
+**2. An intermittent garbage reading in the WATER lanes. `[OPEN]`** With evaporation
+on, one run reported `saturation = 3.555e16` and `film = 1.022e-36`, frozen across
+three samples 60 frames apart, while the pigment lanes stayed perfect. A direct dump
+of `wet5` on a later run summed `s = 1.4823` — clean — and a stage-1-vs-stage-2 A/B
+agreed to 1e-9 with no partial above 1e6. **It has not reproduced on demand, so it
+is not diagnosed and no story is offered.** Consequence: pigment conservation is
+established, **water conservation with evaporation on is not**. Do not quote a water
+figure until this is characterised.
+
+---
+
 # CLOSED — the engine conserves. Round 5's diagnosis is RETRACTED.
 
 **Round 6 is the one to read. The rest is the trail, kept because the wrong turns
