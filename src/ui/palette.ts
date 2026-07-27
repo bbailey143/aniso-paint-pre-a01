@@ -6,7 +6,7 @@
 // under KM and grey/brown under RGB. That contrast is the product thesis.
 
 import { PIGMENTS } from '../color/pigments';
-import { recipeToHex, recipeToNaiveRGBHex, type Recipe } from '../color/km';
+import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color/km';
 
 export interface PaletteEvents {
   /** Fired whenever the active mix changes; hex is the KM colour (or null if empty). */
@@ -68,7 +68,10 @@ export class Palette {
     for (const p of PIGMENTS) {
       const el = document.createElement('button');
       el.className = 'well';
-      el.style.background = p.hex;
+      // Swatch-card look: masstone (full strength) grading to a 25% tint, so the
+      // pigment's true undertone reads even for dark staining blues/violets.
+      const tint = tintHex(p.slug, 0.25) ?? p.hex;
+      el.style.background = `linear-gradient(135deg, ${p.hex} 0%, ${p.hex} 42%, ${tint} 100%)`;
       el.title = `${p.name} (${p.ci}) — ${p.temp}`;
       el.setAttribute('aria-label', p.name);
       el.addEventListener('click', () => this.add(p.slug));
@@ -106,7 +109,8 @@ export class Palette {
       const p = PIGMENTS.find((x) => x.slug === slug)!;
       const chip = document.createElement('button');
       chip.className = 'chip';
-      chip.innerHTML = `<i style="background:${p.hex}"></i>${p.name}${parts > 1 ? ` ×${parts}` : ''}`;
+      const dot = tintHex(slug, 0.35) ?? p.hex;
+      chip.innerHTML = `<i style="background:${dot}"></i>${p.name}${parts > 1 ? ` ×${parts}` : ''}`;
       chip.title = `remove one part of ${p.name}`;
       chip.addEventListener('click', () => this.remove(slug));
       this.recipeRow.appendChild(chip);

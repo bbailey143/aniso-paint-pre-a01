@@ -93,6 +93,17 @@ export function recipeToHex(recipe: Recipe, kInstrument?: number): string | null
   return srgbToHex(xyzToSRGB(reflectanceToXYZ(reflectance(sp, kInstrument))));
 }
 
+/** A pigment as a tint: `fraction` parts pigment + rest Titanium White, through
+ * the KM chain. Painters recognise a pigment by its tint/undertone, not its dark
+ * masstone — this is what a well swatch should show for the hue to read true. */
+export function tintHex(slug: string, fraction: number): string | null {
+  const r: Recipe = new Map([
+    [slug, fraction],
+    ['titanium-white', 1 - fraction],
+  ]);
+  return recipeToHex(r);
+}
+
 /** The "wrong" answer for contrast: naive linear-RGB average of the pigment
  * masstone swatches, weighted by parts. This is what RGB blending would give —
  * blue + yellow -> grey/brown instead of green. */
