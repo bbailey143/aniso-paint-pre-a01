@@ -24,6 +24,10 @@ export interface Pigment {
   temp: string;    // 'warm' | 'cool' | 'neutral' — palette-organisation hint
   K: number[];     // absorption, 38 bands
   S: number[];     // scattering, 38 bands
+  rho: number;     // C97 density — how long it stays suspended (heavier settles sooner)
+  omega: number;   // C97 staining power — adherence to paper fibres
+  gamma: number;   // C97 granulation — how strongly paper height drives settling
+  transportSrc: string; // provenance of rho/omega/gamma (C97 or UNVERIFIED analog)
   hex: string;     // sRGB masstone swatch (matte), for the UI
 }
 
@@ -113,6 +117,10 @@ export const PIGMENTS: Pigment[] = [
       1.0,
       1.0
     ],
+    "rho": 0.3,
+    "omega": 1.5,
+    "gamma": 0.1,
+    "transportSrc": "UNVERIFIED analog: opaque heavy white",
     "hex": "#fcfefd"
   },
   {
@@ -200,6 +208,10 @@ export const PIGMENTS: Pigment[] = [
       0.09017,
       0.066288
     ],
+    "rho": 0.12,
+    "omega": 2.2,
+    "gamma": 0.08,
+    "transportSrc": "C97 Hansa Yellow",
     "hex": "#ffd500"
   },
   {
@@ -287,6 +299,10 @@ export const PIGMENTS: Pigment[] = [
       0.071393,
       0.058506
     ],
+    "rho": 0.12,
+    "omega": 2.4,
+    "gamma": 0.08,
+    "transportSrc": "UNVERIFIED analog: Hansa Yellow",
     "hex": "#ffa900"
   },
   {
@@ -374,6 +390,10 @@ export const PIGMENTS: Pigment[] = [
       0.092967,
       0.073049
     ],
+    "rho": 0.14,
+    "omega": 2.6,
+    "gamma": 0.14,
+    "transportSrc": "C97 Brilliant Orange (analog)",
     "hex": "#ff731e"
   },
   {
@@ -461,6 +481,10 @@ export const PIGMENTS: Pigment[] = [
       0.186405,
       0.125018
     ],
+    "rho": 0.18,
+    "omega": 4.0,
+    "gamma": 0.18,
+    "transportSrc": "UNVERIFIED analog: modern organic red",
     "hex": "#c62933"
   },
   {
@@ -548,6 +572,10 @@ export const PIGMENTS: Pigment[] = [
       0.11156,
       0.114849
     ],
+    "rho": 0.16,
+    "omega": 5.5,
+    "gamma": 0.24,
+    "transportSrc": "C97 Quinacridone Rose (analog)",
     "hex": "#a73442"
   },
   {
@@ -635,6 +663,10 @@ export const PIGMENTS: Pigment[] = [
       0.109171,
       0.110911
     ],
+    "rho": 0.16,
+    "omega": 5.5,
+    "gamma": 0.24,
+    "transportSrc": "C97 Quinacridone Rose",
     "hex": "#853246"
   },
   {
@@ -722,6 +754,10 @@ export const PIGMENTS: Pigment[] = [
       0.071704,
       0.062562
     ],
+    "rho": 0.16,
+    "omega": 6.0,
+    "gamma": 0.15,
+    "transportSrc": "UNVERIFIED analog: strong-staining organic",
     "hex": "#423b3b"
   },
   {
@@ -809,6 +845,10 @@ export const PIGMENTS: Pigment[] = [
       0.010551,
       0.0121
     ],
+    "rho": 0.55,
+    "omega": 3.0,
+    "gamma": 0.91,
+    "transportSrc": "C97 French Ultramarine",
     "hex": "#382e68"
   },
   {
@@ -896,6 +936,10 @@ export const PIGMENTS: Pigment[] = [
       0.698095,
       0.516444
     ],
+    "rho": 0.18,
+    "omega": 4.8,
+    "gamma": 0.2,
+    "transportSrc": "UNVERIFIED analog: Phthalo Green",
     "hex": "#393559"
   },
   {
@@ -983,6 +1027,10 @@ export const PIGMENTS: Pigment[] = [
       0.297933,
       0.268504
     ],
+    "rho": 0.18,
+    "omega": 4.8,
+    "gamma": 0.2,
+    "transportSrc": "C97 Phthalo Green",
     "hex": "#2e4046"
   },
   {
@@ -1070,6 +1118,10 @@ export const PIGMENTS: Pigment[] = [
       0.025157,
       0.025641
     ],
+    "rho": 0.15,
+    "omega": 5.0,
+    "gamma": 0.12,
+    "transportSrc": "UNVERIFIED analog: carbon black",
     "hex": "#3a3b3c"
   }
 ];

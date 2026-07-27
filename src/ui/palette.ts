@@ -14,6 +14,10 @@ export interface PaletteEvents {
   onMixChange?(hex: string | null, recipe: Recipe, loading: number): void;
   /** Fired when the paper substrate changes. */
   onPaperChange?(paper: Paper): void;
+  /** Fired when the evaporation (drying) rate changes. */
+  onDryChange?(evapRate: number): void;
+  /** Fired when the sheet should be wiped. */
+  onClear?(): void;
 }
 
 export class Palette {
@@ -64,6 +68,15 @@ export class Palette {
       this.loading = parseFloat(slider.value);
       this.refresh();
     });
+
+    const evap = this.root.querySelector('#evap') as HTMLInputElement;
+    evap.value = '0';
+    evap.addEventListener('input', () => {
+      this.events.onDryChange?.(parseFloat(evap.value));
+    });
+
+    this.root.querySelector('#wash-clear')!
+      .addEventListener('click', () => this.events.onClear?.());
   }
 
   private template(): string {
@@ -91,9 +104,14 @@ export class Palette {
         <div class="pal-sub">paper</div>
         <div id="papers" class="papers"></div>
         <label class="loading-row">
-          <span>loading</span>
-          <input id="loading" type="range" min="0" max="1" step="0.02" />
+          <span>load</span>
+          <input id="loading" type="range" min="0.02" max="1" step="0.02" />
         </label>
+        <label class="loading-row">
+          <span>dry</span>
+          <input id="evap" type="range" min="0" max="0.004" step="0.0001" />
+        </label>
+        <button id="wash-clear" class="pal-btn">clear sheet</button>
       </div>`;
   }
 

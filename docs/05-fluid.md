@@ -61,6 +61,34 @@ CapillaryFlow(M, s)
 - **Zero-init every wet texture at startup.** Don't trust lazy-init. Uninitialised
   reads produced a phantom "instability" that survived rounds of analysis.
 
+### `[MEASURED — P4]` Half-float cannot hold the accumulating fields
+
+The `main` bench left this open: after its zero-init fix, half-float still lost
+**6.4 % of the sheet over 200 hands-off frames, reproducibly**, and it recorded
+that *"whether that is rounding or another latent bug … has not been established."*
+
+**Established.** This build reproduced it (water −6.3 %/−7.1 %, pigment −6.5 % per
+200 frames at f16) and localised it with two discriminators:
+
+| Test | Result | Reads as |
+|---|---|---|
+| `cosAlpha = 0` (zeroes capillary diffusion) | water drift → **0.000 %** | water loss lives in capillary diffusion |
+| pigment across a **16× range** of paint quantity | −6.5 % / −6.6 % / −6.7 % | **scale-invariant** ⇒ floating-point *relative* rounding, not a threshold or an asymmetric formula |
+
+Cause: capillary diffusion and `TransferPigment` both add a small delta to a
+larger stored value every frame, and the give/receive halves round independently
+at a 10-bit mantissa. No formula change fixes that.
+
+**Fix: the wet band runs at `rgba32float`.** Conservation then reads
+**0.0000 % over 200 frames and −0.0000 % over 1000**, reproduced. 32-bit float
+textures are not filterable in WebGPU core, so the composite interpolates them by
+hand (`biload`) rather than depend on the optional `float32-filterable` feature.
+
+`[OPEN — P6]` Evaporation is gated on the wet mask, so a thin sub-threshold damp
+halo spread by capillary diffusion never dries; total water stalls at a small
+residue. A drying-semantics question, not a conservation break — settle it with
+the drying pipeline.
+
 ## Edge darkening (coffee-ring / Deegan)
 
 Physically: in an evaporating drop with a pinned contact line, liquid evaporating at

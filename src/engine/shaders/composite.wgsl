@@ -25,10 +25,14 @@ struct Comp {
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
 @group(0) @binding(2) var<storage, read> cie: array<vec4f>;     // [X,Y,Z,0] per band
 @group(0) @binding(3) var<uniform> col: vec4f;                  // k1, k2, kInsDefault, pigCount
-@group(0) @binding(4) var pigA: texture_2d<f32>;
-@group(0) @binding(5) var pigB: texture_2d<f32>;
+@group(0) @binding(4) var pigA: texture_2d<f32>;                // g[0..3] suspended
+@group(0) @binding(5) var pigB: texture_2d<f32>;                // g[4..7] suspended
 @group(0) @binding(6) var paper: texture_2d<f32>;
 @group(0) @binding(7) var samp: sampler;
+@group(0) @binding(8) var setA: texture_2d<f32>;                // d[0..3] settled
+@group(0) @binding(9) var setB: texture_2d<f32>;                // d[4..7] settled
+@group(0) @binding(10) var wet0: texture_2d<f32>;               // M, h_f, u, v
+@group(0) @binding(11) var wet5: texture_2d<f32>;               // s, w, h_p, flags
 
 struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
@@ -44,6 +48,25 @@ fn vs(@builtin(vertex_index) vi: u32) -> VsOut {
 
 fn sinh_(x: f32) -> f32 { let e = exp(x); return (e - 1.0 / e) * 0.5; }
 fn cosh_(x: f32) -> f32 { let e = exp(x); return (e + 1.0 / e) * 0.5; }
+
+// Manual bilinear fetch. The wet band is rgba32float (it accumulates, and half
+// floats ground 6.5% of the pigment away every 200 frames — see fluid.ts), and
+// 32-bit float textures are not filterable in WebGPU core, so we interpolate by
+// hand rather than take a dependency on the float32-filterable feature (D1).
+fn biload(t: texture_2d<f32>, uv: vec2f) -> vec4f {
+  let dim = vec2f(textureDimensions(t));
+  let p = uv * dim - 0.5;
+  let base = floor(p);
+  let f = p - base;
+  let hi = vec2i(dim) - vec2i(1, 1);
+  let c00 = clamp(vec2i(base), vec2i(0, 0), hi);
+  let c11 = clamp(vec2i(base) + vec2i(1, 1), vec2i(0, 0), hi);
+  let t00 = textureLoad(t, vec2i(c00.x, c00.y), 0);
+  let t10 = textureLoad(t, vec2i(c11.x, c00.y), 0);
+  let t01 = textureLoad(t, vec2i(c00.x, c11.y), 0);
+  let t11 = textureLoad(t, vec2i(c11.x, c11.y), 0);
+  return mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
+}
 
 fn slotId(i: i32) -> i32 {
   if (i < 4) { return C.slotA[i]; }
@@ -71,9 +94,15 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     return vec4f(bg, 1.0);
   }
 
-  // Cell contents.
-  let a0 = textureSampleLevel(pigA, samp, uv, 0.0);
-  let a1 = textureSampleLevel(pigB, samp, uv, 0.0);
+  // Cell contents. What the eye sees is suspended pigment (floating in the
+  // film) plus settled pigment (adsorbed on the paper) — the g/d split IS
+  // granulation and lifting, but optically both absorb light, so both count.
+  let g0 = biload(pigA, uv);
+  let g1 = biload(pigB, uv);
+  let d0 = biload(setA, uv);
+  let d1 = biload(setB, uv);
+  let a0 = g0 + d0;
+  let a1 = g1 + d1;
   let amt = array<f32, 8>(a0.x, a0.y, a0.z, a0.w, a1.x, a1.y, a1.z, a1.w);
   var total = 0.0;
   for (var i = 0; i < 8; i = i + 1) { total = total + max(amt[i], 0.0); }
@@ -81,6 +110,15 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // Paper: (h, c, sizing, rc). Near-white reflectance, dulled a touch by sizing.
   let pap = textureSampleLevel(paper, samp, uv, 0.0);
   let Rpaper = mix(0.93, 0.88, pap.z);   // sized paper sits slightly less brilliant
+
+  // Wet state drives the gloss dial. A standing water film is specular (low
+  // k_instrument -> deep, saturated); as it dries the surface goes matte and the
+  // value lifts. This is the wet->dry shift falling out of one mechanism rather
+  // than a post-process. [UNVERIFIED — Card 4; bench it against real swatches.]
+  let w0v = biload(wet0, uv);
+  let w5v = biload(wet5, uv);
+  let wetness = clamp(max(w0v.y * 6.0, w5v.x * 3.0), 0.0, 1.0);
+  let kIns = mix(C.kInstrument, 0.0, wetness);
 
   var XYZ = vec3f(0.0);
   if (total < 1e-4) {
@@ -115,7 +153,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
       // Composite the transparent layer over the paper (Kubelka).
       var R = Rlayer + (Tlayer * Tlayer * Rpaper) / (1.0 - Rlayer * Rpaper);
       // Saunderson forward (internal -> external), gloss via kInstrument.
-      R = C.kInstrument * k1 + ((1.0 - k1) * (1.0 - k2) * R) / (1.0 - k2 * R);
+      R = kIns * k1 + ((1.0 - k1) * (1.0 - k2) * R) / (1.0 - k2 * R);
       R = clamp(R, 0.0, 1.0);
       XYZ = XYZ + R * cie[b].xyz;
     }
@@ -129,7 +167,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   );
 
   // Relief lighting from the paper height gradient (tooth catches the light).
-  let texel = 1.0 / C.doc;
+  let texel = 1.0 / vec2f(textureDimensions(paper));
   let hL = textureSampleLevel(paper, samp, uv - vec2f(texel.x, 0.0), 0.0).x;
   let hR = textureSampleLevel(paper, samp, uv + vec2f(texel.x, 0.0), 0.0).x;
   let hU = textureSampleLevel(paper, samp, uv - vec2f(0.0, texel.y), 0.0).x;
