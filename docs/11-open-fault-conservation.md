@@ -93,11 +93,60 @@ Do not rewrite the solver on the strength of it.
 4. Only if all three come back clean: audit `flux_compute`'s write coverage with a
    sentinel pattern written before each frame and checked after.
 
+## Round 4 — down to one pass, and the value comes from outside the physics
+
+Four experiments, each reproducible:
+
+**1. It is exactly one pass.** Cumulative bisect with the flux group split into its
+three dispatches, blank sheet, 80 steps, 3 reps each:
+
+| enabled | dirty |
+|---|---|
+| vel · +relax · +outward · +fluxCompute · **+fluxPig** | **0/3** |
+| **+fluxWater** | **3/3** |
+
+`flux_apply_water` is the only pass that exposes it. `flux_apply_pigment` reads the
+same ledger with the same neighbour pattern and stays clean — because it multiplies
+by concentration, which is zero on a blank sheet. It *cannot* reveal a bad ledger.
+`flux_apply_water` adds the neighbour terms straight into `h_f`, so it does.
+
+**2. The ledger really is corrupt.** Patch `h_new` to ignore the flux buffer
+entirely: **0/5 dirty**. The texture read/write path is innocent.
+
+**3. The value arrives with no water anywhere.** With that patch still in — so water
+can never appear — the flux buffer *still* spontaneously acquires **2.0**, at
+(241, 74), while total water on the sheet is exactly 0. So it is not the solver
+amplifying anything; a constant is landing in memory the physics never wrote.
+
+**4. The bare pattern does not reproduce it.** A standalone harness with no
+aniso-paint code — allocate a storage buffer, `clearBuffer`, dispatch a shader that
+writes `vec4(0)` to every cell with the same 8×8 groups and indexing, read back — is
+clean **60/60**. A plain clear + readback is clean **40/40**. Whatever it is needs
+the surrounding engine, not just this access pattern.
+
+### Also ruled out
+
+- **Backend.** This is Chrome/Dawn on Windows, which is **D3D12**; `main`'s bench was
+  Rust/wgpu on **Vulkan**. Both show it. The "try DX12" experiment is therefore
+  already answered, and a single driver is not the explanation.
+- **Mixed storage access types.** The ledger is `read_write` in `flux_compute` and
+  `read` in the two consumers, in one compute pass — a plausible hazard-tracking
+  gap. Declaring all three `read_write` changed nothing: still **10/10 dirty**.
+  Reverted.
+
+### Next step, and it is now bounded
+
+Grow the clean standalone harness toward the engine one element at a time — add the
+wet0 ping-pong textures, then `update_velocities`, then relaxation, then the real
+`flux_compute` — until it fires. The corrupting *interaction* is then isolated with
+no physics in the way. That is a short, mechanical hunt, unlike everything before it.
+
 ## Where it stands
 
 - Corruption and overflows: **gone** (per-frame flux clear).
 - Blank-sheet pigment creation: **gone**.
-- Water creation: **open**, but fully characterised and reproducible.
+- Water creation: **open**, localised to one pass, one buffer, one constant, and a
+  fixed memory stride. Reproducible on demand.
 
 ---
 

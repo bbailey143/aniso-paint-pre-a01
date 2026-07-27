@@ -406,13 +406,17 @@ export class FluidEngine {
     });
 
     // 5 — flux ledger, then pigment BEFORE water (denominator order matters)
-    run('flux', () => {
+    run('fluxCompute', () => {
       this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
+    });
+    run('fluxPig', () => {
       this.dispatch(pass, this.pipes.fluxPig, [
         U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
         this.wet1.dst, this.wet2.dst,
       ]);
       this.wet1.flip(); this.wet2.flip();
+    });
+    run('fluxWater', () => {
       this.dispatch(pass, this.pipes.fluxWater, [U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst]);
       this.wet0.flip();
     });
