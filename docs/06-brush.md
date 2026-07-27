@@ -92,6 +92,52 @@ also how you get drybrush.
   says the same: never move more than one cell per step. Two sources, one requirement.
   The bench reproduced the failure — strokes bead into dots without this.
 
+## `[BUILT — P5]` What the implementation does, and what it added
+
+`src/brush/` — `spine.ts` (the solver), `brush.ts` (lattice + footprint),
+`reservoir.ts`, `library.ts` (the data rows), driven by `input/stroke.ts`.
+
+The spine is solved by position relaxation to **static equilibrium** from the rest
+shape each step, which is what makes the snap-back free. Measured: 3 joints in
+contact under pressure, **0 the instant the pen lifts** — VL pass/fail #1. Round
+brush 5.4 cells across, flat 22.8; rotating the flat brush's barrel 90° takes it to
+15.1, so **barrel roll changes the mark**, as promised. Pressure ramps the footprint
+0 → 2.1 → 5.4 → 8.5 cells. Brush cost is **0.23 ms per realistic frame** (three pen
+samples), and conservation stays exact (0.0000 %, four runs) with the brush in play.
+
+Three things the build had to add or fix beyond the card:
+
+- **`[FIXED]` An isolated contacting joint must still mark.** The footprint was
+  built from capsules between *consecutive* in-slab joints, so the lightest touch —
+  where only the very tip reaches the paper — emitted nothing at all. That silently
+  killed "a very fine stroke with the flexible tip of a large round brush" (Fig. 7).
+  A lone contact now emits a degenerate segment, and the pressure ramp starts at a
+  true hairline.
+- **`[UNVERIFIED — reasoned, not sourced]` Capillary flow *inside* the tuft.** VL's
+  reservoir has no internal transport, and without it the brush is unusable: only
+  the few cells actually touching the paper deplete, so a stroke died after ~40
+  cells with three quarters of its load still stranded up the tuft. `Reservoir.wick`
+  moves water and pigment down the bristle on concentration-relative-to-capacity, so
+  the belly feeds the tip. With it, a stroke lays 3.2 units in the first 40 cells and
+  then tapers into a long drybrush tail, still carrying load at 400. Rate is a
+  tunable; bench it.
+- **Reservoir capacities are tuned to the engine's units, not measured.** The first
+  values were ~50× too small and a full stroke was invisible.
+
+`[DEFERRED — P6]` **Canvas → brush pickup.** `upRate` is in the schema and the
+transfer is specified, but the reverse direction needs canvas state read back to the
+CPU (a GPU→CPU path with a frame of lag). Lifting, scrubbing, and dragging a
+neighbouring colour along all wait on it.
+
+`[NOTE]` The footprint can exceed one GPU buffer on a fast flick, so the deposit is
+dispatched in chunks — each submitted separately, because `writeBuffer` runs on the
+queue timeline and several chunks in one encoder would all read the last write.
+Truncating instead would silently lose paint and show up as a phantom leak.
+
+`[NOTE]` The conservation gauge is read back asynchronously and lags by a frame or
+more; a baseline sampled immediately after a stroke can read low and look like a
+gain. Let it settle before interpreting it.
+
 ## Build library and tests
 
 Build `RoundSable` (single spine) and `FlatSable` (two spines). Pass/fail from VL:

@@ -17,9 +17,23 @@ struct Seg {
   _pad: f32,
 };
 
+struct Ctl {
+  count: f32,
+  minX: f32,
+  minY: f32,
+  maxX: f32,
+  maxY: f32,
+  _p0: f32,
+  _p1: f32,
+  _p2: f32,
+};
+
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var<storage, read> segs: array<Seg>;
-@group(0) @binding(2) var<uniform> Ctl: vec4<f32>;   // x = segment count, yzw spare
+// The footprint's bounding box. Every cell still copies through (this pass
+// ping-pongs, so a skipped cell would lose its contents), but only cells the
+// hairs can actually reach pay for the segment loop.
+@group(0) @binding(2) var<uniform> C: Ctl;
 @group(0) @binding(3) var<storage, read> mix: array<vec4<f32>>;  // 2 x vec4 = 8 slot weights
 @group(0) @binding(4) var wet0_in: texture_2d<f32>;
 @group(0) @binding(5) var wet1_in: texture_2d<f32>;
@@ -50,8 +64,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var ghi = textureLoad(wet2_in, c, 0);
   var w5 = textureLoad(wet5_in, c, 0);
 
-  let count = i32(Ctl.x);
-  if (count > 0) {
+  let count = i32(C.count);
+  let inBox = f32(c.x) >= C.minX && f32(c.x) <= C.maxX
+           && f32(c.y) >= C.minY && f32(c.y) <= C.maxY;
+  if (count > 0 && inBox) {
     let pos = vec2<f32>(f32(c.x) + 0.5, f32(c.y) + 0.5);
     var water = 0.0;
     var pig = 0.0;

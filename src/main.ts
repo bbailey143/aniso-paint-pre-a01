@@ -6,10 +6,11 @@
 
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { PointerInput, type StylusSample } from './input/pointer';
-import { StrokeBuilder } from './input/stroke';
+import { StrokeEngine } from './input/stroke';
 import { Palette } from './ui/palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
+import { BRUSHES } from './brush/library';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 
@@ -31,19 +32,22 @@ async function main() {
 
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
   const engine = new CanvasEngine(gpu);
-  const stroke = new StrokeBuilder();
+  const stroke = new StrokeEngine(BRUSHES[0], 1.0);
 
   // ---- Pigment tray + surface ---------------------------------------------
   const palette = new Palette(document.body, {
     onMixChange(_hex, recipe, loading) {
       engine.setMix(recipe);
-      // "Load" scales how much water and pigment the brush lays down.
-      stroke.style.water = 0.10 * loading;
-      stroke.style.pigment = 0.055 * loading;
+      // Dip the brush: the mix and how heavily it is charged.
+      stroke.charge(engine.mixWeights, loading);
     },
     onPaperChange(paper) { engine.setPaper(paper); },
     onDryChange(evapRate) { engine.setFluid({ evapRate }); },
     onClear() { engine.clear(); },
+    onBrushChange(def, size) {
+      stroke.setBrush(def, size);
+      stroke.charge(engine.mixWeights, palette.loading);
+    },
   });
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setMix(palette.recipe);
@@ -52,6 +56,7 @@ async function main() {
   if (palette.recipe.size === 0) {
     palette.add('ultramarine-blue');
   }
+  stroke.charge(engine.mixWeights, palette.loading);
 
   // ---- Pointer -> stroke segments -----------------------------------------
   // Screen px -> document uv -> simulation grid. Mirrors the composite's
@@ -69,7 +74,10 @@ async function main() {
 
   let smoothV = 0;
   new PointerInput(canvas, () => gpu.dpr, {
-    onStrokeStart() { stroke.begin(); },
+    onStrokeStart(s: StylusSample) {
+      const g = toGrid(s);
+      if (g) stroke.begin(g.gx, g.gy, s);
+    },
     onStrokeEnd() { stroke.end(); },
     onSample(s: StylusSample) {
       smoothV = smoothV * 0.8 + s.velocity * 0.2;
@@ -111,6 +119,7 @@ async function main() {
   // Dev aid: expose for headless verification.
   (window as unknown as Record<string, unknown>).__engine = engine;
   (window as unknown as Record<string, unknown>).__stroke = stroke;
+  (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES;
 }
 
 function showFatal(message: string) {

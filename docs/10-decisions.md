@@ -34,6 +34,12 @@ it, or because a decision here justifies it.
 - **Sub-threshold damp halo never evaporates** (P4 finding). Evaporation is gated on
   the wet mask; capillary diffusion spreads saturation below that threshold. Settle
   with the drying pipeline in P6.
+- **Canvas → brush pickup** (P5 deferral). `upRate` exists and the transfer is
+  specified; it needs a GPU→CPU readback of the footprint region. Blocks lifting,
+  scrubbing, and picking up a neighbouring colour. Do it with P6.
+- **Brush numbers are tuned, not measured.** Reservoir capacities, stiffness, and
+  the in-tuft wicking rate are reasoned against VL's behavioural targets. Bench them
+  against real strokes.
 - **Precision on iPad.** D6's wet band is f32 at 512². Re-check the memory and
   format support on target hardware before the native/iPad pass.
 - **Native iPad path.** Deferred under D1; re-scope after the browser build proves out.

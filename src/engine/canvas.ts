@@ -42,7 +42,7 @@ export class CanvasEngine {
 
   // Active slot -> library id map (up to 8), shared by fluid and composite.
   private slotIds = new Int32Array(8).fill(-1);
-  private mixWeights: Float32Array<ArrayBuffer> = new Float32Array(8);
+  private mixWeights_: Float32Array<ArrayBuffer> = new Float32Array(8);
   private thickScale = 5.0;
   private kInstrument = 1.0;
   private reliefStrength = 2.2;
@@ -88,6 +88,8 @@ export class CanvasEngine {
   }
 
   get readings(): Gauges { return this.fluid.readings; }
+  /** Normalised concentration per cell slot — what the brush gets dipped in. */
+  get mixWeights(): Float32Array<ArrayBuffer> { return this.mixWeights_; }
 
   setFluid(p: Partial<FluidParams>) { this.fluid.setParams(p); }
   setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
@@ -115,7 +117,7 @@ export class CanvasEngine {
    */
   setMix(recipe: Recipe) {
     this.slotIds.fill(-1);
-    this.mixWeights.fill(0);
+    this.mixWeights_.fill(0);
     let total = 0;
     for (const v of recipe.values()) total += Math.max(0, v);
     if (total <= 0) { this.fluid.setSlots([]); return; }
@@ -126,7 +128,7 @@ export class CanvasEngine {
       const id = SLUG_TO_ID.get(slug);
       if (id === undefined) continue;
       this.slotIds[slot] = id;
-      this.mixWeights[slot] = parts / total;
+      this.mixWeights_[slot] = parts / total;
       slot++;
     }
     this.fluid.setSlots(Array.from(this.slotIds));
@@ -134,7 +136,7 @@ export class CanvasEngine {
 
   /** Advance the physics one frame with this frame's stroke segments. */
   step(segments: Float32Array<ArrayBuffer>, segCount: number) {
-    this.fluid.step(segments, segCount, this.mixWeights);
+    this.fluid.step(segments, segCount, this.mixWeights_);
   }
 
   private writeCompParams(viewW: number, viewH: number) {
@@ -195,7 +197,7 @@ export class CanvasEngine {
   }
 
   /** Debug: render the composite offscreen and read pixels back on the CPU. */
-  async debugReadback(size = 64): Promise<{ center: number[]; corner: number[] }> {
+  async debugReadback(size = 64): Promise<any> {
     const { device, format } = this.gpu;
     const tex = device.createTexture({
       size: [size, size], format,
@@ -231,9 +233,26 @@ export class CanvasEngine {
     };
     const center = at(size >> 1, size >> 1);
     const corner = at(1, 1);
+    // Scan EVERY pixel for the darkest one. A sparse grid silently misses a
+    // stroke only a few pixels wide, which reads as "nothing was painted" when
+    // the paint is simply thin — exactly the false negative that cost time here.
+    const scan: { x: number; y: number; rgb: number[] }[] = [];
+    let darkest = [255, 255, 255];
+    let darkAt = { x: 0, y: 0 };
+    let sum = 0;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const p = at(x, y);
+        const l = p[0] + p[1] + p[2];
+        sum += l / 3;
+        if (l < darkest[0] + darkest[1] + darkest[2]) { darkest = p; darkAt = { x, y }; }
+      }
+    }
+    scan.push({ x: darkAt.x, y: darkAt.y, rgb: darkest });
+    const meanLum = sum / (size * size);
     rb.unmap();
     tex.destroy(); rb.destroy();
-    return { center, corner };
+    return { center, corner, scan, darkest, darkAt, meanLum };
   }
 }
 

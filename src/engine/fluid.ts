@@ -32,7 +32,9 @@ import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
 
 const NQ = 13;                 // quantities per reduce workgroup
-const MAX_SEGS = 256;          // resampled stroke segments per frame
+// Footprint segments per frame. The brush emits one per contacting bristle
+// segment per resampled step, so this is bristles x contacts x substeps.
+const MAX_SEGS = 8192;
 const SEG_FLOATS = 8;          // vec2 a, vec2 b, radius, water, pigment, pad
 
 export interface FluidParams {
@@ -179,7 +181,7 @@ export class FluidEngine {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'segments',
     });
     this.ctlBuf = device.createBuffer({
-      size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
+      size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
     });
     this.mixBuf = device.createBuffer({
       size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
@@ -311,23 +313,50 @@ export class FluidEngine {
     this.frame++;
     this.writeParams();
 
-    if (segCount > 0) {
-      device.queue.writeBuffer(this.segBuf, 0, segments, 0, Math.min(segCount * SEG_FLOATS, MAX_SEGS * SEG_FLOATS));
-    }
-    device.queue.writeBuffer(this.ctlBuf, 0, new Float32Array([Math.min(segCount, MAX_SEGS), 0, 0, 0]));
     device.queue.writeBuffer(this.mixBuf, 0, mixWeights);
+    const U = { buffer: this.paramsBuf };
+
+    // 1 — deposit (BrushContact + Transfer). A frame's footprint can exceed one
+    // buffer: a fast flick with a many-bristled brush emits thousands of hair
+    // segments. Dispatch it in chunks rather than truncating — dropping the tail
+    // silently loses paint, which the conservation gauge would then report as a
+    // leak that isn't one.
+    //
+    // Each chunk is submitted on its own, because writeBuffer runs on the queue
+    // timeline: recording several chunks into one encoder would leave every
+    // dispatch reading whatever the LAST write left in the buffer.
+    const total = Math.max(0, segCount);
+    for (let done = 0; done < total; done += MAX_SEGS) {
+      const n = Math.min(total - done, MAX_SEGS);
+      device.queue.writeBuffer(
+        this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
+
+      let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+      for (let i = 0; i < n; i++) {
+        const o = (done + i) * SEG_FLOATS;
+        const r = segments[o + 4] + 1;
+        minX = Math.min(minX, segments[o] - r, segments[o + 2] - r);
+        maxX = Math.max(maxX, segments[o] + r, segments[o + 2] + r);
+        minY = Math.min(minY, segments[o + 1] - r, segments[o + 3] - r);
+        maxY = Math.max(maxY, segments[o + 1] + r, segments[o + 3] + r);
+      }
+      device.queue.writeBuffer(this.ctlBuf, 0,
+        new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0]));
+
+      const denc = device.createCommandEncoder({ label: 'deposit-chunk' });
+      const dpass = denc.beginComputePass();
+      this.dispatch(dpass, this.pipes.deposit, [
+        U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
+        this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
+        this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
+      ]);
+      dpass.end();
+      device.queue.submit([denc.finish()]);
+      this.wet0.flip(); this.wet1.flip(); this.wet2.flip(); this.wet5.flip();
+    }
 
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
     const pass = enc.beginComputePass({ label: 'fluid' });
-    const U = { buffer: this.paramsBuf };
-
-    // 1 — deposit (stands in for BrushContact + Transfer until P5)
-    this.dispatch(pass, this.pipes.deposit, [
-      U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
-      this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
-      this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
-    ]);
-    this.wet0.flip(); this.wet1.flip(); this.wet2.flip(); this.wet5.flip();
 
     // 2 — UpdateVelocities
     this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);

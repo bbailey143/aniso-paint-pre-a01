@@ -8,6 +8,8 @@
 import { PIGMENTS } from '../color/pigments';
 import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color/km';
 import { PAPERS, type Paper } from '../substrate/papers';
+import { BRUSHES } from '../brush/library';
+import type { BrushDef } from '../brush/types';
 
 export interface PaletteEvents {
   /** Fired whenever the active mix or loading changes. */
@@ -18,11 +20,15 @@ export interface PaletteEvents {
   onDryChange?(evapRate: number): void;
   /** Fired when the sheet should be wiped. */
   onClear?(): void;
+  /** Fired when the brush or its size changes. */
+  onBrushChange?(def: BrushDef, size: number): void;
 }
 
 export class Palette {
   readonly recipe: Recipe = new Map();
   loading = 0.6;
+  brush: BrushDef = BRUSHES[0];
+  brushSize = 1.0;
   private root: HTMLElement;
   private mixSwatch!: HTMLElement;
   private rgbSwatch!: HTMLElement;
@@ -50,6 +56,28 @@ export class Palette {
   }
 
   private buildSurface() {
+    // Brush picker + size.
+    const brushes = this.root.querySelector('#brushes')!;
+    BRUSHES.forEach((b, i) => {
+      const el = document.createElement('button');
+      el.className = 'pal-btn paper' + (i === 0 ? ' on' : '');
+      el.textContent = b.name.replace(' Sable', '');
+      el.title = `${b.name} — ${b.kind === 'flat' ? 'two spines (spreads, scratches)' : 'one spine (points)'}`;
+      el.addEventListener('click', () => {
+        brushes.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
+        el.classList.add('on');
+        this.brush = b;
+        this.events.onBrushChange?.(b, this.brushSize);
+      });
+      brushes.appendChild(el);
+    });
+    const sizeEl = this.root.querySelector('#brush-size') as HTMLInputElement;
+    sizeEl.value = String(this.brushSize);
+    sizeEl.addEventListener('input', () => {
+      this.brushSize = parseFloat(sizeEl.value);
+      this.events.onBrushChange?.(this.brush, this.brushSize);
+    });
+
     const papers = this.root.querySelector('#papers')!;
     PAPERS.forEach((p, i) => {
       const b = document.createElement('button');
@@ -101,6 +129,12 @@ export class Palette {
         <div id="recipe" class="recipe"></div>
       </div>
       <div class="surface">
+        <div class="pal-sub">brush</div>
+        <div id="brushes" class="papers"></div>
+        <label class="loading-row">
+          <span>size</span>
+          <input id="brush-size" type="range" min="0.4" max="2.4" step="0.05" />
+        </label>
         <div class="pal-sub">paper</div>
         <div id="papers" class="papers"></div>
         <label class="loading-row">
