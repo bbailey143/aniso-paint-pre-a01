@@ -88,6 +88,9 @@ export class CanvasEngine {
   }
 
   get readings(): Gauges { return this.fluid.readings; }
+  sampleGauges(): Promise<Gauges> { return this.fluid.sampleGauges(); }
+  set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
+  dump(name: string): Promise<Float32Array> { return this.fluid.dump(name); }
   /** Normalised concentration per cell slot — what the brush gets dipped in. */
   get mixWeights(): Float32Array<ArrayBuffer> { return this.mixWeights_; }
 

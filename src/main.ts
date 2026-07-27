@@ -48,6 +48,15 @@ async function main() {
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading);
     },
+    // Rinse: pigment out, clean water in. The brush stays loaded — it is now a
+    // water brush, which is what you wet paper with. The sheet is untouched.
+    onRinse() { stroke.rinse(1); },
+    // Rinse and re-dip: back to a known state without wiping the painting.
+    onRinseLoad() {
+      stroke.rinse(1);
+      engine.setMix(palette.recipe);
+      stroke.charge(engine.mixWeights, palette.loading);
+    },
   });
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setMix(palette.recipe);

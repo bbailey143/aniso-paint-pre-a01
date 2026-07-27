@@ -126,6 +126,14 @@ html, body {
 .chip:hover { background: rgba(255,255,255,0.1); }
 .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,0.2); }
 
+/* Water jar: rinse the brush without touching the sheet. */
+.jar { display: grid; grid-template-columns: 1fr 1.35fr; gap: 5px; }
+.jar-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 4px; }
+.jar-ico { font-size: 13px; line-height: 1; }
+.jar-btn.accent { color: var(--accent); border-color: rgba(216, 178, 106, 0.35); }
+.jar-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.jar-btn.flash { background: rgba(216, 178, 106, 0.22); border-color: var(--accent); }
+
 .surface { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
 .pal-sub { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
 .papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }

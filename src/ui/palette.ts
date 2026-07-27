@@ -20,6 +20,10 @@ export interface PaletteEvents {
   onDryChange?(evapRate: number): void;
   /** Fired when the sheet should be wiped. */
   onClear?(): void;
+  /** Rinse the brush: pigment out, clean water in. The sheet is untouched. */
+  onRinse?(): void;
+  /** Rinse, then re-dip in the current mix — back to a known state. */
+  onRinseLoad?(): void;
   /** Fired when the brush or its size changes. */
   onBrushChange?(def: BrushDef, size: number): void;
 }
@@ -105,6 +109,24 @@ export class Palette {
 
     this.root.querySelector('#wash-clear')!
       .addEventListener('click', () => this.events.onClear?.());
+
+    const flash = (el: Element) => {
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 220);
+    };
+    // No refresh() here on purpose: refresh re-fires onMixChange, which re-dips
+    // the brush — so rinsing and then refreshing would immediately undo the
+    // rinse. The palette still holds the mix; only the brush was washed out.
+    const rinseBtn = this.root.querySelector('#rinse')!;
+    rinseBtn.addEventListener('click', () => {
+      this.events.onRinse?.();
+      flash(rinseBtn);
+    });
+    const rinseLoadBtn = this.root.querySelector('#rinse-load')!;
+    rinseLoadBtn.addEventListener('click', () => {
+      this.events.onRinseLoad?.();
+      flash(rinseLoadBtn);
+    });
   }
 
   private template(): string {
@@ -126,6 +148,14 @@ export class Palette {
           </div>
         </div>
         <div id="mix-hex" class="mix-hex">—</div>
+        <div class="jar">
+          <button id="rinse" class="pal-btn jar-btn" title="Rinse the brush — pigment out, clean water in. The sheet is untouched.">
+            <span class="jar-ico">◌</span> rinse
+          </button>
+          <button id="rinse-load" class="pal-btn jar-btn accent" title="Rinse, then re-dip in the current mix — back to a known state.">
+            <span class="jar-ico">◍</span> rinse / load
+          </button>
+        </div>
         <div id="recipe" class="recipe"></div>
       </div>
       <div class="surface">

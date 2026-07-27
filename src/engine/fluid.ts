@@ -102,7 +102,8 @@ class PingPong {
   constructor(device: GPUDevice, n: number, label: string) {
     this.tex = [0, 1].map((i) => device.createTexture({
       size: [n, n], format: FLUID_FORMAT,
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+           | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
       label: `${label}${i}`,
     }));
     this.view = this.tex.map((t) => t.createView());
@@ -134,6 +135,12 @@ export class FluidEngine {
   private mixBuf: GPUBuffer;
   private partialsBuf: GPUBuffer;
   private readbackBuf: GPUBuffer;
+  /** The measurement path gets its OWN partials buffer. Sharing one with the
+   * per-frame readout let a sample overwrite the partials another read was
+   * still copying, so a reading could blend two different frames. */
+  private samplePartials: GPUBuffer;
+  /** Pause the per-frame readout while measuring, so nothing else is in flight. */
+  pauseReadback = false;
 
   private pipes: Record<string, GPUComputePipeline> = {};
   private params: FluidParams = { ...DEFAULT_FLUID };
@@ -174,7 +181,10 @@ export class FluidEngine {
     });
     this.fluxBuf = device.createBuffer({
       size: n * n * 4 * 4,
-      usage: GPUBufferUsage.STORAGE, label: 'flux',
+      // COPY_DST so it can be cleared. The ledger is written by flux_compute and
+      // read by two passes after it; uninitialised, it seeded exactly 1.0 into
+      // cells on a blank sheet. Never bet on lazy init.
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'flux',
     });
     this.segBuf = device.createBuffer({
       size: MAX_SEGS * SEG_FLOATS * 4,
@@ -196,6 +206,10 @@ export class FluidEngine {
     this.readbackBuf = device.createBuffer({
       size: partialCount * 4,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'gauge-readback',
+    });
+    this.samplePartials = device.createBuffer({
+      size: partialCount * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'sample-partials',
     });
 
     const mk = (src: string, label: string) => device.createComputePipeline({
@@ -283,6 +297,9 @@ export class FluidEngine {
     });
   }
 
+  /** Debug: names in here are skipped (dispatch AND flip) to bisect faults. */
+  readonly skip = new Set<string>();
+
   private dispatch(pass: GPUComputePassEncoder, pipe: GPUComputePipeline, res: GPUBindingResource[]) {
     const g = Math.ceil(this.n / 8);
     pass.setPipeline(pipe);
@@ -301,6 +318,7 @@ export class FluidEngine {
       }
     }
     pass.end();
+    enc.clearBuffer(this.fluxBuf);
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
@@ -356,48 +374,70 @@ export class FluidEngine {
     }
 
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
+    // Clear the ledger every frame, before anything reads it. flux_compute is
+    // supposed to write every cell, but the gauges say otherwise: with the flux
+    // group enabled a blank sheet grows water and pigment out of nothing, and
+    // with it disabled the sheet is exactly zero. Until that is understood, do
+    // not rely on full write coverage of a buffer two later passes read.
+    enc.clearBuffer(this.fluxBuf);
     const pass = enc.beginComputePass({ label: 'fluid' });
 
+    const run = (name: string, fn: () => void) => { if (!this.skip.has(name)) fn(); };
+
     // 2 — UpdateVelocities
-    this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);
-    this.wet0.flip();
+    run('vel', () => {
+      this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);
+      this.wet0.flip();
+    });
 
     // 3 — RelaxDivergence, N iterations
-    for (let i = 0; i < this.relaxIters; i++) {
-      this.dispatch(pass, this.pipes.relax, [U, this.wet0.src, this.wet0.dst]);
-      this.wet0.flip();
-    }
+    run('relax', () => {
+      for (let i = 0; i < this.relaxIters; i++) {
+        this.dispatch(pass, this.pipes.relax, [U, this.wet0.src, this.wet0.dst]);
+        this.wet0.flip();
+      }
+    });
 
     // 4 — FlowOutward (edge darkening bias into its own scratch field)
-    this.dispatch(pass, this.pipes.outward, [U, this.wet0.src, this.press.dst]);
-    this.press.flip();
+    run('outward', () => {
+      this.dispatch(pass, this.pipes.outward, [U, this.wet0.src, this.press.dst]);
+      this.press.flip();
+    });
 
     // 5 — flux ledger, then pigment BEFORE water (denominator order matters)
-    this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
-    this.dispatch(pass, this.pipes.fluxPig, [
-      U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
-      this.wet1.dst, this.wet2.dst,
-    ]);
-    this.wet1.flip(); this.wet2.flip();
-    this.dispatch(pass, this.pipes.fluxWater, [U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst]);
-    this.wet0.flip();
+    run('flux', () => {
+      this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
+      this.dispatch(pass, this.pipes.fluxPig, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
+        this.wet1.dst, this.wet2.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip();
+      this.dispatch(pass, this.pipes.fluxWater, [U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst]);
+      this.wet0.flip();
+    });
 
     // 6 — TransferPigment (g <-> d): granulation and lifting
-    this.dispatch(pass, this.pipes.transfer, [
-      U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.paper,
-      this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
-    ]);
-    this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    run('transfer', () => {
+      this.dispatch(pass, this.pipes.transfer, [
+        U, this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.paper,
+        this.wet1.dst, this.wet2.dst, this.wet3.dst, this.wet4.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip(); this.wet3.flip(); this.wet4.flip();
+    });
 
     // 7 — CapillaryFlow (absorption + creep; backruns)
-    this.dispatch(pass, this.pipes.capillary, [
-      U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst, this.wet5.dst,
-    ]);
-    this.wet0.flip(); this.wet5.flip();
+    run('capillary', () => {
+      this.dispatch(pass, this.pipes.capillary, [
+        U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst, this.wet5.dst,
+      ]);
+      this.wet0.flip(); this.wet5.flip();
+    });
 
     // 8 — DryTick (the only pass that removes water)
-    this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
-    this.wet0.flip(); this.wet5.flip();
+    run('dry', () => {
+      this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
+      this.wet0.flip(); this.wet5.flip();
+    });
 
     // 9 — gauges
     const rg = Math.ceil(this.n / 16);
@@ -409,12 +449,12 @@ export class FluidEngine {
     pass.dispatchWorkgroups(rg, rg, 1);
     pass.end();
 
-    if (!this.readbackBusy) {
+    if (!this.readbackBusy && !this.pauseReadback) {
       enc.copyBufferToBuffer(this.partialsBuf, 0, this.readbackBuf, 0, this.readbackBuf.size);
     }
     device.queue.submit([enc.finish()]);
 
-    if (!this.readbackBusy) {
+    if (!this.readbackBusy && !this.pauseReadback) {
       this.readbackBusy = true;
       this.readbackBuf.mapAsync(GPUMapMode.READ).then(() => {
         const data = new Float32Array(this.readbackBuf.getMappedRange().slice(0));
@@ -425,30 +465,81 @@ export class FluidEngine {
     }
   }
 
-  /** Sum the per-workgroup partials on the CPU and update the adaptive count. */
-  private accumulate(data: Float32Array) {
+  /**
+   * Read the gauges NOW. `readings` is filled by a readback that skips frames
+   * whenever a map is in flight, so it can describe a state many frames old —
+   * fine for a HUD, useless for measurement, and it manufactured a whole
+   * phantom bisect before that was understood.
+   */
+  async sampleGauges(): Promise<Gauges> {
+    const { device } = this.gpu;
+    const rg = Math.ceil(this.n / 16);
+    const bytes = this.samplePartials.size;
+    const rb = device.createBuffer({
+      size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = device.createCommandEncoder({ label: 'gauge-sample' });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(this.pipes.reduce);
+    pass.setBindGroup(0, this.bind(this.pipes.reduce, [
+      { buffer: this.paramsBuf },
+      this.wet0.src, this.wet1.src, this.wet2.src, this.wet3.src, this.wet4.src, this.wet5.src,
+      { buffer: this.samplePartials },
+    ]));
+    pass.dispatchWorkgroups(rg, rg, 1);
+    pass.end();
+    enc.copyBufferToBuffer(this.samplePartials, 0, rb, 0, bytes);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(rb.getMappedRange().slice(0));
+    rb.unmap(); rb.destroy();
+    return this.summarise(data);
+  }
+
+  /** Dump a whole fluid texture to the CPU as RGBA f32, for inspection. */
+  async dump(name: string): Promise<Float32Array> {
+    const map: Record<string, PingPong> = {
+      wet0: this.wet0, wet1: this.wet1, wet2: this.wet2,
+      wet3: this.wet3, wet4: this.wet4, wet5: this.wet5, press: this.press,
+    };
+    const pp = map[name];
+    if (!pp) throw new Error(`no such texture: ${name}`);
+    const { device } = this.gpu;
+    const bytesPerRow = this.n * 16;          // 512*16 = 8192, already 256-aligned
+    const rb = device.createBuffer({
+      size: bytesPerRow * this.n,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = device.createCommandEncoder({ label: `dump-${name}` });
+    enc.copyTextureToBuffer(
+      { texture: pp.srcTex }, { buffer: rb, bytesPerRow }, [this.n, this.n]);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const out = new Float32Array(rb.getMappedRange().slice(0));
+    rb.unmap(); rb.destroy();
+    return out;
+  }
+
+  /** Sum the per-workgroup partials into a reading. Pure; no side effects. */
+  private summarise(data: Float32Array): Gauges {
     const q = new Float64Array(NQ);
     for (let i = 0; i + NQ <= data.length; i += NQ) {
       for (let k = 0; k < NQ; k++) q[k] += data[i + k];
     }
     const perSlot = Array.from({ length: 8 }, (_, k) => q[2 + k]);
     const wetCells = q[11];
-    const meanDiv = wetCells > 0 ? q[12] / wetCells : 0;
-
-    this.gauges = {
-      film: q[0],
-      saturation: q[1],
-      water: q[0] + q[1],
-      pigment: perSlot.reduce((a, b) => a + b, 0),
-      perSlot,
-      wetCells,
-      meanDivergence: meanDiv,
+    return {
+      film: q[0], saturation: q[1], water: q[0] + q[1],
+      pigment: perSlot.reduce((a, b) => a + b, 0), perSlot, wetCells,
+      meanDivergence: wetCells > 0 ? q[12] / wetCells : 0,
       relaxIters: this.relaxIters,
     };
+  }
 
-    // Size next frame's relaxation from this frame's residual. The field is
-    // continuous between frames, so a one-frame lag costs nothing — and unlike a
-    // fixed count it responds when the artist floods the sheet.
+  /** Sum the per-workgroup partials on the CPU and update the adaptive count. */
+  private accumulate(data: Float32Array) {
+    this.gauges = this.summarise(data);
+    const meanDiv = this.gauges.meanDivergence;
     if (meanDiv > this.tau * 2) {
       this.relaxIters = Math.min(this.relaxMax, this.relaxIters + 4);
     } else if (meanDiv < this.tau * 0.5) {

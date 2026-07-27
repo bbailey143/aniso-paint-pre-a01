@@ -3,6 +3,51 @@
 **Status: open. P6 is not done. Read this before trusting any conservation number
 in this repo, including the ones in the P4 and P5 commit messages.**
 
+## Round 2 — the instrument, then the localisation
+
+**Progress: the corruption is gone, a bounded fault remains.**
+
+Three things had to be fixed before any measurement meant anything. Each one had
+produced a confident, wrong conclusion first:
+
+1. **`readings` lags** (see below). Fixed with `sampleGauges()`.
+2. **The sampler shared its partials buffer with the per-frame readout**, so a
+   measurement could overwrite the partials another read was still copying and
+   return a blend of two frames. The sampler now has its own buffer, and
+   `pauseReadback` stops the per-frame path during measurement.
+3. **`dump()` is only valid after a GPU sync.** Dumping straight after `clear()`
+   showed scattered cells holding `M = 2.0` — a mask value nothing writes — always
+   at local lane (1,4) of an 8×8 workgroup. With a sync first, the same dump reads
+   exactly zero. The texture was always fine; the readback was not.
+
+With all three fixed, the bisect finally means something. Cumulative, blank sheet,
+200 steps, nothing painted:
+
+| passes enabled | water | pigment |
+|---|---|---|
+| none · vel · +relax · +outward | **0** | **0** |
+| **+flux** | **66** | **14** |
+| +transfer, +capillary, +dry | 58–87 | 18–36 |
+
+**The flux group is where mass enters.** Everything upstream of it is exactly zero.
+
+**Fix applied:** the flux ledger is now cleared *every frame* before anything reads
+it, not just at `clear()`. `flux_compute` is supposed to write every cell, so this
+should be redundant — it is not. That change alone:
+
+- removed the overflows entirely (no more ~1e33 runs);
+- took blank-sheet **pigment** creation to **0**;
+- turned the remaining water fault from wildly nondeterministic into
+  **repeatable**: +195 % / +190 % / +182 % over 600 hands-off steps.
+
+**Still open:** water is created in the flux group — 60 units on a blank sheet over
+400 steps, ~190 % on a painted one. Now deterministic and bounded, which makes it a
+tractable next step rather than a ghost hunt. The next move is to dump `flux` itself
+(synced) immediately after `flux_compute` on a blank sheet and find the entries that
+are not zero.
+
+---
+
 ## The headline
 
 The conservation gauge used through P4 and P5 **lags by an unbounded number of

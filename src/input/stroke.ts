@@ -52,6 +52,16 @@ export class StrokeEngine {
     this.brush.reservoir.charge(this.mix, loading);
   }
 
+  /**
+   * Rinse: pigment out, clean water in. The brush stays loaded — it is now a
+   * water brush. Because the mix on the brush is cleared too, the next stroke
+   * lays clear water rather than quietly re-charging with the old colour.
+   */
+  rinse(waterFrac = 1) {
+    this.mix.fill(0);
+    this.brush.reservoir.rinse(waterFrac);
+  }
+
   begin(gx: number, gy: number, s: StylusSample) {
     // A fresh dip each stroke: the brush goes back to the palette between
     // strokes, and within a stroke it runs down. That depletion is what makes a

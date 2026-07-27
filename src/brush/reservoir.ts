@@ -108,6 +108,22 @@ export class Reservoir {
     }
   }
 
+  /**
+   * Rinse the brush in the water jar: the pigment goes, the water stays.
+   *
+   * This is a real painting action, not a reset — a rinsed brush is a *loaded*
+   * brush carrying clean water, which is what you use to wet paper before a
+   * wash, to soften an edge, or to lift colour back off. Squeeze it out with
+   * `waterFrac = 0` for a thirsty brush.
+   */
+  rinse(waterFrac = 1) {
+    const n = this.bristles * this.segments;
+    for (let i = 0; i < n; i++) {
+      this.water[i] = this.capacity[i] * waterFrac;
+      for (let k = 0; k < 8; k++) this.pigment[i * 8 + k] = 0;
+    }
+  }
+
   /** Total load remaining, for the UI's "brush is running dry" readout. */
   totals(): { water: number; pigment: number; capacity: number } {
     let w = 0, p = 0, c = 0;
