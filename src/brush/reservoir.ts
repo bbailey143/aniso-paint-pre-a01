@@ -140,9 +140,29 @@ export class Reservoir {
    * amounts leaving the brush; the caller deposits them onto the canvas.
    *
    * `contactFrac` scales with how firmly this part of the tuft is pressed.
+   * `travel` is how far the tuft moved this step, in grid cells.
+   *
+   * [TRAP, measured — this was a fence violation, invariant 2] `downRate` used
+   * to be applied as a flat fraction PER SOLVE STEP, with no reference to
+   * distance. The resampler takes a step every <= 0.9 cells, so the brush lost
+   * `downRate` of its load every 0.9 cells travelled — an exponential decay
+   * with a very short half-life. Measured along one stroke, the paint laid fell
+   * 2.603 -> 0.211 -> 0.004 from start to 300 cells in: a 650x falloff, dead
+   * within about fifty cells. Once the amounts are that small the ordinary 2x
+   * variation between cells reads as a trail of specks, which is what it looked
+   * like on screen.
+   *
+   * Charging per unit distance instead makes a stroke of a given LENGTH cost
+   * the same paint however finely it was resampled — which is the invariant the
+   * card states, and it is also just true of brushes.
    */
-  withdraw(cell: number, contactFrac: number, out: Float32Array): number {
-    const rate = this.def.downRate * Math.max(0, Math.min(1, contactFrac));
+  withdraw(cell: number, contactFrac: number, out: Float32Array, travel = 1): number {
+    // A brush held still still bleeds into the paper, so distance never falls
+    // to zero — it just stops being what drives the transfer.
+    const STILL = 0.25;
+    const dist = Math.max(STILL, travel);
+    const rate = Math.min(1, this.def.downRate * dist)
+               * Math.max(0, Math.min(1, contactFrac));
     const w = this.water[cell] * rate;
     this.water[cell] -= w;
     for (let k = 0; k < 8; k++) {

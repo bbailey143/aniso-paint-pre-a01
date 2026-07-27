@@ -26,6 +26,8 @@ export class Brush {
   private scale: number;
   /** Scratch for one cell's pigment withdrawal. */
   private draw = new Float32Array(8);
+  /** Cells travelled in the current solve step — what the reservoir charges by. */
+  private travel = 0;
   private lastX = 0;
   private lastY = 0;
   private started = false;
@@ -56,6 +58,7 @@ export class Brush {
   /** Solve the tuft for one resampled stylus position. */
   solve(input: BrushInput) {
     if (!this.started) this.begin(input);
+    this.travel = Math.hypot(input.dx, input.dy);
 
     const tilt = (input.tiltAngle * Math.PI) / 180;
     const az = (input.tiltAzimuth * Math.PI) / 180;
@@ -155,7 +158,7 @@ export class Brush {
           // the paper. This is what makes a light touch skip the valleys.
           const press = Math.max(0, Math.min(1, 1 - p.z / SLAB));
           const cell = b * J + s;
-          const w = this.reservoir.withdraw(cell, press, this.draw);
+          const w = this.reservoir.withdraw(cell, press, this.draw, this.travel);
           let pig = 0;
           for (let k = 0; k < 8; k++) pig += this.draw[k];
 

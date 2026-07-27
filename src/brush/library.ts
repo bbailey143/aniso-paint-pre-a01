@@ -28,7 +28,7 @@ export const BRUSHES: BrushDef[] = [
     reservoir: {
       capacityBelly: 2.6,   // the belly holds far more than the tip
       capacityTip: 0.6,
-      downRate: 0.22,
+      downRate: 0.012,   // per CELL TRAVELLED now, not per step — see reservoir.ts
       upRate: 0.10,
     },
     plasticity: 0.05,
@@ -51,7 +51,7 @@ export const BRUSHES: BrushDef[] = [
     reservoir: {
       capacityBelly: 2.3,
       capacityTip: 0.55,
-      downRate: 0.24,
+      downRate: 0.013,   // per CELL TRAVELLED now, not per step — see reservoir.ts
       upRate: 0.12,
     },
     plasticity: 0.06,

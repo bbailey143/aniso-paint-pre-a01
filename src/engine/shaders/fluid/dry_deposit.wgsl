@@ -76,18 +76,25 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
       let d = segDist(pos, s.a, s.b);
-      if (d < s.radius) {
-        // A FLAT CORE with a soft rim, not the brush's squared falloff.
+      if (d < s.radius + 0.5) {
+        // ANALYTIC COVERAGE — how much of this CELL the tip actually crossed,
+        // not how far the cell centre is from the centreline.
         //
-        // A bristle is soft and its contact pressure really does fall off
-        // quadratically from the centreline. A pencil tip does not: it is hard,
-        // it has a contact patch, and inside that patch it lays evenly. Using
-        // the brush's `fall * fall` here made a 0.75-cell tip deposit ~11 % of
-        // its nominal amount even at the centreline, because no cell centre
-        // ever sits exactly on the line — measured peak 0.006 against a nominal
-        // 0.037. The line came out a faint grey smear instead of a line.
-        let fall = 1.0 - d / s.radius;
-        let f = clamp(fall * 2.0, 0.0, 1.0);
+        // [TRAP, measured, and it was visible before it was measured] Any
+        // falloff of the form `g(d / radius)` samples a continuous shape at one
+        // point per cell, and a shape narrower than a cell falls between the
+        // sampling points. A ballpoint at size 0.5 is 0.85 cells across, and
+        // down a diagonal line the deposited amount swung 0.284 / 0.002 /
+        // 0.284 / 0.128 — a 99 % ripple, which is exactly the row of beads on
+        // screen. Horizontal test strokes hid it completely, because they sit
+        // squarely on the cell rows; only a diagonal exposes it.
+        //
+        // Coverage instead of distance fixes it at the root: a cell one radius
+        // out is half covered, half a cell further out is not covered at all,
+        // and every cell along the path gets its true share. A mark thinner
+        // than the grid then comes out FAINTER, which is right, rather than
+        // BROKEN, which is an artefact.
+        let f = clamp(s.radius - d + 0.5, 0.0, 1.0);
 
         // THE TOOTH GATE. This is the whole of "rapid strokes on rough paper
         // come out broken, slow deliberate ones come out smooth". `reach` was

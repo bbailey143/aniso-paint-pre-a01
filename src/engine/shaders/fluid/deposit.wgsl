@@ -83,14 +83,34 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
       let d = segDist(pos, s.a, s.b);
-      if (d < s.radius) {
-        // Smooth falloff to the rim — a hard edge would inject divergence the
-        // relaxation then has to chase.
-        let fall = 1.0 - d / s.radius;
-        let f = fall * fall;
+      if (d < s.radius + 0.5) {
+        // Cell COVERAGE times the hair's own pressure profile.
+        //
+        // [TRAP, measured] A bristle genuinely does press hardest along its
+        // centreline, so the soft profile is real and stays. But sampling it as
+        // `g(d / radius)` — one sample per cell — beads a sub-cell hair into
+        // dots on any diagonal, because the hair passes BETWEEN cell centres.
+        // Bristles are thin by construction (the radius floors at well under a
+        // cell), so this bit every wet stroke too, just less obviously than it
+        // bit the ballpoint, since a tuft's many hairs dither each other's gaps.
+        // Coverage asks how much of the cell the hair crossed, which is both
+        // the physically meaningful question and the one that does not alias.
+        let cov = clamp(s.radius - d + 0.5, 0.0, 1.0);
+        let prof = 1.0 - 0.55 * clamp(d / max(s.radius, 1e-3), 0.0, 1.0);
+        let f = cov * prof;
         // Peaks-first contact. A C1 ramp, not a hard cut, or the mark stipples.
+        //
+        // Referenced to the sheet's OWN tooth range, for the same reason
+        // dry_deposit is: the generator centres every paper on ~0.5 and varies
+        // only the spread, so on hot press (0.42-0.58) a lightly-pressed hair
+        // needs a height the sheet never reaches and lays nothing at all. Left
+        // raw, this speckled every wet stroke on smooth paper — 93 % ripple
+        // along a diagonal — which is drybrush appearing where there should be
+        // none. A hair rides the high points, and a smooth sheet is nearly all
+        // high point.
+        let ride = 1.0 - P.toothAmp * (1.0 - toothH);
         let need = 1.0 - clamp(s.reach, 0.0, 1.0);
-        let gate = smoothstep(need - 0.18, need + 0.18, toothH);
+        let gate = smoothstep(need - 0.18, need + 0.18, ride);
         let take = f * gate;
         water = water + take * s.water;
         pig = pig + take * s.pigment;

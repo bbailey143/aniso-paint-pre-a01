@@ -96,7 +96,21 @@ export class DryTool {
     // the lead, not its point. sin() rather than a linear ramp, because the
     // contact ellipse grows with the sine of the lean.
     const tilt = Math.sin((Math.min(s.tiltAngle, 89) * Math.PI) / 180);
-    const radius = Math.max(0.35, m.tipRadius * this.size * (1 + m.tiltWiden * tilt));
+    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt);
+
+    // A mark narrower than the grid cannot be drawn narrower — only fainter.
+    //
+    // Below about a cell the line starts to fall between cell centres and beads
+    // into dots on any diagonal. The deposit shader's coverage term stops that
+    // becoming gaps, but a 0.4-cell tip would still ripple visibly. So widen the
+    // contact to the narrowest the grid carries cleanly and take the SAME total
+    // ink over that wider band: the pen keeps its ink, the line keeps its
+    // continuity, and a finer nib reads as a lighter line rather than a
+    // stuttering one. This is a sampling limit of the 512 grid, not physics —
+    // at a finer simulation resolution the floor drops with it.
+    const MIN_R = 0.9;
+    let spread = 1;
+    if (radius < MIN_R) { spread = radius / MIN_R; radius = MIN_R; }
 
     const o = at * SEG_FLOATS;
     const ax = prev ? prev.x : s.x;
@@ -107,7 +121,7 @@ export class DryTool {
     buf[o + 3] = s.y;
     buf[o + 4] = radius;
     buf[o + 5] = 0;             // water — a dry medium lays none, by definition
-    buf[o + 6] = amount;
+    buf[o + 6] = amount * spread;
     buf[o + 7] = reach;
     return at + 1;
   }
