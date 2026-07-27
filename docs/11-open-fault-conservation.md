@@ -1,3 +1,59 @@
+# SOLVED (cause) — the readback lies. The engine was probably right all along.
+
+**Round 5 found it. Read this section; the rest is the trail that led here.**
+
+## The proof
+
+Scan the *same* buffer two ways in the *same* submission — once with a compute
+shader on the GPU, once by copying it to the CPU and mapping it:
+
+| trial | GPU-side scan | CPU readback |
+|---|---|---|
+| 0–11, every one | **0 non-zero** | **1–5 non-zero, first always at x = 241** |
+
+Twelve out of twelve. **The buffer is clean. The copy-and-map path is not.**
+
+It plants the constant **2.0** at a fixed place: x = 241 of each 512-wide row —
+byte 3856 of every 8192-byte row. Reproduced with *no aniso-paint code at all*:
+allocate a buffer, `clearBuffer`, copy, map, read. It happens with a shader
+writing zeros, without one, with textures allocated, without them.
+
+## What this explains
+
+Every "conservation fault" chased through P4–P6 was **N corrupted readback entries
+× 2.0**. That is exactly the integer growth — +2, +4, +8, +16 — that kept appearing
+and never made physical sense. It also explains the phantom `M = 2.0` in texture
+dumps (same copy-and-map path), and very likely the `main` bench's never-solved f32
+nondeterminism, which ran on this same machine.
+
+**The physics was never implicated.** No pass computes 2.0. The gauges that
+condemned the engine were reading corrupted copies of correct memory.
+
+## The fix, and where it stands
+
+Never read back enough bytes to reach the bad offset: reduce fully on the GPU and
+copy only ~60 bytes instead of ~53 KB. `shaders/fluid/reduce_final.wgsl` is written
+for exactly this and is **in the tree but NOT wired in** — a first attempt returned
+all zeros (stage 2 reading stage 1's partials, in its own pass, still zero) and it
+needs debugging. `sampleGauges()` is therefore reverted to the single-stage version,
+which still reads through the corrupting path.
+
+**So: do not trust any absolute conservation number on this machine yet.** The app
+paints correctly — a blue+yellow stroke renders `#00512f` over `#f3f3f3` paper.
+
+### Next, in order
+
+1. Debug `reduce_final` (verify `arrayLength`, the bind group, and that stage 1
+   actually landed) and wire it into `sampleGauges`. Then re-measure everything.
+2. Re-run the P4/P5 conservation claims through the small-readback gauge and
+   correct the record.
+3. Restore the P6 stash (`git stash` entry `p6-wip`) — drying, re-wet, glazing —
+   and verify it against a gauge that finally tells the truth.
+4. Confirm on a second machine, and consider filing a Dawn/driver bug with the
+   standalone repro above.
+
+---
+
 # OPEN FAULT — conservation, and the instrument that hid it
 
 **Status: open. P6 is not done. Read this before trusting any conservation number
