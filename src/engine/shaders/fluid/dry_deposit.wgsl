@@ -30,7 +30,9 @@ struct Ctl {
   minY: f32,
   maxX: f32,
   maxY: f32,
-  _p0: f32,
+  /** Rim falloff in inverse cells. 1 spreads the edge over a whole cell, which
+   * reads as wet; higher tightens it to the crisp edge a paste leaves. */
+  edge: f32,
   _p1: f32,
   _p2: f32,
 };
@@ -94,7 +96,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // and every cell along the path gets its true share. A mark thinner
         // than the grid then comes out FAINTER, which is right, rather than
         // BROKEN, which is an artefact.
-        let f = clamp(s.radius - d + 0.5, 0.0, 1.0);
+        let f = clamp((s.radius - d) * max(C.edge, 0.25) + 0.5, 0.0, 1.0);
 
         // THE TOOTH GATE. This is the whole of "rapid strokes on rough paper
         // come out broken, slow deliberate ones come out smooth". `reach` was

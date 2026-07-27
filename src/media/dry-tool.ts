@@ -25,7 +25,7 @@
 // surface, not measured. Card 7 says as much and says the numbers are tuned on
 // the bench. They are marked here and in the library row.
 
-import type { DryMedium } from './types';
+import type { DryMedium, InkMedium } from './types';
 import type { BrushInput } from '../brush/types';
 import { SEG_FLOATS } from '../engine/fluid';
 
@@ -37,6 +37,19 @@ import { SEG_FLOATS } from '../engine/fluid';
  */
 const REF_SPEED = 0.75;
 
+/** Cheap deterministic value noise. Deterministic matters: the same stroke must
+ * come out the same on a redraw, and a per-frame random would crawl. */
+function hash1(n: number): number {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+}
+function vnoise(x: number): number {
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f);            // smoothstep, so the flow glides
+  return hash1(i) * (1 - u) + hash1(i + 1) * u;
+}
+
 export class DryTool {
   readonly medium: DryMedium;
   private size: number;
@@ -44,6 +57,12 @@ export class DryTool {
    * gating — the line would flicker between solid and broken within one
    * stroke, which reads as noise rather than as speed. */
   private speed = 0;
+  /** Distance drawn so far this stroke, in cells. Drives ink starve/recover:
+   * flow is a property of how far the ball has rolled, not of where it is, so
+   * a second pass fills what the first one missed — as on paper. */
+  private dist = 0;
+  /** Per-stroke phase, so two strokes do not skip in the same places. */
+  private phase = 0;
 
   constructor(medium: DryMedium, size = 1) {
     this.medium = medium;
@@ -52,8 +71,18 @@ export class DryTool {
 
   setSize(size: number) { this.size = size; }
 
-  begin() { this.speed = 0; }
+  /** The rim falloff this medium wants, handed to the deposit pass. */
+  get edgeSharpness(): number { return this.medium.edgeSharpness; }
+
+  begin() {
+    this.speed = 0;
+    this.dist = 0;
+    // Deterministic per stroke, but different between strokes: hatching would
+    // otherwise show identical skip marks on every parallel line.
+    this.phase = hash1(this.strokes++) * 1000;
+  }
   end() { this.speed = 0; }
+  private strokes = 0;
 
   /**
    * Emit one contact footprint. Returns the new segment count.
@@ -72,6 +101,7 @@ export class DryTool {
     const step = Math.hypot(s.dx, s.dy);
     this.speed = this.speed * 0.7 + step * 0.3;
     const speedNorm = Math.min(this.speed / REF_SPEED, 1);
+    this.dist += step;
 
     // Pressure response. A graphite tip answers the hand almost linearly; a
     // ballpoint barely answers at all, which is the whole feel of a biro.
@@ -85,18 +115,46 @@ export class DryTool {
     const floorReach = 0.18;
     let reach = floorReach + (ceiling - floorReach) * press;
     reach *= 1 - m.velocityCoupling * speedNorm;
+    // A hard ball rides the peaks and simply cannot get into the valleys, however
+    // hard it is pressed. `toothThreshold` is that ceiling, and it is why a biro
+    // skips the low points while a soft pencil fills them.
+    reach = Math.min(reach, 1 - m.toothThreshold);
     reach = Math.min(Math.max(reach, 0), 1);
 
     // How much comes off the tip. Speed thins the mark as well as breaking it,
     // but only half as strongly — a fast pencil line is lighter AND patchier,
     // and if you only model the patchiness the fast stroke reads as too dark.
-    const amount = m.deposition * press * (1 - 0.5 * m.velocityCoupling * speedNorm);
+    let amount = m.deposition * press * (1 - 0.5 * m.velocityCoupling * speedNorm);
+
+    // Ink flow: the ball starves and recovers as it rolls. Two octaves — a slow
+    // starve over several cells, and fine chatter on top — which together give
+    // the irregular thick-and-thin that makes a biro line look drawn rather
+    // than plotted. Driven by distance rolled, NOT by position, so going back
+    // over a gap fills it in.
+    let flow = 1;
+    if ('skipStrength' in m) {
+      const ink = m as InkMedium;
+      const u = this.phase + this.dist / Math.max(ink.skipScale, 1e-3);
+      // Shaped, not uniform. A biro runs at full flow MOST of the time and
+      // starves occasionally — a uniform dip just makes the whole line mottled
+      // and grey. Raising (1 - starve) to a power keeps the line solid and lets
+      // the rare deep dips become real skips, which is the look in the
+      // reference: long clean runs punctuated by a break.
+      const dip = Math.pow(1 - vnoise(u), 2.5);
+      const fine = vnoise(u * 5.3 + 37.1);
+      flow = 1 - ink.skipStrength * dip - ink.chatter * (1 - fine) * 0.35;
+      flow = Math.min(Math.max(flow, 0), 1);
+      amount *= flow;
+    }
 
     // Lean widens the mark: past ~45 degrees you are drawing with the flank of
     // the lead, not its point. sin() rather than a linear ramp, because the
     // contact ellipse grows with the sine of the lean.
     const tilt = Math.sin((Math.min(s.tiltAngle, 89) * Math.PI) / 180);
-    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt);
+    // A starved ball lays a thinner line as well as a lighter one. Thick AND
+    // thin together is what reads as organic; vary only the darkness and the
+    // line looks like a constant-width stroke with the opacity animated.
+    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * (0.78 + 0.22 * flow);
 
     // A mark narrower than the grid cannot be drawn narrower — only fainter.
     //

@@ -412,7 +412,7 @@ export class FluidEngine {
    * independent things happening on the same sheet, which is what it is in life.
    */
   depositDry(segments: Float32Array<ArrayBuffer>, segCount: number,
-             mixWeights: Float32Array<ArrayBuffer>) {
+             mixWeights: Float32Array<ArrayBuffer>, edge = 1) {
     if (segCount <= 0) return;
     const { device } = this.gpu;
     device.queue.writeBuffer(this.mixBuf, 0, mixWeights);
@@ -424,7 +424,9 @@ export class FluidEngine {
       const n = Math.min(segCount - done, MAX_SEGS);
       device.queue.writeBuffer(
         this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
-      device.queue.writeBuffer(this.ctlBuf, 0, this.segBounds(segments, done, n));
+      const ctl = this.segBounds(segments, done, n);
+      ctl[5] = edge;                    // rim falloff, per medium
+      device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const enc = device.createCommandEncoder({ label: 'dry-deposit' });
       const pass = enc.beginComputePass();

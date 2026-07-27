@@ -164,10 +164,11 @@ export class StrokeEngine {
     return { data: this.buf, count };
   }
 
-  /** Same, for the dry-media channel (P7). */
-  drainDry(): { data: Float32Array<ArrayBuffer>; count: number } {
+  /** Same, for the dry-media channel (P7). `edge` is the rim falloff the
+   * active medium wants — soft for graphite, crisp for a ballpoint. */
+  drainDry(): { data: Float32Array<ArrayBuffer>; count: number; edge: number } {
     const count = this.dryCount;
     this.dryCount = 0;
-    return { data: this.dryBuf, count };
+    return { data: this.dryBuf, count, edge: this.dry ? this.dry.edgeSharpness : 1 };
   }
 }

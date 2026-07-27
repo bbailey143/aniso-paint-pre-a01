@@ -56,6 +56,9 @@ function graphite(name: string, slug: string, hardness: number): GranularDry {
     tipRadius: 1.1,
     tiltWiden: 2.6,               // laid over, a pencil draws with the flank
     pressureExp: 1.1,
+    // Graphite genuinely does feather at the edge of a mark — loose particles
+    // sit around it. Keep the soft rim.
+    edgeSharpness: 1.0,
     // Soft leads lay far more per pass. 6B ~4x an HB, 4H well under it.
     // [UNVERIFIED] Calibrated on the bench to 09-acceptance, not measured from
     // a source: a slow firm HB line reads ~0.25 laid, which renders as a real
@@ -73,32 +76,67 @@ export const GRAPHITE_GRADES: GranularDry[] = [
 ];
 
 /**
- * Ballpoint. A viscous paste rolled on, so almost nothing about the hand
- * changes the line: pressure barely registers (`pressureExp` near zero), speed
- * barely registers (`velocityCoupling` low), and the tooth barely registers
- * (`reach` stays high). That flatness IS the ballpoint — it is what makes the
- * line so consistent and so unlike a pencil on the same paper.
+ * Ballpoint.
+ *
+ * `[CORRECTED on reference]` The first row here made a biro ignore the paper
+ * entirely — high `reach`, near-zero `velocityCoupling` — on the reasoning that
+ * a ballpoint's line is famously consistent. Bartford's reference lines say
+ * otherwise, and they are right: a ballpoint **skips the low points and marks
+ * solidly on the high ones**, and nearly every one has a slight stutter that
+ * gives the line its organic thick-and-thin. That variation is the character of
+ * the tool, not a defect in it.
+ *
+ * Two independent mechanisms, because that is what is actually happening:
+ *
+ *   `toothThreshold` — the ball is hard and rides the peaks, so it cannot reach
+ *   into the valleys at all. Position-dependent: go over the same spot twice
+ *   and the same specks stay blank.
+ *
+ *   `skipStrength` / `skipScale` / `chatter` — the paste starves and recovers
+ *   as the ball rolls. Distance-dependent, so a second pass fills what the
+ *   first missed, exactly as it does on paper.
+ *
+ * `[UNVERIFIED]` No card supplies a ball-transfer model, so the numbers below
+ * are fitted to the reference lines by eye and marked accordingly.
  */
-export const BALLPOINT: InkMedium = {
-  name: 'Ballpoint', slug: 'ballpoint', family: 'dry', kind: 'ink',
-  pigments: [['phthalo-blue-gs', 1]],
-  k1: 0.03, k2: 0.65, kInstrument: 0.7,
-  hasBody: false, bodyShrink: 0,
-  downRate: 1.0, upRate: 0.0, teflonMin: 1.0,
-  openTime: 0, valueShift: 0,
-  reactivatable: false, oneWayDoor: true,
+function ballpoint(name: string, slug: string, pigment: string,
+                   deposition: number): InkMedium {
+  return {
+    name, slug, family: 'dry', kind: 'ink',
+    pigments: [[pigment, 1]],
+    // Ballpoint paste dries to a slight sheen, unlike graphite's flat grey.
+    k1: 0.03, k2: 0.65, kInstrument: 0.8,
+    hasBody: false, bodyShrink: 0,
+    downRate: 1.0, upRate: 0.0, teflonMin: 1.0,
+    openTime: 0, valueShift: 0,
+    reactivatable: false, oneWayDoor: true,
 
-  toothThreshold: 0.15,
-  velocityCoupling: 0.08,
-  hardness: 0.0,
-  particleSize: 0.1,
-  tipRadius: 0.85,               // a finer line than a pencil, but still ~1 cell
-  tiltWiden: 0.25,               // a biro does not care how you hold it
-  pressureExp: 0.25,
-  deposition: 0.16,
-};
+    // The ball rides the peaks. This is what makes it skip.
+    toothThreshold: 0.42,
+    velocityCoupling: 0.16,
+    hardness: 0.0,
+    particleSize: 0.1,
+    tipRadius: 0.8,
+    tiltWiden: 0.25,             // a biro does not care how you hold it
+    pressureExp: 0.25,           // near-flat pressure response — that part was right
+    deposition,
+    // Crisp. The soft rim is what made the ink read as WET rather than as a
+    // paste sitting on the surface; a ballpoint edge is sharp.
+    edgeSharpness: 3.2,
 
-export const DRY_MEDIA: DryRow[] = [...GRAPHITE_GRADES, BALLPOINT];
+    // Deep but rare — see the shaping in dry-tool.ts.
+    skipStrength: 0.88,
+    skipScale: 5.5,
+    chatter: 0.4,
+  };
+}
+
+// Blue reads lighter than black at the same load — classic biro blue is a
+// green-shade phthalo, which is why it looks slightly cyan next to ink black.
+export const BALLPOINT_BLUE = ballpoint('Biro', 'ballpoint-blue', 'phthalo-blue-gs', 0.30);
+export const BALLPOINT_BLACK = ballpoint('Biro K', 'ballpoint-black', 'bone-black', 0.42);
+
+export const DRY_MEDIA: DryRow[] = [...GRAPHITE_GRADES, BALLPOINT_BLUE, BALLPOINT_BLACK];
 
 /** The tool rack. Wet tools drive the brush engine; dry tools deposit direct. */
 export const DRY_TOOLS: Tool<DryRow>[] = DRY_MEDIA.map((m) => ({

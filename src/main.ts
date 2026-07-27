@@ -116,7 +116,7 @@ async function main() {
     // fluid band, so a pencil line laid this frame is already under any wash
     // the same frame moves.
     const dry = stroke.drainDry();
-    if (dry.count > 0) engine.depositDry(dry.data, dry.count);
+    if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge);
     const { data, count } = stroke.drain();
     engine.step(data, count);
     engine.render();

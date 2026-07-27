@@ -95,6 +95,13 @@ export interface DryMedium extends Medium {
   pressureExp: number;
   /** Pigment laid at the centreline at full pressure, per step. */
   deposition: number;
+  /**
+   * How fast the mark falls off at its rim, in inverse cells. 1 spreads the
+   * edge over a whole cell — soft, and it reads as WET. Higher tightens it: a
+   * ballpoint leaves a crisp edge because the paste does not spread once it is
+   * off the ball.
+   */
+  edgeSharpness: number;
 }
 
 /** Pencils, charcoals, pastels — particles scraped off onto the tooth. */
@@ -102,10 +109,22 @@ export interface GranularDry extends DryMedium {
   kind: 'granular';
 }
 
-/** Pens. A ballpoint is a viscous paste; a fountain pen is a fluid and will
- * turn the wet path back on when its row is added. */
+/**
+ * Pens. A ballpoint is a viscous paste; a fountain pen is a fluid and will turn
+ * the wet path back on when its row is added.
+ *
+ * A ball only transfers ink while it rolls, and it does not do so evenly — the
+ * paste starves and recovers along the line. That intermittency is the whole
+ * look of a biro, so it is a property of the medium, not an effect bolted on.
+ */
 export interface InkMedium extends DryMedium {
   kind: 'ink';
+  /** 0..1 — how deep the flow dips when the ball starves. */
+  skipStrength: number;
+  /** Distance in cells over which the flow starves and recovers. */
+  skipScale: number;
+  /** 0..1 — fine, fast width and density chatter on top of the slow starve. */
+  chatter: number;
 }
 
 export type AnyMedium = WetMedium | GranularDry | InkMedium;
