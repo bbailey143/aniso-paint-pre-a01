@@ -1,0 +1,117 @@
+// The pigment tray + mixing area (P2).
+//
+// Twelve measured pigments. Click a well to add a part to the current mix; the
+// result is computed through the real Kubelka-Munk chain and shown beside the
+// "naive RGB average" so the difference is visible — blue + yellow makes green
+// under KM and grey/brown under RGB. That contrast is the product thesis.
+
+import { PIGMENTS } from '../color/pigments';
+import { recipeToHex, recipeToNaiveRGBHex, type Recipe } from '../color/km';
+
+export interface PaletteEvents {
+  /** Fired whenever the active mix changes; hex is the KM colour (or null if empty). */
+  onMixChange?(hex: string | null, recipe: Recipe): void;
+}
+
+export class Palette {
+  readonly recipe: Recipe = new Map();
+  private root: HTMLElement;
+  private mixSwatch!: HTMLElement;
+  private rgbSwatch!: HTMLElement;
+  private mixHexLabel!: HTMLElement;
+  private recipeRow!: HTMLElement;
+  private events: PaletteEvents;
+
+  constructor(mount: HTMLElement, events: PaletteEvents = {}) {
+    this.events = events;
+    this.root = document.createElement('div');
+    this.root.id = 'palette';
+    this.root.className = 'panel';
+    this.root.innerHTML = this.template();
+    mount.appendChild(this.root);
+
+    this.mixSwatch = this.root.querySelector('#mix-km')!;
+    this.rgbSwatch = this.root.querySelector('#mix-rgb')!;
+    this.mixHexLabel = this.root.querySelector('#mix-hex')!;
+    this.recipeRow = this.root.querySelector('#recipe')!;
+
+    this.buildWells();
+    this.root.querySelector('#mix-clear')!.addEventListener('click', () => this.clear());
+    this.refresh();
+  }
+
+  private template(): string {
+    return `
+      <div class="pal-head">
+        <span class="hud-title">pigments</span>
+        <button id="mix-clear" class="pal-btn" title="clear mix">clear</button>
+      </div>
+      <div id="wells" class="wells"></div>
+      <div class="mix">
+        <div class="mix-swatches">
+          <div class="mix-col">
+            <div id="mix-km" class="swatch big" title="Kubelka-Munk (real pigment)"></div>
+            <span class="mix-cap">Kubelka-Munk</span>
+          </div>
+          <div class="mix-col">
+            <div id="mix-rgb" class="swatch big muted" title="naive RGB average (wrong)"></div>
+            <span class="mix-cap">naive RGB</span>
+          </div>
+        </div>
+        <div id="mix-hex" class="mix-hex">—</div>
+        <div id="recipe" class="recipe"></div>
+      </div>`;
+  }
+
+  private buildWells() {
+    const wells = this.root.querySelector('#wells')!;
+    for (const p of PIGMENTS) {
+      const el = document.createElement('button');
+      el.className = 'well';
+      el.style.background = p.hex;
+      el.title = `${p.name} (${p.ci}) — ${p.temp}`;
+      el.setAttribute('aria-label', p.name);
+      el.addEventListener('click', () => this.add(p.slug));
+      wells.appendChild(el);
+    }
+  }
+
+  add(slug: string, parts = 1) {
+    this.recipe.set(slug, (this.recipe.get(slug) ?? 0) + parts);
+    this.refresh();
+  }
+
+  remove(slug: string) {
+    const n = (this.recipe.get(slug) ?? 0) - 1;
+    if (n <= 0) this.recipe.delete(slug);
+    else this.recipe.set(slug, n);
+    this.refresh();
+  }
+
+  clear() {
+    this.recipe.clear();
+    this.refresh();
+  }
+
+  private refresh() {
+    const km = recipeToHex(this.recipe);
+    const rgb = recipeToNaiveRGBHex(this.recipe);
+    this.mixSwatch.style.background = km ?? 'transparent';
+    this.rgbSwatch.style.background = rgb ?? 'transparent';
+    this.mixHexLabel.textContent = km ? km : 'add pigments to mix';
+
+    // Recipe chips (click to remove one part).
+    this.recipeRow.innerHTML = '';
+    for (const [slug, parts] of this.recipe) {
+      const p = PIGMENTS.find((x) => x.slug === slug)!;
+      const chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.innerHTML = `<i style="background:${p.hex}"></i>${p.name}${parts > 1 ? ` ×${parts}` : ''}`;
+      chip.title = `remove one part of ${p.name}`;
+      chip.addEventListener('click', () => this.remove(slug));
+      this.recipeRow.appendChild(chip);
+    }
+
+    this.events.onMixChange?.(km, this.recipe);
+  }
+}

@@ -5,8 +5,29 @@ yellow makes green. This card is the whole colour engine.
 
 ## The data
 
-12 mixable pigments, each stored as `K[8]` (absorption) and `S[8]` (scattering)
-over 8 spectral bands.
+12 mixable pigments, each stored as `K[38]` (absorption) and `S[38]` (scattering)
+over the **full 38 measured bands** (380–750 nm @10 nm).
+
+`[DECISION — band count, superseding the old 8-band figure]` The evidence base
+ratified "8 spectral bands," justified by PCA *dimensionality*. But when the 12
+measured pigments were binned into 8 contiguous bands and rendered, the yellows
+came back at **dE2000 ≈ 8** — block-averaging smears their sharp reflectance edge
+and KM is nonlinear within a wide band. 12 uniform bands got under dE 3; but the
+pigment library is a **tiny buffer** (12 × 38 × 2 ≈ 3.6 KB) and the Composite pass
+runs **once per display frame**, so there is no cost reason to reduce at all.
+**The library and the live render use all 38 measured bands — zero reduction
+error.** The "8" in the schema is **8 pigment slots per cell**, a different axis.
+Band reduction returns only for the **baked-floor per-cell reflectance** (`R_floor`,
+[`02-cell-schema.md`](02-cell-schema.md)), which is stored per cell and inert — a
+storage-driven choice made when baking lands (P3+), where a small dE is imperceptible
+and un-liftable anyway. Generated + validated by `tools/build_pigments.py`.
+
+The 12 pigments (all single-pigment masstone columns present in BE16; note the
+dataset has **no earth pigments**, so this is a high-chroma modern set): Titanium
+White (PW6), Hansa Yellow (PY74), Diarylide Yellow (PY83), Cadmium Orange (PO20),
+Pyrrole Red (PR254), Quinacridone Red (PV19), Quinacridone Magenta (PR122),
+Dioxazine Purple (PV23), Ultramarine Blue (PB29), Phthalo Blue GS (PB15:4), Phthalo
+Green BS (PG7), Bone Black (PBk9).
 
 - **Measured source: BE16 / B22** (Berns spectral databases). Real Golden acrylic
   measurements, 380–750 nm at 10 nm = 38 bands, downloadable from RIT.
@@ -26,13 +47,11 @@ palette itself.
 
 ## Provenance status for this build
 
-`[UNVERIFIED — provenance TODO]` The 12-row `K[8]/S[8]` table must be produced from
-BE16/B22 measured spectra by the B04 reduction. Until that fetch + reduction is done
-and checked, any values shipped are placeholders and are marked as such in the table
-file. **No K/S number is invented silently** (Card 0, the fence). The pigment set is
-chosen both to exist in the dataset and to form a usable 12-well palette: Titanium
-White, a warm + cool yellow, a warm + cool red, a warm + cool blue, phthalo green,
-and earth tones (ochre, sienna, umber) — final list recorded when the data lands.
+`[RESOLVED]` The 12-row `K[38]/S[38]` table is built from the **real measured**
+BE16 spreadsheet (`Final_artist_database.xlsx`, sheet "k and s data"), retrieved via
+the Internet Archive after the RIT link went stale. Every K/S value is measured;
+the CIE observer × D65 weights are canonical. `src/color/pigments.ts` is generated
+by `tools/build_pigments.py` — re-run it to regenerate. Nothing here is invented.
 
 ## The mixing law — Duncan 1940 (via MB21)
 

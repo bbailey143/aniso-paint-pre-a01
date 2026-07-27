@@ -10,8 +10,8 @@ it, or because a decision here justifies it.
 | **D1** | **TypeScript + WebGPU**, bundled with Vite. No Rust/WASM on this branch. WebGPU **core** only in engine code. | Browser-first; Bartford reads JS/HTML; instant iteration; WGSL shaders port unchanged from the `main` bench. Native iPad deferred and re-scoped later. |
 | **D2** | This branch authors its **own card guide**. The `main` reference cards + contract are cited as a source, not carried forward wholesale. | A deliberate new direction. Divergences from `main` are recorded here, not accidental. |
 | **D3** | **Media are separated from brushes.** Each is a class in a hierarchy with shared ancestry; a medium is a *data row of parameters* over *shared equations*. | Extensibility with a fixed code surface — a future user adds tempera/casein as a row. The library stores behaviour; cells store amounts. |
-| **D4** | Colour is **Kubelka-Munk**: 8 spectral bands, two-constant, **S = 1 pinned to Titanium White**, Duncan linear mixing in concentration space, Saunderson with per-medium `K_instrument`. | Subtractive mixing (blue + yellow = green). 8 bands PCA-justified (BE16) and quadrature-confirmed (B04). Concentrations are stored, so no Mixbox latent space needed. |
-| **D5** | **12 mixable pigments** to start, sourced from BE16/B22 measured data, reduced 38 → 8 bands by B04's method. | A usable starting palette; real measured K/S behind the fence. Placeholders marked `[UNVERIFIED]` until the fetch lands. |
+| **D4** | Colour is **Kubelka-Munk**: **full 38 measured bands** in the library and live render, two-constant, Duncan linear mixing in concentration space, Saunderson with per-medium `K_instrument`. Band reduction is deferred to baked-floor per-cell storage only. | Subtractive mixing (blue + yellow = green). The library is tiny and Composite runs once/frame, so 38 bands cost ~nothing and carry **zero reduction error** — 8-band binning was validated at dE2000 ≈ 8 on yellows and rejected. See [`04-color-km.md`](04-color-km.md). BE16 provides an internally-consistent K/S scale, so no separate S=1 pin is needed. |
+| **D5** | **12 mixable pigments** from BE16 measured data (all 38 bands): PW6, PY74, PY83, PO20, PR254, PV19, PR122, PV23, PB29, PB15:4, PG7, PBk9. | A usable high-chroma starting palette; real measured K/S behind the fence. Data retrieved via the Internet Archive; `tools/build_pigments.py` regenerates `src/color/pigments.ts`. |
 | **D6** | **RGBA16F half-float** for all canvas textures; small named intermediates may be higher. | Many mobile GPUs/browsers lack 32-bit float RGBA (A26); B04 confirmed half sufficient. |
 | **D7** | **Cell schema** adopted from the `main` contract: 54 half-floats/cell (wet 24 + dry1 10 + dry2 10 + floor 10), the `WET*/DRY*/FLOOR*/PAPER` texture layout. | Bench-validated; the slot-for-slot alignment (brush↔canvas, wet↔dry) is worth preserving. |
 | **D8** | **Conservation via clamped fluxes between cells**; no semi-Lagrangian advection in wet passes. **DryTick is the only pass that removes water.** | Mass conservation is the axiom (three independent teams). Concentrating evaporation in one pass keeps the conservation gauge honest. |
@@ -22,8 +22,10 @@ it, or because a decision here justifies it.
 
 ## Open items (not blocking)
 
-- **Pigment data fetch (D5).** Produce the 12-row `K[8]/S[8]` table from BE16/B22.
-  Until then the palette ships behind `[UNVERIFIED]`.
+- ~~**Pigment data fetch (D5).**~~ Done — real BE16 data, 38 bands, in
+  `src/color/pigments.ts`.
+- **Baked-floor band reduction.** When baking lands (P3+), choose the per-cell
+  `R_floor` band count and reduction method; validate the dE is imperceptible.
 - **Adaptive relaxation under a sharp brush load.** The bench's controller settled at
   ~2 iterations under gentle synthetic bots; a real stroke injects sharper divergence.
   Re-measure when the brush lands.

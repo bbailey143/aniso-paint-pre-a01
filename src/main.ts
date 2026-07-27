@@ -6,6 +6,7 @@
 
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { PointerInput, type StylusSample } from './input/pointer';
+import { Palette } from './ui/palette';
 import fullscreenWgsl from './engine/shaders/fullscreen.wgsl?raw';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
@@ -28,6 +29,9 @@ async function main() {
 
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
   const sheet = new SheetPass(gpu, fullscreenWgsl);
+
+  // ---- Pigment tray + mixing (P2) -----------------------------------------
+  new Palette(document.body);
 
   // ---- Pen input → live readout -------------------------------------------
   // A short exponential smoothing on velocity so the number is readable rather

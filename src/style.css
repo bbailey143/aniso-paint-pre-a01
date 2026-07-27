@@ -65,3 +65,53 @@ html, body {
 .stylus-row { display: flex; justify-content: space-between; gap: 12px; }
 .stylus-row span { color: var(--ink-dim); }
 .stylus-row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Pigment tray + mixing area */
+#palette {
+  top: 12px;
+  right: 12px;
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pal-head { display: flex; justify-content: space-between; align-items: center; }
+.pal-btn {
+  background: transparent; color: var(--ink-dim); border: 1px solid var(--panel-border);
+  border-radius: 5px; padding: 2px 8px; font: inherit; cursor: pointer;
+}
+.pal-btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+
+.wells { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.well {
+  aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
+  cursor: pointer; padding: 0; transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+.well:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.5); }
+.well:active { transform: translateY(0); }
+
+.mix { display: flex; flex-direction: column; gap: 8px; }
+.mix-swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mix-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.swatch.big {
+  width: 100%; height: 52px; border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background-image: linear-gradient(45deg, #1a1a1a 25%, transparent 25%, transparent 75%, #1a1a1a 75%),
+                    linear-gradient(45deg, #1a1a1a 25%, transparent 25%, transparent 75%, #1a1a1a 75%);
+  background-size: 12px 12px; background-position: 0 0, 6px 6px; /* checker for empty */
+}
+.swatch.big[style*="background:"] { background-image: none; }
+.mix-cap { color: var(--ink-dim); font-size: 11px; }
+.mix-col .muted { opacity: 0.92; }
+.mix-hex {
+  text-align: center; color: var(--ink); font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em; min-height: 16px;
+}
+.recipe { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.05); color: var(--ink); border: 1px solid var(--panel-border);
+  border-radius: 12px; padding: 2px 8px 2px 4px; font: inherit; font-size: 11px; cursor: pointer;
+}
+.chip:hover { background: rgba(255,255,255,0.1); }
+.chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,0.2); }
