@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>aniso-paint</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- The paint surface. Full-bleed; everything else floats over it. -->
+    <canvas id="stage" touch-action="none"></canvas>
+
+    <!-- Minimal, out-of-the-way chrome. Dark and crisp. -->
+    <div id="hud" class="panel">
+      <span class="hud-title">aniso-paint</span>
+      <span id="hud-gpu" class="hud-line">webgpu: …</span>
+    </div>
+
+    <!-- Live stylus readout (P1 proof the tablet is wired). -->
+    <div id="stylus" class="panel">
+      <div class="stylus-row"><span>type</span><b id="s-type">—</b></div>
+      <div class="stylus-row"><span>pressure</span><b id="s-pressure">—</b></div>
+      <div class="stylus-row"><span>tilt</span><b id="s-tilt">—</b></div>
+      <div class="stylus-row"><span>velocity</span><b id="s-velocity">—</b></div>
+      <div class="stylus-row"><span>twist</span><b id="s-twist">—</b></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,67 @@
+/* Dark, crisp, out of the way. The canvas is the room; chrome floats. */
+:root {
+  --bg: #0b0c0e;
+  --panel: rgba(22, 24, 28, 0.72);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --ink: #e7e9ee;
+  --ink-dim: #8b909a;
+  --accent: #d8b26a;
+  color-scheme: dark;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 12px/1.4 ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.panel {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+#hud {
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hud-title { color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.hud-line { color: var(--ink-dim); }
+
+#stylus {
+  bottom: 12px;
+  left: 12px;
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stylus-row { display: flex; justify-content: space-between; gap: 12px; }
+.stylus-row span { color: var(--ink-dim); }
+.stylus-row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
