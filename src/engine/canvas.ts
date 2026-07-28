@@ -126,6 +126,7 @@ export class CanvasEngine {
   setWetMedium(m: WetMedium) {
     this.fluid.setParams({
       viscosity: m.viscosity,
+      evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
     });

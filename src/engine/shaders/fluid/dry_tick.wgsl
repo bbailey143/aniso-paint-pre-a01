@@ -23,11 +23,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   if (w0.x >= 0.5) {
     w = max(w - P.dryRate * P.dt, 0.0);
-    if (P.evapRate > 0.0) {
-      let e = P.evapRate * P.dt;
-      hf = max(hf - e, 0.0);
-      s  = max(s - e * 0.5, 0.0);
-    }
+  }
+
+  // The wet mask schedules fluid motion; it is not a statement that the paper
+  // contains no water. Capillary creep can spread a large total amount into a
+  // halo where every individual cell is below the mask threshold. Gating
+  // evaporation on M stranded that absorbed water permanently: the HUD could
+  // read "wet cells 0" while the water total never fell again.
+  //
+  // Both standing and absorbed water therefore continue drying regardless of
+  // the motion mask. DryTick remains the sole owner of water removal.
+  if (P.evapRate > 0.0) {
+    let e = P.evapRate * P.dt;
+    hf = max(hf - e, 0.0);
+    s  = max(s - e * 0.5, 0.0);
   }
 
   var m = w0.x;

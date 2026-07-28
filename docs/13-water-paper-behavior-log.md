@@ -94,3 +94,55 @@ parameter wiring; Bartford's hand and real-paper reference plates still decide
 whether the final visual timing and amount of bloom feel right. The extra run's
 `+2/+4` event remains part of the postponed GPU fault, not evidence against the two
 identical clean measurements.
+
+## E3 — Thin absorbed water now finishes drying (2026-07-28)
+
+**Purpose.** Diagnose Bartford's recording of stale paint that continues to jump
+while its water does not visibly evaporate.
+
+**Method.** Inspect
+`20260728-2209-11.9256907.mp4` at one-second and five-frame-per-second intervals.
+Trace DryTick and the medium row into the live controls. Change DryTick so the wet
+mask schedules motion but does not gate evaporation. Connect the active wet
+medium's evaporation value to the shared solver and the initial slider display.
+Build, compile in Chrome on AMD/Polaris, then repeat a controlled below-mask drying
+case twice. Also repeat a heavier pigmented drying case twice.
+
+**Raw result.**
+
+- The 13.0666-second, 930×1080 recording has the dry slider at maximum. It shows
+  water near `104.01` and `wet cells = 0` throughout. The water gauge has one
+  transient frame at `1.0244241027175636e+35`, then returns to `104.01`;
+  pigment remains `7673.883`.
+- Source inspection found that DryTick removed both standing and absorbed water
+  only inside `if (wetMask >= 0.5)`. Capillary creep can put water into cells
+  below that motion threshold. Those cells therefore retained water forever.
+- `CanvasEngine.setWetMedium()` did not pass the row's existing `evapRate` to the
+  solver. The slider also displayed zero initially even though the watercolor
+  row specifies `0.0015`.
+- `npm.cmd run build` passed. Chrome ran the updated WGSL on
+  `webgpu: amd / gcn-4`; the browser reported no page, shader, or WebGPU error.
+- In each of two identical thin-water runs, evaporation was first disabled and
+  the paint was advanced 900 steps. Both arrived at exactly:
+  `water = saturation = 0.000008323441761604045`, `film = 0`,
+  `wetCells = 0`, `pigment = dryPigment = 0.0001664688461460173`, and
+  `wetPigment = 0`. After enabling evaporation at `0.004` for one step, both
+  returned `water = 0` with every pigment value unchanged. Capillary alarm was
+  `0` in both runs.
+- In two heavier pigmented runs at `evapRate = 0.004`, water fell from
+  `5.4197614 / 5.4211417` at step 0 to `0` by step 30 and stayed zero.
+  At step 700, `wetCells = 0`; total pigment was `3.7184889` and dry pigment
+  was `3.7184882 / 3.7184885`, leaving only
+  `0.000000706 / 0.000000556` in the wet band. Both capillary alarms were `0`.
+
+**What it proves.** The stale-water mechanism in the recording was real and is
+corrected in the shared drying pass. Absorbed water now finishes evaporating even
+after it is too thin to participate in fluid motion. Pigment is conserved and
+moves into the dry layer rather than remaining mobile. The medium row, solver,
+and visible control now agree on the initial evaporation rate.
+
+**What it does NOT prove.** The existing `[UNVERIFIED]` evaporation timing is
+artist-calibrated or matches the 1–5 minute acceptance range. The one-frame
+`1.0244e35` jump is the separate AMD/Polaris transient already tracked in
+`docs/12`; this drying correction does not close it, and the postponed NVIDIA
+discriminator is still needed after the behavior pass.

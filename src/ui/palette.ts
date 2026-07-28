@@ -49,7 +49,7 @@ export class Palette {
   private recipeRow!: HTMLElement;
   private events: PaletteEvents;
 
-  constructor(mount: HTMLElement, events: PaletteEvents = {}) {
+  constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
     this.root = document.createElement('div');
     this.root.id = 'palette';
@@ -63,12 +63,12 @@ export class Palette {
     this.recipeRow = this.root.querySelector('#recipe')!;
 
     this.buildWells();
-    this.buildSurface();
+    this.buildSurface(initialEvapRate);
     this.root.querySelector('#mix-clear')!.addEventListener('click', () => this.clear());
     this.refresh();
   }
 
-  private buildSurface() {
+  private buildSurface(initialEvapRate: number) {
     // The tool rack: wet brushes and dry media side by side. They are different
     // engines underneath — a brush solves a tuft and pushes fluid, a pencil
     // scrapes a tip across the tooth — but to the hand they are just tools, so
@@ -147,7 +147,7 @@ export class Palette {
     });
 
     const evap = this.root.querySelector('#evap') as HTMLInputElement;
-    evap.value = '0';
+    evap.value = String(initialEvapRate);
     evap.addEventListener('input', () => {
       this.events.onEvapChange?.(parseFloat(evap.value));
     });

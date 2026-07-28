@@ -75,7 +75,7 @@ async function main() {
       engine.setMix(palette.recipe);
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
     },
-  });
+  }, WATERCOLOR.evapRate);
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setWetMedium(WATERCOLOR);
   engine.setMix(palette.recipe);

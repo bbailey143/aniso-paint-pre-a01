@@ -133,12 +133,13 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-28 (water/paper foundation pass)
+**Last updated:** 2026-07-28 (stale-paint drying investigation)
 **By:** Codex
-**Build state:** `npm.cmd run build` passes with the shared water/paper correction.
-Chrome compiled and exercised the shaders on AMD/Polaris. Two identical controlled
-runs conserved water and reproduced the same paper ordering and deep-puddle travel;
-see `docs/13-water-paper-behavior-log.md` E2. This checkout still has unrelated
+**Build state:** `npm.cmd run build` passes with the shared water/paper and
+below-mask drying corrections. Chrome compiled and exercised the shaders on
+AMD/Polaris. Two identical controlled thin-water runs now finish evaporation with
+`wet cells = 0`, and two heavier runs conserve and hand pigment into the dry layer;
+see `docs/13-water-paper-behavior-log.md` E3. This checkout still has unrelated
 untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`,
 and `process_video.py`; do not touch them.
 **Git state:** Bartford authorized publication and Codex pushed E11/E12 through
@@ -160,6 +161,13 @@ The NVIDIA E13 discriminator for the separate explosion fault is explicitly
 **postponed at Bartford's request**, not cancelled. P8 polish remains on hold.
 
 **Active evidence log for this work:** `docs/13-water-paper-behavior-log.md`.
+
+**Checkpoint:** Bartford's stale-paint recording is diagnosed and the independent
+drying defect is corrected. The clip records one AMD transient water-gauge jump
+`104.01 → 1.0244241027175636e+35 → 104.01`; that belongs to the postponed
+NVIDIA/driver discriminator and was not relabelled as a drying defect. The current
+drying edits and E3 log are uncommitted. Preserve the committed water/paper
+foundation at `c9791ce`, and do not begin the postponed NVIDIA test.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -289,7 +297,21 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Bartford's hand test, then calibration
+## NEXT ACTION — Bartford hand-checks drying and bloom timing
+
+1. On Cold Press, paint a damp wash and a deep puddle at the default dry setting.
+   The damp wash should lose its wet sheen and stop moving; the puddle should remain
+   workable longer, then leave dry pigment rather than permanent water.
+2. Repeat once at maximum dry. The conservation water number must fall all the way
+   to zero even after `wet cells` reaches zero. Pigment should remain visible and its
+   conservation number should hold because pigment dries; it does not evaporate.
+3. If the shape is right but timing is wrong, calibrate the existing
+   `[UNVERIFIED]` watercolor evaporation row against the 1–5 minute acceptance
+   target. Do not add a watercolor-only shader branch.
+4. Keep the NVIDIA E13 experiment postponed until Bartford finishes this behavior
+   pass. The recorded one-frame jump remains open and separate.
+
+## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration
 
 The shared correction is implemented and two controlled AMD/Polaris runs agree.
 See `docs/13-water-paper-behavior-log.md` E2 for exact values.
