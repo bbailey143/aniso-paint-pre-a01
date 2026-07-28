@@ -30,6 +30,9 @@
       <span class="hud-title">conservation</span>
       <div class="stylus-row"><span>water</span><b id="g-water">—</b></div>
       <div class="stylus-row"><span>pigment</span><b id="g-pigment">—</b></div>
+      <!-- Dry media keep their own line. They live on a finer grid in different
+           units, so adding them to `pigment` would bury a wet-band leak. -->
+      <div class="stylus-row"><span>ink/graphite</span><b id="g-ink">—</b></div>
       <div class="stylus-row"><span>wet cells</span><b id="g-wet">—</b></div>
       <div class="stylus-row"><span>mean |div|</span><b id="g-div">—</b></div>
       <div class="stylus-row"><span>relax</span><b id="g-relax">—</b></div>

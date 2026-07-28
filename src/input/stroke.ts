@@ -36,6 +36,8 @@ export class StrokeEngine {
   /** The mix currently on the brush, and how heavily it was charged. */
   private mix = new Float32Array(8);
   private loading = 0.6;
+  /** 0 = normal colour charge; 1 = full clean-water charge. */
+  private waterCharge = 0;
 
   /** Cells per solve step — never let the tuft jump more than this. */
   private maxStep = 0.9;
@@ -51,7 +53,7 @@ export class StrokeEngine {
     this.size = size;
     this.dry = null;                       // back to a wet tool
     this.brush = new Brush(def, size);
-    this.brush.reservoir.charge(this.mix, this.loading);
+    this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
   }
 
   /** Switch to a dry medium (P7). The brush is left as it was, loaded, so
@@ -64,10 +66,11 @@ export class StrokeEngine {
   get isDry(): boolean { return this.dry !== null; }
 
   /** Dip the brush. Called when the mix or load changes, and at stroke start. */
-  charge(mix: Float32Array, loading: number) {
+  charge(mix: Float32Array, loading: number, waterCharge = this.waterCharge) {
     this.mix.set(mix.subarray(0, 8));
     this.loading = loading;
-    this.brush.reservoir.charge(this.mix, loading);
+    this.waterCharge = Math.min(1, Math.max(0, waterCharge));
+    this.brush.reservoir.charge(this.mix, loading, this.waterCharge);
   }
 
   /**
@@ -90,7 +93,7 @@ export class StrokeEngine {
     // A fresh dip each stroke: the brush goes back to the palette between
     // strokes, and within a stroke it runs down. That depletion is what makes a
     // long stroke fade rather than run forever.
-    this.brush.reservoir.charge(this.mix, this.loading);
+    this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
     this.brush.begin(this.toInput(gx, gy, s, 0, 0));
     this.last = { x: gx, y: gy, s };
   }

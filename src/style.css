@@ -6,6 +6,7 @@
   --ink: #e7e9ee;
   --ink-dim: #8b909a;
   --accent: #d8b26a;
+  --tilt-blue: #52a9dd;
   color-scheme: dark;
 }
 
@@ -64,8 +65,11 @@ html, body {
 }
 
 #gauges {
-  bottom: 12px;
-  right: 12px;
+  /* Stack the live readout above the pointer report, leaving the right edge
+     solely for the painter controls.  The 132px offset is the stylus panel's
+     112px compact height plus an 8px breathing gap and its 12px viewport inset. */
+  bottom: 132px;
+  left: 12px;
   min-width: 172px;
   display: flex;
   flex-direction: column;
@@ -143,9 +147,23 @@ html, body {
    remove them, so the layout does not jump when switching tools. */
 #palette.dry-mode .mix,
 #palette.dry-mode #loading,
-#palette.dry-mode #evap { opacity: 0.4; }
+#palette.dry-mode #evap,
+#palette.dry-mode .wet-only { opacity: 0.4; }
 .paper { text-align: center; padding: 4px 2px; }
 .paper.on { color: var(--accent); border-color: var(--accent); }
 .loading-row { display: flex; align-items: center; gap: 8px; }
 .loading-row span { color: var(--ink-dim); }
 .loading-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+/* Temporary board-tilt instrument. The blue puck is the only bright moving
+   element: it reads as direction, not a second busy panel. */
+.tilt-control { border-top: 1px solid var(--panel-border); padding-top: 6px; }
+.tilt-head { display: flex; align-items: center; justify-content: space-between; background: rgba(0, 0, 0, 0.26); padding: 2px 4px; color: var(--tilt-blue); text-transform: uppercase; letter-spacing: 0.07em; font-size: 10px; }
+.tilt-head .pal-btn { border: 0; border-radius: 0; padding: 1px 3px; font-size: 10px; color: var(--ink-dim); }
+.tilt-head .pal-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.tilt-pad { position: relative; width: 116px; aspect-ratio: 1; margin: 7px auto 3px; border: 2px solid rgba(231, 233, 238, 0.78); border-radius: 50%; background: rgba(255, 255, 255, 0.025); cursor: crosshair; touch-action: none; }
+.tilt-pad::before, .tilt-pad::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.12); }
+.tilt-pad::before { width: 1px; height: 12px; left: 50%; top: -6px; }
+.tilt-pad::after { height: 1px; width: 12px; top: 50%; left: -6px; }
+.tilt-puck { position: absolute; width: 18px; height: 18px; left: calc(50% - 9px); top: calc(50% - 9px); border-radius: 50%; background: var(--tilt-blue); border: 2px solid rgba(231, 233, 238, 0.8); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55); pointer-events: none; transition: transform 0.05s linear; }
+.tilt-hint { color: var(--ink-dim); text-align: center; font-size: 10px; }

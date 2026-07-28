@@ -1,6 +1,114 @@
+# Round 8 — "clear sheet" had stopped clearing, and it took the watercolour with it
+
+**Read this first. Rounds 7 and 6 follow.**
+
+Bartford's report was *"it really broke wet watercolour painting"*. It had, and the
+cause is one line in a shader nobody was looking at.
+
+## The fault
+
+`clear()` did **nothing**. Not "cleared partially" — nothing at all:
+
+| | water | pigment |
+|---|---|---|
+| dirty sheet | 195.0820 | 325.1366 |
+| after `clear()` | **195.0820** | **325.1366** |
+| second trial | identical | identical |
+
+So every wipe left the previous painting in the buffers and the next one went on
+top of it. Two strokes measured 99.67 → 195.08 water, 166.12 → 325.14 pigment. The
+sheet only ever got wetter and dirtier, which is precisely what watercolour that has
+"broken" looks like from the outside.
+
+## The cause — `layout: 'auto'`, for the third time
+
+The fine ink band arrived at 2048 while the fluid stays at 512, so the ink variant of
+the zero-fill shader was built by string-replacing `let n = i32(P.grid);` with
+`textureDimensions(dst)`. That left `Params` **declared but never statically used**.
+
+`layout: 'auto'` drops a binding the shader does not use. Binding it anyway is a
+validation error, caught on the wire:
+
+```
+In entries[0], binding index 0 not present in the bind group layout.
+Expected layout: [{ binding: 1, ... RGBA16Float ... }]
+```
+
+An invalid bind group invalidates the encoder, and **every wet zero-fill shared that
+one encoder with the ink ones**. Two ink dispatches took eleven wet textures down
+with them, silently, with no console error in the app.
+
+This is the same trap that made `reduce_final` return zeros. Both times the shape was
+identical: a uniform left declared after the code that read it was edited away.
+
+## The fix
+
+Not a special case for the ink variant — the trap is removed. `zero_fill.wgsl` no
+longer takes `Params` at all; the extent a clear should cover is a property of the
+texture being cleared, so it asks the texture. One binding, one layout, both
+resolutions, nothing left for `layout: 'auto'` to drop. The ink variant now differs
+by storage format alone.
+
+Verified, twice: no validation error, and water · pigment · ink all read exactly
+`0.000000` after a wipe.
+
+**A sweep of all 22 shaders for declared-but-unused bindings now comes back clean.**
+Run it whenever a shader is built by string substitution.
+
+## Two more things found in the same review
+
+**The ink total had been folded into `pigment`, and that blinds invariant 1.**
+The two are not commensurable: ink is summed over 2048² cells and its amount is a
+concentration, so one ballpoint line reads **2871** against a whole watercolour
+wash's **159**. Merged, the conservation meter jumps eighteenfold the moment you
+pick up a pen, and a five-percent leak in the wet band disappears inside the
+rounding of the larger number. Ink now has its own lane (`inkPigment`) and its own
+row in the readout. Nothing moves between the grids, so the two ledgers are
+independent and each holds on its own — when charcoal and pastel arrive they *will*
+cross, and that bridge needs its own test, at which point these must be checked as a
+sum.
+
+**The idle GPU load was the ink reducer, and it is now measured.** The ink band has
+no physics: nothing moves in it between deposits, so its total cannot change unless a
+dry tool wrote there. Reducing four million texels every frame to re-derive an
+unchanged number cost:
+
+| | ms per idle frame |
+|---|---|
+| reduce every frame | 16.669 · 16.062 |
+| reduce only when the ink band changed | **5.879 · 5.652** |
+
+Two trials each. That is 10.5 ms a frame given back — on its own, the difference
+between fitting a 60 Hz budget and not.
+
+## What was checked and found NOT broken
+
+Measured twice each, on the fixed base:
+
+- **Wet conservation.** One stroke, 300 hands-off frames: pigment drift 0.000000 and
+  −0.000031. Water holds.
+- **The drying handoff.** 159.0177 laid → wet 158.1811 / dry 0.8366 → wet 0.0002 /
+  dry 159.0175. Total **exactly 159.0177 at every mark**.
+- **The water charge.** 0 → 165.51 pigment · 99.30 water; 0.5 → 79.51 · 127.21;
+  1.0 → **0 pigment** · 165.51 water. A clean-water brush is clean.
+- **Ballpoint under a watercolour glaze.** See `09-acceptance.md`.
+
+## Not a fault, but worth knowing
+
+Two identical strokes do **not** lay identical paint — they alternate, exactly, in a
+period of two (99.3039 / 95.4106 / 99.3039 / 95.4106 …). That is `Brush.end()`
+calling `spine.recover(0.5)`, which relaxes the tuft's *plastic memory* halfway
+rather than fully, so a stroke starts from the splay the previous one left. It is
+modelled behaviour (`spine.ts`: "it remembers splay through a stroke and recovers
+slowly"), reproducible, and independent of frame count — padding idle frames between
+strokes changes nothing. Flagged because a 4 % stroke-to-stroke swing will confuse
+any future measurement that assumes strokes repeat.
+
+---
+
 # P6 restored on the new base — the handoff was never the problem either
 
-**Round 7. Read this first, then the round-6 section below it.**
+**Round 7. Then the round-6 section below it.**
 
 P6 (drying handoff, re-wet, glazing) is re-applied on top of the fixed gauge, and
 `handoffEnabled` is back **ON**. Its blocking finding — *"the handoff CREATES

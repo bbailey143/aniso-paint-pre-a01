@@ -127,9 +127,9 @@ function ballpoint(name: string, slug: string, pigment: string,
     edgeSharpness: 1.45,
 
     // Deep but rare — see the shaping in dry-tool.ts.
-    skipStrength: 0.88,
+    skipStrength: 0.72,
     skipScale: 5.5,
-    chatter: 0.4,
+    chatter: 0.26,
   };
 }
 

@@ -160,7 +160,19 @@ export class DryTool {
     // away, so the pen had no width variation at all at the sizes anyone draws
     // at. With true coverage in the deposit pass there is no floor, so this can
     // do what it says.
-    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * (0.45 + 0.55 * flow);
+    // A rolling ball changes width, but the reference is mostly calm hairlines
+    // with small, slow variations. Keep that shape variation separate from the
+    // ink-flow dips above: tying them together makes every pale patch become an
+    // exaggerated pinch instead of a natural hesitation.
+    let widthFlow = 0.82 + 0.18 * flow;
+    let widthGrain = 1.0;
+    if ('skipStrength' in m) {
+      const ink = m as InkMedium;
+      // Slower than the starve-and-recover cycle, so hatching feels related
+      // without every parallel stroke repeating the exact same rhythm.
+      widthGrain = 0.92 + 0.16 * vnoise(this.phase * 0.17 + this.dist / Math.max(ink.skipScale * 2.7, 1e-3));
+    }
+    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * widthFlow * widthGrain;
 
     // [REMOVED — it was doing more harm than the aliasing it hid] There used to
     // be a 0.9-cell minimum contact width here, with the ink spread thinner to

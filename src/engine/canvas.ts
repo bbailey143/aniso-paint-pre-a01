@@ -18,6 +18,10 @@ const DOC = 1024;               // document resolution (square)
 // does not need display resolution; the visual layer does. The paper lives at
 // sim resolution because the fluid reads it per cell.
 const SIM = 512;
+// Dry media can be much finer than the fluid. A ballpoint hairline needs this
+// extra resolution; water movement does not. Keep the relationship here rather
+// than scattering the number through the canvas setup.
+const INK = SIM * 4;
 
 const STORAGE_TEX =
   GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST;
@@ -30,6 +34,9 @@ export class CanvasEngine {
 
   private gpu: Gpu;
   private paperTex: GPUTexture;
+  /** Same sheet, sampled at the dry-media grid so tooth stays meaningful for a
+   * fine nib instead of turning into four-by-four blocky copies of the wet map. */
+  private inkPaperTex: GPUTexture;
   private lib: { ks: GPUBuffer; cie: GPUBuffer; params: GPUBuffer };
   private fluid: FluidEngine;
 
@@ -39,6 +46,7 @@ export class CanvasEngine {
   private compParams: GPUBuffer;
   private sampler: GPUSampler;
   private paperBind: GPUBindGroup;
+  private inkPaperBind: GPUBindGroup;
 
   // Active slot -> library id map (up to 8), shared by fluid and composite.
   private slotIds = new Int32Array(8).fill(-1);
@@ -56,9 +64,12 @@ export class CanvasEngine {
     this.paperTex = device.createTexture({
       size: [SIM, SIM], format: 'rgba16float', usage: STORAGE_TEX, label: 'paper',
     });
+    this.inkPaperTex = device.createTexture({
+      size: [INK, INK], format: 'rgba16float', usage: STORAGE_TEX, label: 'ink-paper',
+    });
 
     this.lib = createColorLibrary(device);
-    this.fluid = new FluidEngine(gpu, SIM, this.paperTex.createView());
+    this.fluid = new FluidEngine(gpu, SIM, this.paperTex.createView(), this.inkPaperTex.createView());
 
     this.paperParams = device.createBuffer({
       size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
@@ -85,6 +96,13 @@ export class CanvasEngine {
       entries: [
         { binding: 0, resource: { buffer: this.paperParams } },
         { binding: 1, resource: this.paperTex.createView() },
+      ],
+    });
+    this.inkPaperBind = device.createBindGroup({
+      layout: this.paperPipe.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.paperParams } },
+        { binding: 1, resource: this.inkPaperTex.createView() },
       ],
     });
   }
@@ -119,6 +137,11 @@ export class CanvasEngine {
     pass.setPipeline(this.paperPipe);
     pass.setBindGroup(0, this.paperBind);
     pass.dispatchWorkgroups(Math.ceil(SIM / 8), Math.ceil(SIM / 8));
+    // Same procedural sheet, evaluated at the ink grid. This preserves the
+    // paper's continuous grain under a fine pen rather than magnifying a
+    // coarse simulation-cell pattern.
+    pass.setBindGroup(0, this.inkPaperBind);
+    pass.dispatchWorkgroups(Math.ceil(INK / 8), Math.ceil(INK / 8));
     pass.end();
     this.gpu.device.queue.submit([enc.finish()]);
 
@@ -236,6 +259,8 @@ export class CanvasEngine {
         { binding: 13, resource: v.dry1b },
         { binding: 14, resource: v.dry2a },
         { binding: 15, resource: v.dry2b },
+        { binding: 16, resource: v.ink0 },
+        { binding: 17, resource: v.ink1 },
       ],
     });
   }

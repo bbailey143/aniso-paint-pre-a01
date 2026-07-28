@@ -35,6 +35,8 @@ import rewetWgsl from './shaders/fluid/rewet.wgsl?raw';
 import dryDepositWgsl from './shaders/fluid/dry_deposit.wgsl?raw';
 import reduceWgsl from './shaders/fluid/reduce.wgsl?raw';
 import reduceFinalWgsl from './shaders/fluid/reduce_final.wgsl?raw';
+import reduceInkWgsl from './shaders/fluid/reduce_ink.wgsl?raw';
+import reduceInkFinalWgsl from './shaders/fluid/reduce_ink_final.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
 
 // Quantities per reduce workgroup. Stated in THREE places that must agree:
@@ -105,6 +107,25 @@ export interface Gauges {
   /** Pigment in the dry layers. wetPigment + dryPigment must equal pigment —
    * that split is what tells a real leak apart from paint changing band. */
   dryPigment: number;
+  /**
+   * Dry media on the fine ink grid, kept OUT of `pigment` on purpose.
+   *
+   * [TRAP] Ink was briefly folded into `pigment` and `dryPigment`. The two
+   * numbers are not commensurable: ink is summed over 2048^2 cells and its
+   * amount is a concentration, so one ballpoint line reads ~2871 against a
+   * whole watercolour wash's ~159. Merged, the meter jumps by a factor of
+   * eighteen the moment you pick up a pen — and a 5 % leak in the wet band
+   * disappears inside the rounding of that larger number. Invariant 1 is
+   * "paint, lift the brush, watch it hold", which only works if the thing
+   * being watched is one band.
+   *
+   * No material crosses between the grids, so the two ledgers are independent
+   * and each holds on its own. When charcoal and pastel arrive they WILL cross,
+   * and that bridge needs its own conservation test — at which point these two
+   * numbers have to be checked as a sum.
+   */
+  inkPigment: number;
+  inkPerSlot: number[];
 }
 
 // [MEASURED — the gauges caught this, and it changes D6 for the wet band]
@@ -127,14 +148,45 @@ export interface Gauges {
 // the bits, not storage in general.
 const FLUID_FORMAT: GPUTextureFormat = 'rgba32float';
 
+/**
+ * Resolution of the dry-media (ink) band — FOUR TIMES the fluid grid.
+ *
+ * A ballpoint line is thinner than a fluid cell, and one number per cell cannot
+ * say "a black hairline runs down the left edge of this square": all it can
+ * record is "this square is a third inked", which reads back as a wide pale
+ * line instead of a narrow dark one. Real biro hatching is dark AND thin at
+ * once, and an artist spots the difference immediately.
+ *
+ * So dry media get their own finer grid. Crucially this is NOT a separate layer
+ * type with its own physics — it is one more field in the same canvas, at a
+ * different sampling rate, exactly as the display has always been finer than
+ * the simulation. Nothing is ever flattened to make media interact.
+ *
+ * The safety rule that makes it free of risk: **no material ever moves between
+ * grids.** Ink is deposited here and read here; the fluid may LOOK at it, but
+ * nothing is transported across the resolution change, so there is no
+ * resampling step where mass could leak or multiply. Charcoal and pastel, which
+ * genuinely do lift into water, will need that bridge — and a conservation test
+ * around it — when their rows arrive.
+ */
+const INK_RES = 2048;
+const INK_Q = 8;
+/**
+ * Half-float is enough HERE, unlike the wet band (D6). The wet band accumulates
+ * thousands of tiny increments per cell per second and ground away 6.5 % of its
+ * pigment at f16; ink takes a handful of additions per stroke, so the rounding
+ * has nothing to compound over.
+ */
+const INK_FORMAT: GPUTextureFormat = 'rgba16float';
+
 /** A ping-pong pair of same-format textures. */
 class PingPong {
   tex: GPUTexture[];
   view: GPUTextureView[];
   cur = 0;
-  constructor(device: GPUDevice, n: number, label: string) {
+  constructor(device: GPUDevice, n: number, label: string, format: GPUTextureFormat = FLUID_FORMAT) {
     this.tex = [0, 1].map((i) => device.createTexture({
-      size: [n, n], format: FLUID_FORMAT,
+      size: [n, n], format,
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
            | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
       label: `${label}${i}`,
@@ -166,10 +218,17 @@ export class FluidEngine {
   private dry1b: PingPong;
   private dry2a: PingPong;
   private dry2b: PingPong;
+  /** Dry media, at INK_RES. Slots 0-3 and 4-7. */
+  private ink0: PingPong;
+  private ink1: PingPong;
+  readonly inkRes = INK_RES;
+  private inkPaper: GPUTextureView;
 
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
   private segBuf: GPUBuffer;
+  /** The same stroke footprints in the finer dry-media coordinate system. */
+  private inkSegs = new Float32Array(MAX_SEGS * SEG_FLOATS);
   private ctlBuf: GPUBuffer;
   private mixBuf: GPUBuffer;
   private partialsBuf: GPUBuffer;
@@ -182,6 +241,17 @@ export class FluidEngine {
    * still copying, so a reading could blend two different frames. */
   private samplePartials: GPUBuffer;
   private sampleTotals: GPUBuffer;
+  /** The ink grid is four times wider, so it gets its own small reduction path.
+   * Sharing the wet reducer would sample only its top-left quarter. */
+  private inkPartials: GPUBuffer;
+  private inkTotals: GPUBuffer;
+  private inkSamplePartials: GPUBuffer;
+  private inkSampleTotals: GPUBuffer;
+  private inkReadback: GPUBuffer;
+  private inkGauge = new Float32Array(INK_Q);
+  /** Set whenever something writes the ink band; the only reason to re-reduce
+   * it. Starts true so the first frame produces a reading. */
+  private inkDirty = true;
   /** Pause the per-frame readout while measuring, so nothing else is in flight. */
   pauseReadback = false;
 
@@ -199,14 +269,16 @@ export class FluidEngine {
   private gauges: Gauges = {
     water: 0, film: 0, saturation: 0, pigment: 0, perSlot: new Array(8).fill(0),
     wetCells: 0, meanDivergence: 0, relaxIters: 8, wetPigment: 0, dryPigment: 0,
+    inkPigment: 0, inkPerSlot: new Array(8).fill(0),
   };
   private readbackBusy = false;
   private frame = 0;
 
-  constructor(gpu: Gpu, n: number, paper: GPUTextureView) {
+  constructor(gpu: Gpu, n: number, paper: GPUTextureView, inkPaper: GPUTextureView) {
     this.gpu = gpu;
     this.n = n;
     this.paper = paper;
+    this.inkPaper = inkPaper;
     const { device } = gpu;
 
     this.wet0 = new PingPong(device, n, 'wet0');
@@ -220,6 +292,8 @@ export class FluidEngine {
     this.dry1b = new PingPong(device, n, 'dry1b');
     this.dry2a = new PingPong(device, n, 'dry2a');
     this.dry2b = new PingPong(device, n, 'dry2b');
+    this.ink0 = new PingPong(device, INK_RES, 'ink0', INK_FORMAT);
+    this.ink1 = new PingPong(device, INK_RES, 'ink1', INK_FORMAT);
 
     // Params: 16 scalars (4 vec4 worth) + 8 vec4 pigment rows = 192 bytes.
     this.paramsBuf = device.createBuffer({
@@ -265,6 +339,23 @@ export class FluidEngine {
       size: totalBytes,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'sample-totals',
     });
+    const inkGroups = Math.ceil(INK_RES / 16);
+    const inkPartialBytes = inkGroups * inkGroups * INK_Q * 4;
+    this.inkPartials = device.createBuffer({
+      size: inkPartialBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'ink-partials',
+    });
+    this.inkSamplePartials = device.createBuffer({
+      size: inkPartialBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'ink-sample-partials',
+    });
+    this.inkTotals = device.createBuffer({
+      size: TOTAL_LANES * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'ink-totals',
+    });
+    this.inkSampleTotals = device.createBuffer({
+      size: TOTAL_LANES * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'ink-sample-totals',
+    });
+    this.inkReadback = device.createBuffer({
+      size: TOTAL_LANES * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'ink-readback',
+    });
     this.readbackBuf = device.createBuffer({
       size: totalBytes,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'gauge-readback',
@@ -291,9 +382,27 @@ export class FluidEngine {
     this.pipes.dryStore = mk(dryStoreWgsl, 'dry_store');
     this.pipes.wetClear = mk(wetClearWgsl, 'wet_clear');
     this.pipes.rewet = mk(rewetWgsl, 'rewet');
+    // Fine dry media cannot inherit P.grid: their textures are four times
+    // wider than the fluid simulation. Each variant gets its extent from the
+    // texture it is actually writing, while the wet shaders stay on P.grid.
     this.pipes.dryDeposit = mk(dryDepositWgsl, 'dry_deposit');
+    this.pipes.dryDepositInk = mk(
+      dryDepositWgsl
+        .replace('let n = i32(P.grid);', 'let n = i32(textureDimensions(dry2a_in).x);')
+        .replace(/rgba32float/g, 'rgba16float'),
+      'dry_deposit_ink',
+    );
+    // The ink variant differs by STORAGE FORMAT ALONE. It used to also swap
+    // `P.grid` for the texture's own size, which left the params uniform
+    // statically unused — `layout: 'auto'` then dropped binding 0, binding it
+    // was a validation error, and the whole clear encoder was discarded. See
+    // the trap note at the top of zero_fill.wgsl; that shader now sizes itself
+    // from `dst` for every resolution, so there is nothing left to patch here.
+    this.pipes.zeroInk = mk(zeroWgsl.replace(/rgba32float/g, 'rgba16float'), 'zero_ink');
     this.pipes.reduce = mk(reduceWgsl, 'reduce');
     this.pipes.reduceFinal = mk(reduceFinalWgsl, 'reduce_final');
+    this.pipes.reduceInk = mk(reduceInkWgsl, 'reduce_ink');
+    this.pipes.reduceInkFinal = mk(reduceInkFinalWgsl, 'reduce_ink_final');
     this.pipes.zero = mk(zeroWgsl, 'zero_fill');
 
     this.writeParams();
@@ -307,6 +416,7 @@ export class FluidEngine {
       wet3: this.wet3.src, wet4: this.wet4.src, wet5: this.wet5.src,
       dry1a: this.dry1a.src, dry1b: this.dry1b.src,
       dry2a: this.dry2a.src, dry2b: this.dry2b.src,
+      ink0: this.ink0.src, ink1: this.ink1.src,
     };
   }
 
@@ -366,6 +476,14 @@ export class FluidEngine {
   /** Debug: names in here are skipped (dispatch AND flip) to bisect faults. */
   readonly skip = new Set<string>();
 
+  private dispatchAt(pass: GPUComputePassEncoder, pipe: GPUComputePipeline,
+                     n: number, res: GPUBindingResource[]) {
+    const g = Math.ceil(n / 8);
+    pass.setPipeline(pipe);
+    pass.setBindGroup(0, this.bind(pipe, res));
+    pass.dispatchWorkgroups(g, g, 1);
+  }
+
   private dispatch(pass: GPUComputePassEncoder, pipe: GPUComputePipeline, res: GPUBindingResource[]) {
     const g = Math.ceil(this.n / 8);
     pass.setPipeline(pipe);
@@ -381,11 +499,17 @@ export class FluidEngine {
                  this.dry1a, this.dry1b, this.dry2a, this.dry2b];
     for (const pp of all) {
       for (const v of pp.view) {
-        this.dispatch(pass, this.pipes.zero, [{ buffer: this.paramsBuf }, v]);
+        this.dispatch(pass, this.pipes.zero, [v]);
+      }
+    }
+    for (const pp of [this.ink0, this.ink1]) {
+      for (const v of pp.view) {
+        this.dispatchAt(pass, this.pipes.zeroInk, INK_RES, [v]);
       }
     }
     pass.end();
     enc.clearBuffer(this.fluxBuf);
+    this.inkDirty = true;
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
@@ -422,23 +546,40 @@ export class FluidEngine {
     // one encoder leaves every dispatch reading the LAST write.
     for (let done = 0; done < segCount; done += MAX_SEGS) {
       const n = Math.min(segCount - done, MAX_SEGS);
+      // Stroke input is expressed in the 512-cell simulation grid. Scale the
+      // footprint itself—not its pigment amount—into the 2048-cell dry grid.
+      // That keeps a 0.5 mm pen narrow while preserving its ink-per-distance.
+      const scale = INK_RES / this.n;
+      for (let i = 0; i < n; i++) {
+        const src = (done + i) * SEG_FLOATS;
+        const dst = i * SEG_FLOATS;
+        this.inkSegs[dst] = segments[src] * scale;
+        this.inkSegs[dst + 1] = segments[src + 1] * scale;
+        this.inkSegs[dst + 2] = segments[src + 2] * scale;
+        this.inkSegs[dst + 3] = segments[src + 3] * scale;
+        this.inkSegs[dst + 4] = segments[src + 4] * scale;
+        this.inkSegs[dst + 5] = segments[src + 5];
+        this.inkSegs[dst + 6] = segments[src + 6];
+        this.inkSegs[dst + 7] = segments[src + 7];
+      }
       device.queue.writeBuffer(
-        this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
-      const ctl = this.segBounds(segments, done, n);
+        this.segBuf, 0, this.inkSegs, 0, n * SEG_FLOATS);
+      const ctl = this.segBounds(this.inkSegs, 0, n);
       ctl[5] = edge;                    // rim falloff, per medium
       device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const enc = device.createCommandEncoder({ label: 'dry-deposit' });
       const pass = enc.beginComputePass();
-      this.dispatch(pass, this.pipes.dryDeposit, [
+      this.dispatchAt(pass, this.pipes.dryDepositInk, INK_RES, [
         { buffer: this.paramsBuf }, { buffer: this.segBuf },
         { buffer: this.ctlBuf }, { buffer: this.mixBuf },
-        this.dry2a.src, this.dry2b.src, this.paper,
-        this.dry2a.dst, this.dry2b.dst,
+        this.ink0.src, this.ink1.src, this.inkPaper,
+        this.ink0.dst, this.ink1.dst,
       ]);
       pass.end();
       device.queue.submit([enc.finish()]);
-      this.dry2a.flip(); this.dry2b.flip();
+      this.ink0.flip(); this.ink1.flip();
+      this.inkDirty = true;
     }
   }
 
@@ -592,18 +733,30 @@ export class FluidEngine {
 
     // 11 — gauges, reduced all the way down on the GPU
     this.recordGauge(pass, this.partialsBuf, this.totalsBuf);
+    // The ink band has no physics: nothing moves in it between deposits, so its
+    // total cannot change unless a dry tool put something there. Reducing four
+    // million texels every frame to re-derive a number that did not move was
+    // most of the idle GPU load. `inkTotals` keeps its last value, which is
+    // still the right one.
+    if (this.inkDirty) {
+      this.recordInkGauge(pass, this.inkPartials, this.inkTotals);
+      this.inkDirty = false;
+    }
     pass.end();
 
     if (!this.readbackBusy && !this.pauseReadback) {
       enc.copyBufferToBuffer(this.totalsBuf, 0, this.readbackBuf, 0, this.readbackBuf.size);
+      enc.copyBufferToBuffer(this.inkTotals, 0, this.inkReadback, 0, this.inkReadback.size);
     }
     device.queue.submit([enc.finish()]);
 
     if (!this.readbackBusy && !this.pauseReadback) {
       this.readbackBusy = true;
-      this.readbackBuf.mapAsync(GPUMapMode.READ).then(() => {
+      Promise.all([this.readbackBuf.mapAsync(GPUMapMode.READ), this.inkReadback.mapAsync(GPUMapMode.READ)]).then(() => {
         const data = new Float32Array(this.readbackBuf.getMappedRange().slice(0));
+        this.inkGauge.set(new Float32Array(this.inkReadback.getMappedRange().slice(0, INK_Q * 4)));
         this.readbackBuf.unmap();
+        this.inkReadback.unmap();
         this.accumulate(data);
         this.readbackBusy = false;
       }).catch(() => { this.readbackBusy = false; });
@@ -636,6 +789,22 @@ export class FluidEngine {
     pass.dispatchWorkgroups(1, 1, 1);
   }
 
+  /** Reduce the fine ink band separately, then merge it into the live ledger on
+   * the CPU. It is a display-resolution band, so it must not inherit `P.grid`. */
+  private recordInkGauge(pass: GPUComputePassEncoder, partials: GPUBuffer, totals: GPUBuffer) {
+    const g = Math.ceil(INK_RES / 16);
+    pass.setPipeline(this.pipes.reduceInk);
+    pass.setBindGroup(0, this.bind(this.pipes.reduceInk, [
+      this.ink0.src, this.ink1.src, { buffer: partials },
+    ]));
+    pass.dispatchWorkgroups(g, g, 1);
+    pass.setPipeline(this.pipes.reduceInkFinal);
+    pass.setBindGroup(0, this.bind(this.pipes.reduceInkFinal, [
+      { buffer: partials }, { buffer: totals },
+    ]));
+    pass.dispatchWorkgroups(1, 1, 1);
+  }
+
   /**
    * Read the gauges NOW. `readings` is filled by a readback that skips frames
    * whenever a map is in flight, so it can describe a state many frames old —
@@ -651,13 +820,17 @@ export class FluidEngine {
     const enc = device.createCommandEncoder({ label: 'gauge-sample' });
     const pass = enc.beginComputePass();
     this.recordGauge(pass, this.samplePartials, this.sampleTotals);
+    this.recordInkGauge(pass, this.inkSamplePartials, this.inkSampleTotals);
     pass.end();
     enc.copyBufferToBuffer(this.sampleTotals, 0, rb, 0, bytes);
+    const inkRb = device.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    enc.copyBufferToBuffer(this.inkSampleTotals, 0, inkRb, 0, bytes);
     device.queue.submit([enc.finish()]);
-    await rb.mapAsync(GPUMapMode.READ);
+    await Promise.all([rb.mapAsync(GPUMapMode.READ), inkRb.mapAsync(GPUMapMode.READ)]);
     const data = new Float32Array(rb.getMappedRange().slice(0));
-    rb.unmap(); rb.destroy();
-    return this.summarise(data);
+    const ink = new Float32Array(inkRb.getMappedRange().slice(0, INK_Q * 4));
+    rb.unmap(); rb.destroy(); inkRb.unmap(); inkRb.destroy();
+    return this.summarise(data, ink);
   }
 
   /** Dump the flux ledger (vec4 per cell: out east, west, south, north). */
@@ -706,10 +879,11 @@ export class FluidEngine {
    * The summing now happens in reduce_final — this reads lane by lane, and must
    * NOT re-fold the row, or the padding lanes would be counted as data.
    */
-  private summarise(data: Float32Array): Gauges {
+  private summarise(data: Float32Array, ink = this.inkGauge): Gauges {
     const q = new Float64Array(NQ);
     for (let k = 0; k < NQ; k++) q[k] = data[k] ?? 0;
     const perSlot = Array.from({ length: 8 }, (_, k) => q[2 + k]);
+    const inkPerSlot = Array.from({ length: 8 }, (_, k) => ink[k] ?? 0);
     const wetCells = q[11];
     return {
       film: q[0], saturation: q[1], water: q[0] + q[1],
@@ -718,6 +892,8 @@ export class FluidEngine {
       relaxIters: this.relaxIters,
       wetPigment: q[13],
       dryPigment: q[14],
+      inkPigment: inkPerSlot.reduce((a, b) => a + b, 0),
+      inkPerSlot,
     };
   }
 

@@ -20,6 +20,10 @@ export interface PaletteEvents {
   onPaperChange?(paper: Paper): void;
   /** Fired when the evaporation rate changes. */
   onEvapChange?(evapRate: number): void;
+  /** Extra clean water in the wet-brush charge, 0..1. */
+  onWaterChange?(waterCharge: number): void;
+  /** Normalized downhill direction in canvas space; centre is level. */
+  onTiltChange?(gravityX: number, gravityY: number, cosAlpha: number): void;
   /** Fired when the sheet should be wiped. */
   onClear?(): void;
   /** Rinse the brush: pigment out, clean water in. The sheet is untouched. */
@@ -35,6 +39,7 @@ export interface PaletteEvents {
 export class Palette {
   readonly recipe: Recipe = new Map();
   loading = 0.6;
+  waterCharge = 0;
   brush: BrushDef = BRUSHES[0];
   brushSize = 1.0;
   private root: HTMLElement;
@@ -147,6 +152,42 @@ export class Palette {
       this.events.onEvapChange?.(parseFloat(evap.value));
     });
 
+    const water = this.root.querySelector('#water-charge') as HTMLInputElement;
+    water.value = String(this.waterCharge);
+    water.addEventListener('input', () => {
+      this.waterCharge = parseFloat(water.value);
+      this.events.onWaterChange?.(this.waterCharge);
+    });
+
+    // A small board-level control: the puck is the downhill direction itself.
+    // Screen and canvas coordinates agree here, so down/right on the pad makes
+    // water move down/right on the page without a hidden axis flip.
+    const tiltPad = this.root.querySelector('#tilt-pad') as HTMLElement;
+    const tiltPuck = this.root.querySelector('#tilt-puck') as HTMLElement;
+    const setTilt = (clientX: number, clientY: number) => {
+      const rect = tiltPad.getBoundingClientRect();
+      const radius = Math.max(1, rect.width / 2 - 10);
+      let x = (clientX - (rect.left + rect.width / 2)) / radius;
+      let y = (clientY - (rect.top + rect.height / 2)) / radius;
+      const length = Math.hypot(x, y);
+      if (length > 1) { x /= length; y /= length; }
+      tiltPuck.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      // The radial puck distance is sin(alpha), so this is cos(alpha) for the
+      // existing capillary pass while x/y remain the normalized gravity vector.
+      this.events.onTiltChange?.(x, y, Math.sqrt(Math.max(0, 1 - x * x - y * y)));
+    };
+    tiltPad.addEventListener('pointerdown', (event) => {
+      tiltPad.setPointerCapture(event.pointerId);
+      setTilt(event.clientX, event.clientY);
+    });
+    tiltPad.addEventListener('pointermove', (event) => {
+      if (tiltPad.hasPointerCapture(event.pointerId)) setTilt(event.clientX, event.clientY);
+    });
+    this.root.querySelector('#tilt-level')!.addEventListener('click', () => {
+      tiltPuck.style.transform = 'translate(0, 0)';
+      this.events.onTiltChange?.(0, 0, 1);
+    });
+
     this.root.querySelector('#wash-clear')!
       .addEventListener('click', () => this.events.onClear?.());
 
@@ -213,10 +254,21 @@ export class Palette {
           <span>load</span>
           <input id="loading" type="range" min="0.02" max="1" step="0.02" />
         </label>
+        <label class="loading-row wet-only" title="Add clean water to the brush. At 100%, it lays water with no pigment.">
+          <span>water</span>
+          <input id="water-charge" type="range" min="0" max="1" step="0.01" />
+        </label>
         <label class="loading-row">
           <span>dry</span>
           <input id="evap" type="range" min="0" max="0.004" step="0.0001" />
         </label>
+        <section class="tilt-control" aria-label="paper tilt">
+          <div class="tilt-head"><span>tilt</span><button id="tilt-level" class="pal-btn" title="Return the paper to level">level</button></div>
+          <div id="tilt-pad" class="tilt-pad" role="application" aria-label="Drag the blue puck toward the downhill direction">
+            <span id="tilt-puck" class="tilt-puck"></span>
+          </div>
+          <p class="tilt-hint">drag toward downhill</p>
+        </section>
         <button id="wash-clear" class="pal-btn">clear sheet</button>
       </div>`;
   }

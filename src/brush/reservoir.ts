@@ -47,14 +47,21 @@ export class Reservoir {
     }
   }
 
-  /** Dip the brush: fill every cell to capacity with this mix. */
-  charge(mix: Float32Array, waterFrac = 1) {
+  /**
+   * Dip the brush. `load` preserves the existing brush fullness; `waterCharge`
+   * then replaces colour with clean water in a single, bounded mix. At zero it
+   * is exactly the historical pigment-loaded brush. At one it is a full,
+   * pigment-free water brush.
+   */
+  charge(mix: Float32Array, load = 1, waterCharge = 0) {
+    const water = Math.min(1, Math.max(0, load + (1 - load) * waterCharge));
+    const pigment = 1 - Math.min(1, Math.max(0, waterCharge));
     const n = this.bristles * this.segments;
     for (let i = 0; i < n; i++) {
       const cap = this.capacity[i];
-      this.water[i] = cap * waterFrac;
+      this.water[i] = cap * water;
       for (let k = 0; k < 8; k++) {
-        this.pigment[i * 8 + k] = cap * mix[k];
+        this.pigment[i * 8 + k] = cap * mix[k] * pigment;
       }
     }
   }

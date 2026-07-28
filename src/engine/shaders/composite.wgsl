@@ -37,6 +37,10 @@ struct Comp {
 @group(0) @binding(13) var dry1b: texture_2d<f32>;
 @group(0) @binding(14) var dry2a: texture_2d<f32>;              // everything older
 @group(0) @binding(15) var dry2b: texture_2d<f32>;
+// Dry-media band. It is deliberately finer than the fluid grid so a pen nib
+// can be smaller than a water-simulation cell without becoming a pale block.
+@group(0) @binding(16) var inkA: texture_2d<f32>;
+@group(0) @binding(17) var inkB: texture_2d<f32>;
 
 struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
@@ -150,9 +154,16 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // show through instead of replacing it. Layer order is floor -> dry1 -> wet.
   let e2a = biload(dry2a, uv);
   let e2b = biload(dry2b, uv);
+  let i0 = biload(inkA, uv);
+  let i1 = biload(inkB, uv);
   let e1a = biload(dry1a, uv);
   let e1b = biload(dry1b, uv);
-  let amt2 = array<f32, 8>(e2a.x, e2a.y, e2a.z, e2a.w, e2b.x, e2b.y, e2b.z, e2b.w);
+  // Ink occupies the same permanent floor as graphite did before the finer
+  // grid arrived. It stays beneath later watercolour glazes, but keeps its own
+  // small-scale edge instead of being resampled into the 512-cell dry floor.
+  let floorA = e2a + i0;
+  let floorB = e2b + i1;
+  let amt2 = array<f32, 8>(floorA.x, floorA.y, floorA.z, floorA.w, floorB.x, floorB.y, floorB.z, floorB.w);
   let amt1 = array<f32, 8>(e1a.x, e1a.y, e1a.z, e1a.w, e1b.x, e1b.y, e1b.z, e1b.w);
   var total2 = 0.0;
   var total1 = 0.0;

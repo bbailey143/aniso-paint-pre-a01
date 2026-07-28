@@ -121,3 +121,33 @@ variation reads as specks.
 
 Renders as `rgb(55,57,61)` on `rgb(223,223,223)` paper — graphite grey, through
 the same Kubelka-Munk chain as the paint, with no dry-media special case.
+
+## Watercolour over ballpoint — the mixed-media bar
+
+Bartford's bar, in his words: *"we're gonna' have to prove that we can get
+watercolour to talk to ballpoint pen correctly. Artists will know it's wrong just
+like I noticed."* The ink band runs at 2048 while the fluid stays at 512, so this
+is also the test that the two grids share one canvas rather than becoming Fresco's
+"live" and "pixel" layers that cannot see each other.
+
+A black biro line, then a hansa-yellow wash laid straight across it. Cross-section
+down the wash, sampled every 4 document pixels:
+
+| document y | reads | what it is |
+|---|---|---|
+| 380–388 | `223,223,223` | bare paper |
+| 392 | `221,217,175` | the wash's soft edge |
+| 396 | `231,220,90` | yellow wash on paper |
+| **400** | **`83,103,63`** | **the ink line, seen through the wash** |
+| 404 | `231,221,102` | yellow again |
+| 408+ | `223,223,223` | paper |
+
+Reproduced twice, identical to the last digit. The three things that had to be true:
+
+- **The ink stays thin.** It is still a hairline inside a wash fifteen fluid cells
+  wide — it did not swell to a cell, because it never left its own grid.
+- **The wash is a film over it, not a replacement.** Black under yellow reads
+  `83,103,63`, a warm dark olive. That is subtractive layering through the same
+  Kubelka-Munk chain the paint uses. RGB compositing would give a flat grey-green.
+- **Nothing leaked either way.** Ink total held at 2871.05 before and after the
+  wash; the wash held 198.1423 across 300 settling frames.

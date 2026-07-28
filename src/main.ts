@@ -33,20 +33,31 @@ async function main() {
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
   const engine = new CanvasEngine(gpu);
   const stroke = new StrokeEngine(BRUSHES[0], 1.0);
+  // Palette construction immediately announces its initial mix. Keep this
+  // startup value outside the palette object so that first announcement can
+  // charge the brush before `palette` itself has been assigned.
+  let waterCharge = 0;
 
   // ---- Pigment tray + surface ---------------------------------------------
   const palette = new Palette(document.body, {
     onMixChange(_hex, recipe, loading) {
       engine.setMix(recipe);
       // Dip the brush: the mix and how heavily it is charged.
-      stroke.charge(engine.mixWeights, loading);
+      stroke.charge(engine.mixWeights, loading, waterCharge);
     },
     onPaperChange(paper) { engine.setPaper(paper); },
     onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
+    onWaterChange(nextWaterCharge) {
+      waterCharge = nextWaterCharge;
+      stroke.charge(engine.mixWeights, palette.loading, waterCharge);
+    },
+    onTiltChange(gravityX, gravityY, cosAlpha) {
+      engine.setFluid({ gravityX, gravityY, cosAlpha });
+    },
     onClear() { engine.clear(); },
     onBrushChange(def, size) {
       stroke.setBrush(def, size);
-      stroke.charge(engine.mixWeights, palette.loading);
+      stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
     },
     // A dry medium carries its own pigment — a pencil is graphite whatever is
     // on the palette — so it sets its own slot weights and leaves the mix alone.
@@ -61,7 +72,7 @@ async function main() {
     onRinseLoad() {
       stroke.rinse(1);
       engine.setMix(palette.recipe);
-      stroke.charge(engine.mixWeights, palette.loading);
+      stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
     },
   });
   engine.setPaper(PAPERS[1]);              // cold press default
@@ -71,7 +82,7 @@ async function main() {
   if (palette.recipe.size === 0) {
     palette.add('ultramarine-blue');
   }
-  stroke.charge(engine.mixWeights, palette.loading);
+  stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
 
   // ---- Pointer -> stroke segments -----------------------------------------
   // Screen px -> document uv -> simulation grid. Mirrors the composite's
@@ -126,6 +137,7 @@ async function main() {
       const r = engine.readings;
       setText('g-water', r.water.toFixed(2));
       setText('g-pigment', r.pigment.toFixed(3));
+      setText('g-ink', r.inkPigment.toFixed(1));
       setText('g-wet', r.wetCells.toFixed(0));
       setText('g-div', r.meanDivergence.toFixed(5));
       setText('g-relax', String(r.relaxIters));
