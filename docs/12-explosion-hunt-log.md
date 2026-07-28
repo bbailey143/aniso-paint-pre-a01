@@ -33,6 +33,42 @@ Terminology used across this project: `[UNVERIFIED]` = reasoned, not measured.
 
 ---
 
+## 0b. START HERE — the next action
+
+**Everything below is context. This is the job.**
+
+E5 concluded that the fault is a transient garbage **read**, injected into the canvas
+by the capillary diffusion term. Guarding every texture *write* did not work, for
+exactly that reason. **So guard the READ.**
+
+One line, in `src/engine/shaders/fluid/capillary_flow.wgsl`:
+
+```wgsl
+fn sat_at(c: vec2<i32>, n: i32, fallback: f32) -> f32 {
+  if (oob(c, n)) { return fallback; }
+  return sane(textureLoad(wet5_in, c, 0).x, WATER_LIM);   // <-- add sane()
+}
+```
+
+`sane()` and `WATER_LIM` already exist in `common.wgsl` on the current tree
+(section 10). The **baseline** worktree does not have them — copy the two helpers in,
+or inline `if (!(v >= 0.0) || v > 1.0e4) { return fallback; }`.
+
+**Test it on the BASELINE (port 5174), not the current tree** — the baseline fires
+24/24, so a clean 16-session soak there is real evidence, whereas the current tree
+fires 1-in-16 and would prove almost nothing. Use `window.__soak` from section 3.3.
+Then port to the current tree and re-run the acceptance numbers in section 10.
+
+**Expected outcome if the inference is right:** zero blowups on the baseline. If it
+still fires, the inference is wrong — say so plainly, log it as E6-failed, and the
+next suspect is H2 (ping-pong hazard) or H1 (hardware), tested by moving the deposit
+into the same command encoder as the fluid passes.
+
+**Do NOT "fix" this by lowering `KDIFF`.** E4 measured that it still fires five times
+below the stability limit; lowering the coefficient only hides it.
+
+---
+
 ## 1. The fault, in one paragraph
 
 While painting normally, a **single cell** of the simulation grid intermittently
@@ -208,6 +244,18 @@ All wet-band textures are **rgba32float** (D6 — half-float lost 6.5% of pigmen
    `0x7de87df5`, `0x7de87c32`, `0x7e325c65`, `0x7e438bc1`, and once exactly
    `0x7f800000` (+Inf). Uniformly random bits would scatter across exponents and
    signs and would be negative half the time. **They are not.**
+5d. **It enters through the capillary DIFFUSION term** (E3): `cosAlpha = 0` disables
+   `ddiff` alone and the fault vanishes completely. Absorption and evaporation are
+   measured-excluded.
+5e. **The diffusion is NOT unstable and NOT mis-tuned** (E4, E5): it still fires at
+   `k = 0.045`, five times below the textbook limit, and after the event the total of
+   `s` is frozen to eight significant figures for 20 frames while the peak decays.
+   The scheme conserves correctly. The total jumps ONCE and never moves again.
+5f. **`[INFERENCE — strong]` A `textureLoad` of `wet5_in` in `capillary_flow.wgsl`
+   occasionally returns garbage (~1e35).** The diffusion is the INJECTOR, not the
+   disease. This is the only way `ddiff` can deliver 4.6e34 when the whole grid's
+   maximum one stroke earlier was 0.0774. **It is why guarding every write failed:
+   the bad value is never written.**
 9. **Containment works and costs the painting nothing.** `sane()` in `common.wgsl`
    (see section 10) took pigment blowups to zero and total blowups from 4/14 to 1/16.
    Physics after guards: wash laid `165.5792`, settled `165.5792` (drift `4.6e-5`);
@@ -222,7 +270,12 @@ All wet-band textures are **rgba32float** (D6 — half-float lost 6.5% of pigmen
 |---|---|
 | Codex's ink band / water charge / tilt picker | baseline `4b1f747` fires 24/24 (E0) |
 | The new water-charge slider specifically | fires identically at `waterCharge = 0` |
-| ~~Fluid-pass arithmetic~~ | **RETRACTED at E2 — do not treat as excluded.** The idle-frame onset points at these passes. |
+| ~~Fluid-pass arithmetic~~ | **RETRACTED at E2.** Narrowed at E3 to the capillary diffusion term specifically. |
+| Capillary **absorption** (`take`) | E3: `cosAlpha=0` leaves it fully active, fault gone |
+| Evaporation / `dry_tick` | E3: skipping it does not help |
+| `KDIFF` being mis-tuned / too close to the 0.25 limit | E4: still fires at k=0.045. **Do not "fix" this by lowering KDIFF.** |
+| The diffusion being numerically unstable | E5: total frozen to 8 s.f. for 20 frames post-event; peak decays. It conserves. |
+| Guarding texture WRITES as a cure | E5: the bad value is never written — it is transient on a read |
 | Bad CPU-side stroke segments | scanned at the firing instant, all finite and small |
 | Idle VRAM decay | 4800 idle frames on an empty sheet, zero events |
 | A slow numerical runaway | value appears in one frame, then frozen for 14 frames |
@@ -243,6 +296,13 @@ of *every* accumulating field, a bad value still appeared in a field whose every
 writer is guarded — meaning it did not enter through any store this code owns.
 **Test that would settle it: run section 3.3 on a different GPU.** If clean there,
 this is the machine and `sane()` is the correct permanent answer.
+
+**H1b `[GUESS — NOT TESTED]` The bad read is a cache/compression-metadata artefact.**
+AMD GCN uses delta colour compression and metadata for render/storage targets. A
+mis-synchronised decompress would return plausible-looking garbage on a read while
+leaving the stored bytes intact — which fits every observation, including the fact
+that guarding writes changed nothing and that an empty sheet never fires (no
+meaningful data has been written to compress).
 
 **H2 `[GUESS — NOT TESTED]` A read/write hazard around the ping-pong flip.** The
 brush deposit is submitted in its **own command encoder per chunk**, and the CPU
@@ -380,6 +440,134 @@ passes skipped — **that claim is now formally in doubt** and is flagged in sec
 
 **Consequence for section 6:** fact 5 ("it is not the arithmetic of the fluid
 passes") is RETRACTED as of E2 — see the strike in section 6.
+
+### E3 — Which pass? The `cosAlpha` discriminator (2026-07-28)
+
+**Purpose.** E2 put the onset inside the fluid passes. Identify which one.
+
+**Method.** Baseline, 8-stroke session, one condition at a time. The key trick:
+`P.cosAlpha` appears in **exactly one line of one shader** — verified by grep —
+`capillary_flow.wgsl:36`, `let k = KDIFF * P.cosAlpha;`. So `cosAlpha = 0` switches
+OFF the capillary **diffusion** term while leaving the **absorption** term (`take`)
+fully intact. That separates the two halves of the pass, which skipping the whole
+pass cannot do.
+
+**Raw result.**
+
+| condition | outcome |
+|---|---|
+| control | blew up at stroke 4, peak `1.987e35`, 4705 cells over 2 |
+| **`cosAlpha = 0` (diffusion off, absorption on)** | **no blowup.** peak `s` = 0.34714, **0** cells over 2 |
+| skip `capillary` entirely | no blowup, but peak `s` = 0 (absorption gone too — uninformative alone) |
+| skip `dry` (evaporation) | blew up at stroke 6, peak `1.038e33` |
+
+**What it proves.** The explosion enters through the capillary **diffusion** term
+`ddiff` — not absorption, not evaporation. The absorption path is now *measured*
+excluded, not merely argued.
+
+**What it does NOT prove.** Not why `ddiff` misbehaves. The scheme is a standard
+4-neighbour explicit Laplacian that should be stable at this coefficient.
+
+---
+
+### E4 — Is the coefficient simply too big? (2026-07-28)
+
+**Purpose.** `capillary_flow.wgsl` says `KDIFF = 0.18 // must stay under 0.25`, the
+textbook stability limit. Test whether this is just a stability-margin problem, which
+would make the fix "lower KDIFF".
+
+**Method.** `cosAlpha` is a clean multiplier on `k` (`k = 0.18 x cosAlpha`). Sweep it,
+10 strokes per setting, on the baseline.
+
+**Raw result.**
+
+| cosAlpha | effective k | outcome |
+|---|---|---|
+| 1.0 | 0.18 | blew at stroke 6 |
+| 0.75 | 0.135 | blew at stroke 6 |
+| 0.5 | 0.09 | blew at stroke 6 |
+| 0.25 | 0.045 | blew at stroke 5 |
+| 0.1 | 0.018 | **no blowup**, peak `s` 0.20537, 0 cells over 2 |
+
+**What it proves. It is NOT a stability-margin problem.** It still explodes at
+`k = 0.045`, five times below the 0.25 limit, where this scheme is extremely stable.
+There is no threshold anywhere near 0.25 and the onset stroke barely moves across a
+4x range of k. **Lowering `KDIFF` is not the fix** — it would make the fault rarer
+while appearing to solve it. Do not take that shortcut.
+
+**What it does NOT prove.** k clearly still scales the damage (0.018 survived 10
+strokes). A clue, not a cure — see E5.
+
+---
+
+### E5 — Is the diffusion actually unstable? Conservation of `s` (2026-07-28)
+
+**Purpose.** The decisive question. This Laplacian is **antisymmetric**: what one cell
+gains across an edge its neighbour loses. So the TOTAL of `s` can only change by
+absorption from the film. If the total grows while the film is empty, the exchange is
+not antisymmetric in practice.
+
+**Method.** Baseline session. At the end of each stroke and every 4 idle frames, dump
+`wet5` and `wet0`; compute `sum(s)`, `sum(film)`, `max(s)`.
+
+**Raw result — stroke 3, healthy, and this is what correct looks like:**
+
+| idle frame | sum(s) | sum(film) | max(s) |
+|---|---|---|---|
+| 0 | 505.5508 | 2.48662 | 0.0907034 |
+| 4 | 507.59354 | 0.443877 | 0.0875182 |
+| 8 | 507.95818 | 0.0792348 | 0.0846074 |
+| 12 | 508.02327 | 0.0141439 | 0.0820264 |
+| 16 | 508.03489 | 0.00252478 | 0.0796315 |
+| 20 | 508.03697 | 0.000450688 | 0.0774020 |
+
+Film drains into saturation, the sum rises by exactly what the film lost, the peak
+decays as diffusion spreads it. Textbook.
+
+**Stroke 4, same measurement:**
+
+| idle frame | sum(s) | sum(film) | max(s) |
+|---|---|---|---|
+| 0 | **4.5975403e+34** | 2.49053 | 5.31971e+33 |
+| 4 | 4.5975403e+34 | 0.444575 | 1.57841e+33 |
+| 8 | 4.5975403e+34 | 0.0793594 | 9.03013e+32 |
+| 12 | 4.5975403e+34 | 0.0141664 | 6.31433e+32 |
+| 16 | 4.5975403e+34 | 0.00278171 | 4.90710e+32 |
+| 20 | 4.5975402e+34 | 0.00104172 | 4.21357e+32 |
+
+**What it proves — the central finding of the hunt.**
+
+1. **The diffusion is NOT unstable.** After the event the total is frozen to eight
+   significant figures across 20 frames and the peak *decays* by an order of
+   magnitude as it spreads. The scheme conserves and behaves exactly as designed.
+2. **The total JUMPS ONCE**, ~508 to 4.6e34, then never moves. Matches the
+   current-tree "one frame, then frozen" observation (fact 2): same fault, new angle.
+3. With E3 (`k = 0` prevents it; absorption excluded), the injection must arrive
+   through `ddiff = k * ((sl-s) + (sr-s) + (su-s) + (sd-s))`. For that to deliver
+   4.6e34 at `k = 0.18`, one of the four neighbour reads **must have returned roughly
+   1e35**.
+4. **No such value existed in the field.** The previous stroke ended with
+   `max(s) = 0.0774` across the entire grid.
+
+**`[INFERENCE — strong, not directly observed]` A `textureLoad` of `wet5_in` in the
+capillary pass occasionally returns garbage. The diffusion term is not the disease;
+it is the INJECTOR** — it multiplies a transient bad read straight into a legitimate
+result, and the solver then spreads it faithfully.
+
+**This resolves the biggest puzzle in the hunt.** Guarding every *write* of every
+accumulating field (section 10) did not stop it because **the bad value is never
+written**. It appears on a read, is consumed inside one expression, and vanishes.
+Nothing downstream can ever see it.
+
+**What it does NOT prove.** The bad read has not been caught in the act. Sampling is
+at stroke boundaries and every 4 idle frames, so the exact frame inside stroke 4 is
+not pinned, and progressive growth *during* a stroke is not formally excluded (though
+the frozen idle total argues strongly against it). It does not say *why* the read
+fails: driver, cache/DCC metadata, or a hazard around the ping-pong.
+
+**Timing varies between runs:** E2 saw the field healthy at the end of stroke 4 and
+blown 20 idle frames later; E5 saw it already blown at the end of stroke 4. Both at
+stroke 4. Consistent with a discrete random event, not deterministic growth.
 
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
 
