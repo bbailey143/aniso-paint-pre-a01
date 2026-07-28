@@ -41,6 +41,27 @@ async function main() {
   penCursor.id = 'pen-cursor';
   penCursor.setAttribute('aria-hidden', 'true');
   document.body.appendChild(penCursor);
+  const hidePenCursor = () => penCursor.classList.remove('on', 'down');
+  const trackPenCursor = (event: PointerEvent) => {
+    if (event.pointerType !== 'pen') {
+      hidePenCursor();
+      return;
+    }
+    // Use viewport coordinates and listen above both the canvas and the
+    // controls. A tablet pen can hover from the sheet straight onto the palette;
+    // leaving the canvas must not make its locator disappear.
+    penCursor.style.left = `${event.clientX}px`;
+    penCursor.style.top = `${event.clientY}px`;
+    penCursor.classList.add('on');
+    penCursor.classList.toggle('down', event.buttons !== 0 || event.pressure > 0);
+  };
+  window.addEventListener('pointermove', trackPenCursor, true);
+  window.addEventListener('pointerdown', trackPenCursor, true);
+  window.addEventListener('pointerup', trackPenCursor, true);
+  window.addEventListener('pointerout', (event) => {
+    if (event.pointerType === 'pen' && event.relatedTarget === null) hidePenCursor();
+  }, true);
+  window.addEventListener('blur', hidePenCursor);
   // Palette construction immediately announces its initial mix. Keep this
   // startup value outside the palette object so that first announcement can
   // charge the brush before `palette` itself has been assigned.
@@ -115,15 +136,6 @@ async function main() {
     },
     onStrokeEnd() { stroke.end(); },
     onSample(s: StylusSample) {
-      if (s.pointerType === 'pen') {
-        const rect = canvas.getBoundingClientRect();
-        penCursor.style.left = `${rect.left + s.x}px`;
-        penCursor.style.top = `${rect.top + s.y}px`;
-        penCursor.classList.add('on');
-        penCursor.classList.toggle('down', s.down);
-      } else {
-        penCursor.classList.remove('on', 'down');
-      }
       smoothV = smoothV * 0.8 + s.velocity * 0.2;
       setText('s-type', s.pointerType);
       setText('s-pressure', s.down || s.pointerType !== 'mouse' ? s.pressure.toFixed(3) : '—');
@@ -134,9 +146,6 @@ async function main() {
       if (!s.down) return;
       const g = toGrid(s);
       if (g) stroke.add(g.gx, g.gy, s);
-    },
-    onPointerLeave(pointerType) {
-      if (pointerType === 'pen') penCursor.classList.remove('on', 'down');
     },
   });
 

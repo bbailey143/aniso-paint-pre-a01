@@ -133,18 +133,20 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-28 (brush water, tablet cursor, level creep investigation)
+**Last updated:** 2026-07-28 (E5 real-brush crossing and global pen cursor complete)
 **By:** Codex
 **Build state:** `npm.cmd run build` passes with the shared water/paper,
-below-mask drying, added-water, and pen-cursor corrections. Chrome exercised the
-page on AMD/Polaris. Two identical strokes now keep pigment at 100% added water;
-two identical level tests show wet-cell creep without directional centre movement.
-See `docs/13-water-paper-behavior-log.md` E4. This checkout still has unrelated
+below-mask drying, added-water, and global pen-cursor corrections. Chrome exercised
+the page on AMD/Polaris with no page, shader, or WebGPU error. Two exact E5 replays
+retain surface water through a five-second pause and then cross dry paper under
+half tilt; Hot Press / Cold Press / Rough uptake ordering also reproduced twice.
+See `docs/13-water-paper-behavior-log.md` E5. This checkout still has unrelated
 untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`,
 and `process_video.py`; do not touch them.
 **Git state:** Bartford authorized publication and Codex pushed E11/E12 through
 `0bf9470` to `origin/webgpu-test`. The three local behavior milestones through
-the current `HEAD` are not pushed. E4 is committed at the current local `HEAD`.
+E4 plus E5 are not pushed. E5 is committed at the current local `HEAD` and must
+not be pushed without fresh authorization.
 The listed untracked files remain unrelated and must not be touched.
 
 ## Current objective
@@ -158,13 +160,14 @@ The NVIDIA E13 discriminator for the separate explosion fault is explicitly
 
 **Active evidence log for this work:** `docs/13-water-paper-behavior-log.md`.
 
-**Checkpoint:** E4 is implemented and measured. Added water no longer replaces
-pigment; rinse is the clean-water-only action. A custom pen locator follows pen
-hover/contact while mouse keeps its native crosshair. Repeated controlled testing
-shows wet cells may keep expanding level through symmetric fibre creep while the
-water centre remains stationary to under one millionth of a cell. Bartford's
-physical tablet and hand remain the artist acceptance gate. Do not begin the
-postponed NVIDIA test.
+**Checkpoint:** E5 is implemented and measured. The wet/dry face was not broken:
+an ordinary wash crossed 12 cells when tilted immediately, but the old provisional
+uptake rate absorbed nearly all movable film in 20 frames. The shared watercolor
+row now uses `[UNVERIFIED]` `absorptionCoupling = 0.0001`; a five-second-old Cold
+Press stroke retained `26.8221289` surface film and crossed five more cells under
+half tilt in two exact replays. Window-level tracking keeps the pen locator visible
+over the right controls. Bartford's hand and physical tablet remain the artist
+acceptance gate. Do not begin the postponed NVIDIA test.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -294,19 +297,23 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Bartford verifies the three corrections by hand
+## NEXT ACTION — Bartford hand-checks E5, then shape calibration
 
-1. Refresh port 5175. With Ultramarine selected, compare water at 0% and 100%;
-   both strokes must be blue, while 100% is visibly wetter/more mobile. Rinse must
-   still produce a clean-water-only brush.
-2. Hover and draw with the physical tablet. The ring-and-cross pen locator must
-   remain visible before contact and during the stroke.
-3. Tilt a wet wash, then level it with drying near minimum. Its fuzzy wet boundary
-   may continue broadening, but a downhill tongue must not keep marching as though
-   gravity were still applied. Raising “drying” should arrest both.
-4. If the levelled puddle visibly keeps travelling in one direction rather than
-   broadening around its existing shape, capture that isolated case for a
-   film-centre timing correction. Keep NVIDIA E13 postponed.
+1. Refresh `http://127.0.0.1:5175`. On Cold Press, use a fully watered blue brush,
+   wait about five seconds, then tilt halfway. The wash should retain a visible
+   movable film and push a tongue past its old dry edge instead of only travelling
+   inside its previous wet shape.
+2. Repeat once on Hot Press and Rough. Hot Press should keep the most surface water;
+   Rough should soak fastest. This ordering is already numerically verified, but
+   the visible timing and bloom shape are artist decisions.
+3. Move the physical pen from the paper across the pigment, brush, paper, and tilt
+   controls. The ring-and-cross locator should remain visible until the pen leaves
+   the application window.
+4. If crossing exists but is still too slow or too narrow, calibrate the shared
+   mobility/resistance mapping next, preserving conservation and the cubic wet/dry
+   face. If the film disappears too soon or hangs too long, adjust only the
+   `[UNVERIFIED]` medium-row uptake value against the real-paper reference plates.
+   Keep NVIDIA E13 postponed.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration
 

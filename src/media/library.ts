@@ -23,10 +23,12 @@ export const WATERCOLOR: WetMedium = {
   solvent: 'water', viscosity: 0.1, evapRate: 0.0015,
   // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
   // consumed a Cold Press surface film in under ten solver steps once the
-  // paper row was actually connected. 0.01 keeps uptake visible while leaving
-  // a genuinely wet wash enough surface life to run and bloom. It still needs
+  // paper row was actually connected. Even 0.01 consumed an ordinary fully
+  // wet brush film in about 20 animation frames — before a painter could reach
+  // the tilt control. 0.0001 preserves the same paper/medium equation and paper
+  // ordering while giving a brush-laid wash useful surface life. It still needs
   // calibration against the real-paper reference plates in Card 9.
-  absorptionCoupling: 0.01, pigmentBoost: 1.0,
+  absorptionCoupling: 0.0001, pigmentBoost: 1.0,
 };
 
 /**

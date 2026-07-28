@@ -202,3 +202,69 @@ Wet-cell growth alone does not certify every visible run as correct: if a levele
 deep surface puddle keeps travelling directionally for too long, that requires a
 separate film-centre timing test. The evaporation and absorption constants remain
 `[UNVERIFIED]` pending real-paper timing calibration.
+
+## E5 — A hand-laid wash now survives long enough to cross dry paper (2026-07-28)
+
+**Purpose.** Diagnose Bartford's recording in which a fully watered wash appeared
+to run inside an already-wet area but scarcely pass its dry boundary, and the pen
+locator disappeared over the right controls.
+
+**Method.** Inspect `20260728-2322-29.7912188.mp4`, then replace the earlier
+oversized direct puddle with a real `StrokeEngine` round-brush footprint on Cold
+Press. First tilt immediately to distinguish a broken wet/dry face from premature
+uptake. Then hold the sheet level for 300 animation steps (about five seconds at
+60 Hz), tilt halfway for 120 steps, and measure surface-film amount, centre, and
+frontier. Replay the exact same footprint twice with the adaptive relaxation
+controller held at the same starting state. Finally, repeat 300-step flat uptake
+twice on all three paper rows. Track the pen locator from window-level pointer
+events and dispatch a pen-hover event over the drying slider.
+
+**Raw result.**
+
+- The 61.6333-second, 1920×1080 recording shows the wash extending along its
+  already-wet route while retaining a conspicuously crisp dry-facing boundary.
+- With the old `[UNVERIFIED]` `absorptionCoupling = 0.01`, an ordinary fresh
+  brush stroke did cross when tilt was applied immediately: its downhill
+  frontier advanced 12 cells in 20 steps. But its movable surface film collapsed
+  from `75.1511120 / 75.1843062` to `5.5423388 / 6.8258980` in those same 20
+  steps. In a pre-wet-strip reproduction, only `0.0245425` surface water remained
+  after 120 level steps. The dry face was not a mathematical wall; the painter
+  was reaching the tilt control after almost all gravity-responsive water had
+  already been absorbed.
+- The shared watercolor row is now `[UNVERIFIED]`
+  `absorptionCoupling = 0.0001`. No shader branch or paper-specific exception was
+  added. In two exact-replay Cold Press runs, the initial film was
+  `88.4987082`. After 300 level steps it was `26.8221289`; after 120 half-tilt
+  steps it was `12.5889855`. Both runs advanced the downhill frontier exactly
+  `5` cells and shifted the surface-water centre exactly `2.4536093` cells.
+  Final water was `90.4068575`, pigment `90.4068985`, and capillary alarm `0`
+  in both runs.
+- The three paper rows retained their ordering after 300 steps; every row was
+  reproduced exactly on its second run:
+
+| paper | surface film | absorbed water | total water |
+|---|---:|---:|---:|
+| Hot Press | `70.0852280` | `20.4498272` | `90.5350552` |
+| Cold Press | `26.8221283` | `63.5847244` | `90.4068527` |
+| Rough | `1.5584794` | `87.3790512` | `88.9375306` |
+
+- `npm.cmd run build` passed. The live page ran on
+  `webgpu: amd / gcn-4` with no page, shader, or WebGPU error.
+- A synthetic pen hover over the right-side drying slider placed the locator at
+  `824.094px / 589.344px`; after its short fade it had computed opacity `1` and
+  z-index `30`. The headed screenshot shows the ring-and-cross above the slider.
+
+**What it proves.** The apparent wall in this recording was dominated by uptake
+timing, not a failure of the already-installed cubic wet/dry face mobility. An
+ordinary fully wet stroke now retains movable surface water long enough for a
+painter to tilt the sheet, crosses dry paper under gravity, conserves paint, and
+still responds differently to Hot Press, Cold Press, and Rough through shared
+paper and medium rows. The pen locator no longer uses the canvas edge as its
+visibility boundary.
+
+**What it does NOT prove.** `0.0001` is not a measured material constant; it is an
+artist-facing provisional calibration and remains `[UNVERIFIED]` until compared
+with the real-paper reference plates. These measurements do not say that the
+visible crossing speed or final bloom shape is ideal. A synthetic pen event also
+cannot certify a particular tablet driver's hover stream; Bartford's physical
+tablet remains the final cursor test.
