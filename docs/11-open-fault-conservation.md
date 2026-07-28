@@ -29,12 +29,43 @@ It fires within about 25 strokes, roughly one session in three.
    non-finite values. Healthy input, garbage output.
 6. **It is not idle memory decay.** 4800 frames of the full solver on a cleared,
    empty sheet: zero spontaneous non-zero cells. It requires painting.
-7. **It is not Codex's water charge.** It fires identically at `waterCharge = 0`.
+7. **It is not Codex's work at all.** See the retraction below: the pre-Codex
+   build at `4b1f747` fires 24 times out of 24.
 8. **The bit patterns are not uniform noise.** 0x7de87df5, 0x7de87c32, 0x7e325c65,
    0x7e438bc1, and once exactly 0x7f800000 (+Infinity). All positive, all clustered
    just under overflow. Random bits would scatter across exponents and signs.
 9. **The cell moves.** (209,100) twice, then (169,276), (233,212), (361,212),
    (137,180). Not a fixed address.
+
+## RETRACTED before it was ever believed: it is not Codex's change
+
+Bartford's read was that the explosion had to be isolated to the Codex session. It
+is not, and the branch is not needed to prove it — `4b1f747` is the last commit
+before Codex touched anything, so it runs side by side.
+
+Identical soak, identical strokes, identical sliders, second dev server on 5174:
+
+| build | blowups per 16 sessions | worst |
+|---|---|---|
+| **`4b1f747`, pre-Codex** | **16 / 16**, first attempt every time | Infinity, water AND pigment |
+| confirm run, same build | **8 / 8** | Infinity |
+| post-Codex, before the guards | 4 / 14 | 4.1e37 |
+| post-Codex, with the guards | **1 / 16**, water only | 2.7e37 |
+
+24 out of 24 on the old build. **The fault is older than the ink band, older than
+the water charge, older than the tilt picker.** Codex's session did not cause it and
+in fact fires it LESS often; the guards cut it further again.
+
+Why it surfaced now is reasoning, not measurement, and is offered as such: the
+gauges panel moved to the lower left in that same session, so the conservation
+numbers stopped being hidden behind the palette. The fault did not arrive — the
+instrument did.
+
+**This is the strongest lead in the file.** The old build reproduces on the FIRST
+attempt, every time, where the current one needs about three sessions. Hunt it there,
+not here — a deterministic reproduction is worth more than a tidy codebase. The
+baseline worktree is disposable: `git worktree add <path> 4b1f747`, junction
+`node_modules` in, `npm run dev -- --port 5174`.
 
 ## What was done — containment, and it is only containment
 
