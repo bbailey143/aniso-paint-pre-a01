@@ -59,10 +59,20 @@ or inline `if (!(v >= 0.0) || v > 1.0e4) { return fallback; }`.
 fires 1-in-16 and would prove almost nothing. Use `window.__soak` from section 3.3.
 Then port to the current tree and re-run the acceptance numbers in section 10.
 
-**Expected outcome if the inference is right:** zero blowups on the baseline. If it
-still fires, the inference is wrong — say so plainly, log it as E6-failed, and the
-next suspect is H2 (ping-pong hazard) or H1 (hardware), tested by moving the deposit
-into the same command encoder as the fluid passes.
+**DONE — E6 confirmed it on the baseline: 0 blowups in 32 sessions vs 24/24.**
+**But E7/E8 show it does NOTHING on the current tree (14/16 with, 13/16 without).**
+
+**So the actual next job is: why do the two builds differ?** Start with (a), it is
+five minutes and it may invalidate a pile of numbers:
+
+- **(a) Verify `FluidEngine.dump()` reads the same buffer the passes just wrote.**
+  If it returns the stale half of a ping-pong pair, every current-tree texture
+  measurement here is suspect. Cross-check by summing a dumped texture on the CPU and
+  comparing against the gauge lane for the same quantity — they agreed for pigment
+  earlier, so do it for `wet5.x` versus the saturation lane.
+- **(b) Disable the 2048x2048 ink band and re-run the current-tree soak.** If the
+  fault drops to baseline levels, the extra memory traffic is implicated and H1/H1b
+  moves from guess toward established.
 
 **Do NOT "fix" this by lowering `KDIFF`.** E4 measured that it still fires five times
 below the stability limit; lowering the coefficient only hides it.
@@ -256,7 +266,16 @@ All wet-band textures are **rgba32float** (D6 — half-float lost 6.5% of pigmen
    disease. This is the only way `ddiff` can deliver 4.6e34 when the whole grid's
    maximum one stroke earlier was 0.0774. **It is why guarding every write failed:
    the bad value is never written.**
-9. **Containment works and costs the painting nothing.** `sane()` in `common.wgsl`
+9. ~~**Containment works** — took blowups from 4/14 to 1/16.~~ **CORRECTED at E8.**
+   That 1/16 was measured with a gauge-only detector. Adding a direct `wet5` dump to
+   the detector, the same tree measures **13/16**. The write guards mostly stopped
+   the METER from showing the fault, not the fault. They still cost the painting
+   nothing and are worth keeping, but do not credit them with a rate reduction.
+9b. **The read guard closes it completely on the baseline** (E6): 0 blowups in 32
+   consecutive sessions, versus 24/24 unguarded. **It does nothing on the current
+   tree** (E7/E8: 14/16 with, 13/16 without). Why the two builds differ is the
+   top open question.
+9c. **Containment costs the painting nothing.** `sane()` in `common.wgsl`
    (see section 10) took pigment blowups to zero and total blowups from 4/14 to 1/16.
    Physics after guards: wash laid `165.5792`, settled `165.5792` (drift `4.6e-5`);
    drying handoff moved all `165.5792` wet→dry exactly; ink held `2871.05` through a
@@ -568,6 +587,86 @@ fails: driver, cache/DCC metadata, or a hazard around the ping-pong.
 **Timing varies between runs:** E2 saw the field healthy at the end of stroke 4 and
 blown 20 idle frames later; E5 saw it already blown at the end of stroke 4. Both at
 stroke 4. Consistent with a discrete random event, not deterministic growth.
+
+### E6 — The read guard, on the baseline. IT WORKS. (2026-07-28)
+
+**Purpose.** Test the E5 inference directly: if the fault is a transient garbage
+**read**, guarding the read should close it.
+
+**Method.** In the BASELINE worktree's `capillary_flow.wgsl`, reject any read of
+`wet5_in` that is NaN or above a ceiling of 1e4, falling back to the asking cell's
+own value (which makes the exchange across that edge exactly zero — physically
+neutral and conservative). Guarded **all** reads of `wet5_in` in the pass: the four
+neighbours in `sat_at`, and the cell's own `s_in`. Then ran the standard 16-session
+soak. The unguarded baseline fires **24 out of 24**.
+
+**Raw result.**
+
+| run | sessions | blowups | worst peak `s` | worst sum `s` |
+|---|---|---|---|---|
+| 1 | 16 | **0** | 1.2281e-1 | 3.3042e+3 |
+| 2 (confirm) | 16 | **0** | 1.2259e-1 | 3.3065e+3 |
+
+**32 consecutive clean sessions**, peak saturation a completely healthy 0.123, on the
+build that previously failed every single time.
+
+**What it proves.** On the baseline, the E5 inference is correct and the fix is real
+and reproduced. The fault enters through a read of `wet5_in` in the capillary pass;
+rejecting impossible reads closes it.
+
+**What it does NOT prove.** That it fixes the CURRENT tree. See E7 — it does not.
+
+---
+
+### E7 / E8 — The same guard on the current tree. IT DOES NOTHING. (2026-07-28)
+
+**Purpose.** Port the proven fix forward and confirm.
+
+**Method.** Same guard, written into the current tree's `capillary_flow.wgsl` using
+the same ceiling. 16-session soak. **Detector strengthened** over earlier current-tree
+soaks: a session now counts as blown if the gauge trips **or** a direct dump of
+`wet5` shows a peak above 1e6. Then, because the result was surprising, a **matched
+control**: the identical soak with the guard stashed out, same detector, same session.
+
+**Raw result.**
+
+| build | blowups / 16 | worst peak `s` | worst pigment | worst water gauge |
+|---|---|---|---|---|
+| current + read guard (E7) | **14** | 1.6451e37 | 4182.35 | 1.27618e34 |
+| current, **no** guard, matched control (E8) | **13** | 1.4717e37 | 4183.35 | 3421.09 |
+
+**What it proves.**
+
+1. **On the current tree the read guard makes no measurable difference** (14 vs 13 of
+   16). The fix that is airtight on the baseline is inert here.
+2. **The earlier "1 blowup in 16" figure for the current tree was an artefact of a
+   weak detector.** That run only checked the gauge. With a direct `wet5` dump added,
+   the same tree measures 13/16. **The `sane()` write guards did not reduce the fault
+   anywhere near as much as previously reported — they largely just stopped the
+   GAUGE from showing it.** Corrected in section 6, fact 9.
+3. Note the giveaway in the E8 row: peak `s` is 1.47e37 **while the water gauge reads
+   a perfectly healthy 3421**. The stored field is wrecked and the meter says fine.
+
+**What it does NOT prove.** Which of the many differences between the two builds is
+responsible. It does not invalidate E6 — the baseline result was reproduced twice.
+
+**`[OPEN QUESTION — this is now the top of the queue]`** Why do the two builds differ?
+Two candidates, in order of cheapness:
+
+- **(a) `dump()` may be reading the wrong ping-pong buffer on the current tree.** If
+  so, every current-tree texture measurement in this log is suspect, including the
+  13/16 and 14/16 above. **Check this first** — it is a five-minute read of
+  `FluidEngine.dump()` versus how the passes flip, and it would invalidate or rescue
+  a lot of numbers at once.
+- **(b) The current tree carries the 2048x2048 ink band** (four times the fluid grid,
+  a second full texture pair plus a per-frame reducer). If the root cause is
+  driver/memory-related (H1/H1b), that extra traffic is the obvious reason the same
+  guard cannot hold here. Test by disabling the ink band and re-running the soak.
+
+**Decision taken:** the read guard is **kept** in the current tree. It is proven
+correct and reproduced on the baseline, it is provably conservative (a rejected read
+produces zero exchange across that edge), and it costs nothing. But it is **NOT** a
+fix for the current tree and must not be reported as one.
 
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
 

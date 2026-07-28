@@ -15,9 +15,40 @@ const ALPHA: f32 = 0.35;    // absorption rate into the sheet
 const KDIFF: f32 = 0.18;    // capillary spread, must stay under 0.25
 const EPS_WET: f32 = 0.004; // saturation at which the mask expands
 
+// THE FAULT WAS HERE — and it was a READ, not a write. See docs/12, E1-E6.
+//
+// [MEASURED, reproduced] A `textureLoad` of `wet5_in` in this pass occasionally
+// returns garbage of order 1e35. The value is never stored anywhere, so it is
+// invisible to every guard on the write side — which is exactly why guarding all
+// twelve writing passes cut the rate but could not close it. It appears on the
+// read, gets multiplied into `ddiff` in the same expression, and vanishes.
+//
+// The diffusion is NOT the disease. It conserves correctly: after an event the
+// total of `s` is frozen to eight significant figures for twenty frames while the
+// peak decays. It is the INJECTOR — it takes one bad read and writes a real,
+// enormous amount of saturation into the canvas, which the solver then spreads
+// outward. That is the blob that appears from nowhere and the water blooming in
+// perfect circles.
+//
+// Saturation is bounded by the paper's capacity and runs well under 1. Anything
+// past this ceiling, or NaN, is not a reading of this field. Falling back to the
+// asking cell's own value makes the exchange across that edge exactly zero, which
+// is both the physically neutral answer and conservative — no water is invented
+// or destroyed by rejecting the read.
+//
+// [DO NOT] "fix" this by lowering KDIFF. Measured at E4: it still fires at
+// k = 0.045, five times below the 0.25 stability limit. The coefficient is not
+// the problem and lowering it only makes the fault rarer.
+const SAT_LIM: f32 = 1.0e4;
+fn sane_sat(v: f32, fallback: f32) -> f32 {
+  if (!(v >= 0.0)) { return fallback; }   // true for NaN: every NaN compare is false
+  if (v > SAT_LIM) { return fallback; }
+  return v;
+}
+
 fn sat_at(c: vec2<i32>, n: i32, fallback: f32) -> f32 {
   if (oob(c, n)) { return fallback; }
-  return textureLoad(wet5_in, c, 0).x;
+  return sane_sat(textureLoad(wet5_in, c, 0).x, fallback);
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -30,7 +61,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let w5 = textureLoad(wet5_in, c, 0);
   let cap = textureLoad(paper, c, 0).y;
 
-  let s_in = w5.x;
+  // The cell's own read is guarded too, so this covers ANY read of `wet5_in` in
+  // this pass, not only the four neighbours. Fallback 0: a cell whose own stored
+  // saturation comes back unreadable is treated as dry for this one frame.
+  let s_in = sane_sat(w5.x, 0.0);
   let hf_in = w0.y;
 
   let k = KDIFF * P.cosAlpha;   // A26: diffusion stops at a vertical board
