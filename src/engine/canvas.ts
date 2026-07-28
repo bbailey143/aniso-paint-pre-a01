@@ -111,6 +111,9 @@ export class CanvasEngine {
   /** Fresh gauge read. Use this for measurement; `readings` lags (see fluid.ts). */
   sampleGauges(): Promise<Gauges> { return this.fluid.sampleGauges(); }
   set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
+  set capillaryAlarmEnabled(v: boolean) { this.fluid.capillaryAlarmEnabled = v; }
+  set inkBandTrafficEnabled(v: boolean) { this.fluid.inkBandTrafficEnabled = v; }
+  readCapillaryAlarm(): Promise<number> { return this.fluid.readCapillaryAlarm(); }
   dump(name: string): Promise<Float32Array> { return this.fluid.dump(name); }
   compareWet5ReadPaths() { return this.fluid.compareWet5ReadPaths(); }
   dumpFlux(): Promise<Float32Array> { return this.fluid.dumpFlux(); }

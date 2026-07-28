@@ -771,6 +771,103 @@ issue. It also does not prove the copied side is always wrong; it proves this co
 path cannot be used alone as an acceptance detector here. A visually or
 compute-observable detector is still required before counting current-tree failures.
 
+### E11 — A compute consumer sees impossible saturation after CapillaryFlow (2026-07-28)
+
+**Purpose.** Replace the invalid direct-dump detector with a GPU-resident observer
+at the exact point where the suspected bad value matters: immediately after
+CapillaryFlow writes and flips `wet5`, before ReWet, DryTick, or containment can
+replace it.
+
+**Method.** Added a debug-only `capillary_alarm.wgsl` pass and a four-byte atomic
+latch. When explicitly enabled, it scans `wet5.src` immediately after the
+capillary flip and latches `1` if saturation is NaN, negative, or above
+`WATER_LIM = 1e4`. The latch resets in `clear()` and is read only once after a
+complete session, so there is no per-frame CPU wait. It defaults OFF because the
+extra full-grid scan changes GPU traffic. Build passed; Chrome compiled the shader
+on Windows 11 `webgpu: amd / gcn-4`. A WebGPU validation scope surrounded a
+200-frame empty-sheet control. Then the standard 26-stroke section 3.3 recipe ran
+until two alarm events were reproduced. E10's one-encoder compute/copy comparison
+was sampled once after each complete session.
+
+**Raw result.**
+
+| run | post-capillary alarm | final compute saturation | final copied saturation / peak |
+|---|---:|---:|---:|
+| empty sheet, 200 frames | **0** | not sampled | not sampled |
+| painted session 1 | **0** | 3301.782227 | 3301.782851 / 0.122259 |
+| painted session 2 | **1** | 3304.046875 | 3304.048380 / 0.122260 |
+| painted session 3 | **1** | 3299.669434 | 3299.669522 / 0.122668 |
+
+The empty control's WebGPU validation error was `null`. After the two latched
+sessions, a fresh `clear()` followed by immediate readback returned `0`, confirming
+that the latch resets rather than carrying an old event into the next session.
+
+**What it proves.**
+
+1. A compute shader reading the post-capillary `wet5` field observed an impossible
+   saturation value in two independent standard sessions. The current-tree fault is
+   therefore not only a `copyTextureToBuffer` artefact.
+2. The final compute gauge and texture copy were both healthy in those same sessions.
+   The impossible read is transient or is removed by later guarded passes before the
+   end-of-session instruments sample it.
+3. The direct-dump `13/16` rate remains retracted, but the underlying current-tree
+   intermediate fault is real and reproduced. The next justified discriminator is
+   removing the 2048x2048 ink-band traffic and repeating this alarm test.
+
+**What it does NOT prove.** The alarm itself performs a `textureLoad`, so it cannot
+distinguish an impossible value physically stored in `wet5` from a transient bad
+read by this particular consumer. It does not prove that the artist-visible blob
+survives to the rendered end of a frame, or whether the cause is app, browser,
+driver, or hardware. The added scan changes cache and memory traffic and may alter
+the event rate; these three runs are a discriminator, not an acceptance rate.
+
+### E12 — Repeated 2048x2048 ink traffic is not the alarm trigger (2026-07-28)
+
+**Purpose.** Test the cheapest remaining difference between the guarded baseline
+and current tree: the current build repeatedly clears and reduces a separate
+2048x2048 dry-ink band. Determine whether that extra traffic triggers the
+post-capillary bad read seen in E11.
+
+**Method.** Added a default-ON debug switch, `inkBandTrafficEnabled`. OFF skips only
+the fine ink textures' repeated `clear()` dispatches and their dirty reduction in
+the frame pass. The textures remain allocated, and the standard watercolour recipe
+deposits no dry media. The post-capillary alarm remained enabled. On the same
+Windows 11 `webgpu: amd / gcn-4` machine, ran eight standard 26-stroke sessions
+with ink traffic ON followed by eight with it OFF. Read the alarm once after each
+session, with no per-frame CPU waits. Then repeated that identical 8+8 batch because
+project rules do not accept a rate from one run. A WebGPU validation scope covered
+each complete batch; the switch was restored ON afterward.
+
+**Raw result.**
+
+| batch | ink traffic ON | ink traffic OFF | final saturation | final pigment | validation |
+|---|---:|---:|---:|---:|---|
+| 1 | **8/8 alarms** | **8/8 alarms** | 3306.786377 | 4402.199219 | null |
+| 2 | **8/8 alarms** | **8/8 alarms** | 3318.747070 | 4400.133301 | null |
+
+Every individual alarm row in both conditions was exactly `1`. Final film in both
+batches was `0.000452250504`; the end-of-session paint gauges remained ordinary.
+
+**What it proves.**
+
+1. Removing the fine ink band's repeated clear and reduction traffic makes no
+   difference to this observer: reproduced `16/16` alarms ON and `16/16` OFF.
+   That traffic is excluded as the trigger under the E11 alarm conditions.
+2. The alarm observer itself materially changes timing/cache behaviour: E11 began
+   `0,1,1`, then both full batches fired every session. Therefore `16/16` is **not**
+   an acceptance rate for the unobserved painting app. It is useful only as a
+   matched discriminator.
+3. The next high-value test is the same alarm experiment on a different GPU vendor.
+   The available older NVIDIA machine is suitable; speed is irrelevant to this
+   correctness comparison.
+
+**What it does NOT prove.** The OFF switch leaves the 2048x2048 textures allocated,
+so this does not exclude VRAM capacity, address placement, or allocation pressure
+from the ink band. It does not identify app versus browser versus driver, and it
+does not prove the alarm is reading a physically stored bad value rather than
+suffering its own transient `textureLoad` failure. Only the repeated clear/reduce
+traffic candidate is closed.
+
 ---
 
 ## 10. Reference: the containment already in place

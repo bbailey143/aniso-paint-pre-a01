@@ -135,7 +135,11 @@ say why.
 
 **Last updated:** 2026-07-28
 **By:** Codex
-**Build state:** `npm.cmd run build` passes after E10's debug-only read comparison hook. This checkout still has unrelated untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`, and `process_video.py`; do not touch them.
+**Build state:** `npm.cmd run build` passes after E11/E12's debug-only alarm and
+ink-traffic switch. Chrome compiled and exercised the shader on AMD/Polaris with
+null validation errors. This checkout still has unrelated untracked `bench/`,
+`claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`, and
+`process_video.py`; do not touch them.
 
 ## Current objective
 
@@ -146,7 +150,7 @@ painting. **Active log: `docs/12-explosion-hunt-log.md` — read its §0b first.
 P0–P7 of the plan are complete. **P8 (polish + acceptance) is deliberately on hold**
 until this is closed or accepted as external. Do not start P8.
 
-## NEXT ACTION
+## COMPLETED ROUTE (E9–E10; retained for context)
 
 **Verify that `FluidEngine.dump(name)` (`src/engine/fluid.ts`, ~line 853) returns the
 texture the passes just wrote, not the stale half of the ping-pong pair.**
@@ -173,7 +177,7 @@ re-run the §3.3 soak — testing whether that extra memory traffic is why the r
 fix works on the baseline but not here. If `dump()` is broken, fix it, re-run the
 current-tree soak, and mark every affected number in `docs/12` as suspect.
 
-## IN FLIGHT
+## COMPLETED WORK (E9–E12)
 
 **Codex is verifying the inspector before interpreting any more explosion numbers.**
 Code reading is complete: each writing pass flips its `PingPong` immediately, and both the live renderer and `FluidEngine.dump()` select the resulting `src` side. Dependencies were restored with `npm.cmd ci`; the live page runs on `webgpu: amd / gcn-4`.
@@ -192,7 +196,51 @@ animation was held still. The next step is now precise:
 **COMPLETE (E10).** `compareWet5ReadPaths()` builds and was run on AMD/Polaris:
 three healthy controls agree, while two bad copy readings disagree with a normal
 compute gauge inside one encoder. The dump-derived current-tree rate is retracted as
-unknown. No code edit is in flight.
+unknown.
+
+**E11 IMPLEMENTATION (complete):** GPU-resident post-capillary alarm.
+Add `src/engine/shaders/fluid/capillary_alarm.wgsl`, a four-byte latched alarm
+buffer and readback method in `src/engine/fluid.ts`, and narrow exposure through
+`src/engine/canvas.ts`. The alarm must default OFF, reset on `clear()`, dispatch
+immediately after `wet5.flip()` in the capillary block, and add no CPU wait per
+frame. After build plus live shader compilation, run an empty-sheet control and
+standard 26-stroke sessions on `webgpu: amd / gcn-4` until either two alarm events
+are reproduced or a bounded clean run is complete. Record every raw outcome in E11.
+
+**Checkpoint:** implementation and `npm.cmd run build` pass. Chrome compiled and
+ran the shader on `webgpu: amd / gcn-4`; 200 empty-sheet frames returned alarm `0`
+with a null WebGPU validation error. Codex is now running bounded standard sessions,
+capturing both the post-capillary alarm and E10's one-encoder compute/copy comparison
+once per finished session.
+
+**E11 COMPLETE:** standard painted sessions returned alarm `0, 1, 1`; both latched
+sessions finished with normal compute and copied saturation near 3300 and peaks near
+0.123. A following `clear()` reset the latch to `0`. The transient intermediate fault
+is real and reproduced, while the dump-derived rate remains invalid.
+
+**E12 IMPLEMENTATION (complete):** matched ink-band traffic discriminator before asking
+for the NVIDIA machine. Add a default-ON debug switch that, when OFF, skips only the
+2048x2048 ink textures' repeated clear and reduction work (the standard watercolour
+recipe deposits no ink). Run equal bounded batches with traffic ON and OFF using the
+post-capillary alarm, no per-frame CPU waits. Record raw event counts and final gauge
+health in E12; restore the switch to ON after every test.
+
+**Checkpoint:** the default-ON `inkBandTrafficEnabled` switch is implemented and the
+build passes. It skips only repeated fine-ink clear/reduction dispatches when OFF;
+textures remain allocated and the watercolour recipe never deposits dry media. Next
+operation is the live matched AMD batch.
+
+**Matched batch 1 [1 RUN ONLY]:** alarm events were `8/8` with ink traffic ON and
+`8/8` with it OFF; final saturation/pigment were healthy and the WebGPU validation
+error was null. This strongly excludes repeated ink clear/reduction traffic as the
+trigger under the alarm observer, but the project requires a second identical
+8-versus-8 batch before recording the rate as reproduced.
+
+**E12 COMPLETE:** identical batch 2 also returned `8/8` ON and `8/8` OFF, with
+healthy final gauges and null validation. Repeated fine-ink clear/reduction traffic
+is excluded as the trigger under this observer. The observer makes the event
+deterministic and therefore cannot supply the normal app's failure rate. No code or
+experiment is in flight; both debug switches restore/default to normal behaviour.
 
 1. In `src/engine/fluid.ts`, add a temporary public debug method that puts
    `recordGauge(...)` and the `wet5.srcTex` `copyTextureToBuffer` in **one command
@@ -210,7 +258,7 @@ unknown. No code edit is in flight.
    not, the readback ordering/instrument is at fault; make a deliberate snapshot API
    and rerun the current-tree soak through it.
 
-## NEXT ACTION (after E10)
+## COMPLETED ROUTE (E11–E12)
 
 **Do not run another direct-dump soak; it cannot measure the failure rate.** Add a
 temporary GPU-resident post-capillary alarm instead, then test the standard recipe.
@@ -229,6 +277,25 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
    isolation is worth testing as a trigger.
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
+
+## NEXT ACTION (after E12 — requires the NVIDIA computer)
+
+There is no higher-value AMD-side edit to make first. Bartford has an older,
+weaker NVIDIA machine; raw speed is irrelevant and the vendor/generation difference
+is exactly what this discriminator needs.
+
+1. On the NVIDIA computer, update `webgpu-test` to the commit containing E11/E12,
+   run `npm.cmd ci`, `npm.cmd run build`, and serve the app. Confirm the HUD reports
+   the actual NVIDIA adapter before measuring.
+2. Run the same alarm sequence with normal ink traffic: 200 empty-sheet frames,
+   then two identical batches of eight standard 26-stroke sessions. Read the alarm
+   once after each session; never wait on the CPU per frame. Record validation errors,
+   exact alarm rows, and final gauges.
+3. If NVIDIA is `0/16` while AMD is reproduced `16/16` under the observer, the
+   vendor/hardware path becomes the leading explanation; repeat one short confirmation
+   before closing the fault as external-with-guards. If NVIDIA also alarms, the cause
+   is broader than AMD/Polaris and investigation stays in the shared app/browser path.
+4. Append E13. Do not begin P8 or feature work until this route is interpreted.
 
 ## Recently completed
 

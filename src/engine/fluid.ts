@@ -38,6 +38,7 @@ import reduceFinalWgsl from './shaders/fluid/reduce_final.wgsl?raw';
 import reduceInkWgsl from './shaders/fluid/reduce_ink.wgsl?raw';
 import reduceInkFinalWgsl from './shaders/fluid/reduce_ink_final.wgsl?raw';
 import zeroWgsl from './shaders/fluid/zero_fill.wgsl?raw';
+import capillaryAlarmWgsl from './shaders/fluid/capillary_alarm.wgsl?raw';
 
 // Quantities per reduce workgroup. Stated in THREE places that must agree:
 // here, `NQ` in reduce.wgsl, and `NQ` in reduce_final.wgsl. A mismatch reads
@@ -236,6 +237,8 @@ export class FluidEngine {
    * copies from — 64 bytes a frame instead of the ~53 KB of raw partials. */
   private totalsBuf: GPUBuffer;
   private readbackBuf: GPUBuffer;
+  /** Debug-only, GPU-resident latch set by a scan immediately after CapillaryFlow. */
+  private capillaryAlarmBuf: GPUBuffer;
   /** The measurement path gets its OWN partials buffer. Sharing one with the
    * per-frame readout let a sample overwrite the partials another read was
    * still copying, so a reading could blend two different frames. */
@@ -254,6 +257,10 @@ export class FluidEngine {
   private inkDirty = true;
   /** Pause the per-frame readout while measuring, so nothing else is in flight. */
   pauseReadback = false;
+  /** Off during normal painting: the observer adds one full-grid compute scan. */
+  capillaryAlarmEnabled = false;
+  /** Debug discriminator; normal painting keeps the fine ink band's work enabled. */
+  inkBandTrafficEnabled = true;
 
   private pipes: Record<string, GPUComputePipeline> = {};
   private params: FluidParams = { ...DEFAULT_FLUID };
@@ -360,6 +367,11 @@ export class FluidEngine {
       size: totalBytes,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'gauge-readback',
     });
+    this.capillaryAlarmBuf = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      label: 'capillary-alarm',
+    });
 
     const mk = (src: string, label: string) => device.createComputePipeline({
       layout: 'auto', label,
@@ -377,6 +389,7 @@ export class FluidEngine {
     this.pipes.fluxWater = mk(fluxWaterWgsl, 'flux_apply_water');
     this.pipes.transfer = mk(transferWgsl, 'transfer_pigment');
     this.pipes.capillary = mk(capillaryWgsl, 'capillary_flow');
+    this.pipes.capillaryAlarm = mk(capillaryAlarmWgsl, 'capillary_alarm');
     this.pipes.dry = mk(dryWgsl, 'dry_tick');
     this.pipes.bakePush = mk(bakePushWgsl, 'bake_push');
     this.pipes.dryStore = mk(dryStoreWgsl, 'dry_store');
@@ -502,14 +515,17 @@ export class FluidEngine {
         this.dispatch(pass, this.pipes.zero, [v]);
       }
     }
-    for (const pp of [this.ink0, this.ink1]) {
-      for (const v of pp.view) {
-        this.dispatchAt(pass, this.pipes.zeroInk, INK_RES, [v]);
+    if (this.inkBandTrafficEnabled) {
+      for (const pp of [this.ink0, this.ink1]) {
+        for (const v of pp.view) {
+          this.dispatchAt(pass, this.pipes.zeroInk, INK_RES, [v]);
+        }
       }
     }
     pass.end();
     enc.clearBuffer(this.fluxBuf);
-    this.inkDirty = true;
+    enc.clearBuffer(this.capillaryAlarmBuf);
+    this.inkDirty = this.inkBandTrafficEnabled;
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
@@ -686,6 +702,11 @@ export class FluidEngine {
         U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst, this.wet5.dst,
       ]);
       this.wet0.flip(); this.wet5.flip();
+      if (this.capillaryAlarmEnabled) {
+        this.dispatch(pass, this.pipes.capillaryAlarm, [
+          this.wet5.src, { buffer: this.capillaryAlarmBuf },
+        ]);
+      }
     });
 
     // 8 — ReWet. Water reaching a dried layer brings its pigment back into
@@ -738,7 +759,7 @@ export class FluidEngine {
     // million texels every frame to re-derive a number that did not move was
     // most of the idle GPU load. `inkTotals` keeps its last value, which is
     // still the right one.
-    if (this.inkDirty) {
+    if (this.inkBandTrafficEnabled && this.inkDirty) {
       this.recordInkGauge(pass, this.inkPartials, this.inkTotals);
       this.inkDirty = false;
     }
@@ -913,6 +934,24 @@ export class FluidEngine {
       if (saturation > dumpedPeak) dumpedPeak = saturation;
     }
     return { gaugeSaturation: gauge[1], dumpedSaturation, dumpedPeak, cur };
+  }
+
+  /** Read the latched post-capillary alarm once, without resetting it. */
+  async readCapillaryAlarm(): Promise<number> {
+    const { device } = this.gpu;
+    const rb = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      label: 'capillary-alarm-readback',
+    });
+    const enc = device.createCommandEncoder({ label: 'read-capillary-alarm' });
+    enc.copyBufferToBuffer(this.capillaryAlarmBuf, 0, rb, 0, 4);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const value = new Uint32Array(rb.getMappedRange().slice(0))[0];
+    rb.unmap();
+    rb.destroy();
+    return value;
   }
 
   /**
