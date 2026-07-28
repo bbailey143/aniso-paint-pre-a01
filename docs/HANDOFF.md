@@ -134,8 +134,8 @@ say why.
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
 **Last updated:** 2026-07-28
-**By:** Claude Opus 5
-**Build state:** `npm run build` passes. Working tree clean, pushed to `webgpu-test`.
+**By:** Codex
+**Build state:** `npm.cmd run build` passes after E10's debug-only read comparison hook. This checkout still has unrelated untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`, and `process_video.py`; do not touch them.
 
 ## Current objective
 
@@ -175,18 +175,70 @@ current-tree soak, and mark every affected number in `docs/12` as suspect.
 
 ## IN FLIGHT
 
-Nothing. No half-finished edits. Both worktrees clean.
+**Codex is verifying the inspector before interpreting any more explosion numbers.**
+Code reading is complete: each writing pass flips its `PingPong` immediately, and both the live renderer and `FluidEngine.dump()` select the resulting `src` side. Dependencies were restored with `npm.cmd ci`; the live page runs on `webgpu: amd / gcn-4`.
+
+**First checkpoint — healthy sheets are sound.** A naïve first sample gave matching saturation but mismatched film because the requestAnimationFrame loop continued drying the sheet between two asynchronous reads. A held-still method now temporarily replaces only public `e.step` with a no-op, runs the standard session through a saved original function, samples and dumps, then restores it. Six healthy sessions match: film ratio `0.99999999`–`1.00000000`; saturation ratio `0.99999984`–`1.00000062`. So `dump()` is sound for healthy state.
+
+**Important single-run observation — corrupted state does not agree.** The seventh held-still session blew: gauge saturation `3299.884033`, CPU sum of dumped `wet5.x` `1.1038177728633202e36`, peak the same; `wet0.y` film still matched exactly (`0.000452250504` gauge, `0.000452250505` dump). This comparison had no animation step between the gauge and dump. After public `e.step` was restored, the normal containment pass removed the stored impossible saturation before a later re-read, so do not try to inspect that old canvas now.
+
+**CHECKPOINT COMPLETE.** The held-still session was repeated with `g1`, `dump(wet5)`, `dump(wet0)`, and `g2` in one no-step interval. Do not repeat the old separate-instrument soak; it cannot settle the rate.
+
+**NEXT ACTION — one-encoder instrument comparison.** See E9 in
+`docs/12-explosion-hunt-log.md`. Two independent
+dump-only corrupted readings and one gauge-only reading were captured while the
+animation was held still. The next step is now precise:
+
+**COMPLETE (E10).** `compareWet5ReadPaths()` builds and was run on AMD/Polaris:
+three healthy controls agree, while two bad copy readings disagree with a normal
+compute gauge inside one encoder. The dump-derived current-tree rate is retracted as
+unknown. No code edit is in flight.
+
+1. In `src/engine/fluid.ts`, add a temporary public debug method that puts
+   `recordGauge(...)` and the `wet5.srcTex` `copyTextureToBuffer` in **one command
+   encoder**, then reads both buffers after that single submission. Expose it through
+   `CanvasEngine` and `window.__engine` (the latter already exposes the canvas
+   engine). It must return `{ gaugeSaturation, dumpedSaturation, dumpedPeak, cur }`.
+   Do not change the simulation or `dump()`.
+2. Run the same held-still 26-stroke session until at least two corrupted states are
+   caught. Record the raw pair from this one-encoder probe and a healthy control in
+   E10. The expected healthy relation is four-significant-figure agreement.
+3. If the mismatch remains within one encoder, current-tree direct-dump *and*
+   gauge-only rates are invalid; label the current-tree rate unknown and test the
+   2048x2048 ink-band isolation only as a possible **trigger**, not by counting those
+   old detectors. If the one-encoder pair agrees when prior separate submissions did
+   not, the readback ordering/instrument is at fault; make a deliberate snapshot API
+   and rerun the current-tree soak through it.
+
+## NEXT ACTION (after E10)
+
+**Do not run another direct-dump soak; it cannot measure the failure rate.** Add a
+temporary GPU-resident post-capillary alarm instead, then test the standard recipe.
+
+1. In `src/engine/fluid.ts`, immediately after the `capillary` pass flips `wet5`
+   (around the block beginning `run('capillary'`), dispatch a debug-only shader that
+   scans the resulting `wet5.src` and atomically latches a one-word buffer if `.x` is
+   NaN, negative, or `> 1e4`. Reset that latch in `clear()` and expose a one-time
+   `readCapillaryAlarm()` through `CanvasEngine`. Keep it out of normal acceptance
+   measurements; it changes GPU traffic.
+2. Run a healthy control plus two standard sessions on AMD/Polaris. Record the latch
+   only after each session, without per-frame CPU waits. If it stays zero while the
+   copy path reports a huge value, the copy path is proven unsuitable as a stored
+   paint detector. If it latches, a compute consumer observed a bad post-capillary
+   state; then the current tree has a real intermediate fault and the ink-band
+   isolation is worth testing as a trigger.
+3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
+   not call either outcome a root cause, and do not start P8.
 
 ## Recently completed
 
 - Read guard on `capillary_flow.wgsl` reads — **closes the fault on the baseline**
-  (0 blowups in 32 sessions vs 24/24 before), **but does nothing on the current tree**
-  (14/16 with, 13/16 without, matched control). Committed anyway: proven, conservative,
-  free. It is **not** a fix for this tree and must not be reported as one.
-- Corrected an earlier overstatement: the previously reported "1 blowup in 16" for the
-  current tree was a gauge-only-detector artefact. With a direct texture dump added it
-  is ~13/16. The `sane()` write guards largely stopped the *meter* from showing the
-  fault rather than reducing it.
+  (0 blowups in 32 sessions vs 24/24 before). It is conservative and remains kept.
+  E10 retracts the earlier current-tree `14/16` and `13/16` readings as *rates*;
+  they depended on a raw-copy detector that demonstrably lies on this GPU.
+- E9/E10: source inspection rules out a stale ping-pong side; healthy texture copies
+  and compute reads agree; two same-encoder bad-copy events do not. The current-tree
+  stored-state failure rate is unknown, not "13/16".
 - Root cause on the baseline: a transient garbage **read** of `wet5_in` in
   `capillary_flow.wgsl`, multiplied into the canvas by the diffusion term. Never
   stored — which is why guarding twelve *writing* passes failed.

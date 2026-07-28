@@ -875,6 +875,47 @@ export class FluidEngine {
   }
 
   /**
+   * Compare the compute gauge and a raw texture copy from one frozen GPU command.
+   * Debug-only: it does not advance or alter the simulation.
+   */
+  async compareWet5ReadPaths(): Promise<{
+    gaugeSaturation: number; dumpedSaturation: number; dumpedPeak: number; cur: number;
+  }> {
+    const { device } = this.gpu;
+    const gaugeRb = device.createBuffer({
+      size: this.sampleTotals.size,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const bytesPerRow = this.n * 16;
+    const texRb = device.createBuffer({
+      size: bytesPerRow * this.n,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = device.createCommandEncoder({ label: 'compare-wet5-read-paths' });
+    const pass = enc.beginComputePass();
+    this.recordGauge(pass, this.samplePartials, this.sampleTotals);
+    pass.end();
+    enc.copyBufferToBuffer(this.sampleTotals, 0, gaugeRb, 0, this.sampleTotals.size);
+    enc.copyTextureToBuffer(
+      { texture: this.wet5.srcTex }, { buffer: texRb, bytesPerRow }, [this.n, this.n]);
+    const cur = this.wet5.cur;
+    device.queue.submit([enc.finish()]);
+    await Promise.all([gaugeRb.mapAsync(GPUMapMode.READ), texRb.mapAsync(GPUMapMode.READ)]);
+    const gauge = new Float32Array(gaugeRb.getMappedRange().slice(0));
+    const tex = new Float32Array(texRb.getMappedRange().slice(0));
+    gaugeRb.unmap(); gaugeRb.destroy(); texRb.unmap(); texRb.destroy();
+
+    let dumpedSaturation = 0;
+    let dumpedPeak = -Infinity;
+    for (let i = 0; i < tex.length; i += 4) {
+      const saturation = tex[i];
+      dumpedSaturation += saturation;
+      if (saturation > dumpedPeak) dumpedPeak = saturation;
+    }
+    return { gaugeSaturation: gauge[1], dumpedSaturation, dumpedPeak, cur };
+  }
+
+  /**
    * Turn one row of GPU totals into a reading. Pure; no side effects.
    * The summing now happens in reduce_final — this reads lane by lane, and must
    * NOT re-fold the row, or the padding lanes would be counted as data.

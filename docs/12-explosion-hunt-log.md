@@ -670,6 +670,107 @@ fix for the current tree and must not be reported as one.
 
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
 
+### E9 — On the current tree, the two read instruments can disagree on a poisoned frame (2026-07-28)
+
+**Purpose.** Check the first prerequisite behind E7/E8: whether `dump()` reads the
+same live ping-pong side as the compute gauge. If it does not, the current-tree
+dump-derived peaks and rates may describe a stale texture rather than the painting.
+
+**Method.** Current tree, standard 26-stroke recipe from section 3.3, on the same
+Windows 11 `webgpu: amd / gcn-4` (Polaris) machine. Source inspection first:
+`PingPong.flip()` toggles `cur` immediately after every writing dispatch;
+`FluidEngine.dump()` copies `pp.srcTex`; `recordGauge()` samples the matching
+`pp.src`. In the live page, temporarily replaced only public `e.step` with a no-op
+while the final `sampleGauges()` and texture copies ran; the recipe itself called a
+saved original step function. This keeps requestAnimationFrame from advancing the
+sheet between asynchronous reads without adding a per-frame GPU wait. Each detailed
+sample captured, in order: `g1 = sampleGauges()`, dumps of `wet5` and `wet0`, then
+`g2 = sampleGauges()`, plus `wet5.cur` and both labels. No paint step ran between
+those four reads. CPU sums used float64 accumulation of the dumped float32 values.
+
+**Raw result.**
+
+| state | `g1` saturation | dumped `sum(wet5.x)` / peak | `g2` saturation | film: gauge / dump |
+|---|---:|---:|---:|---:|
+| nine ordinary sessions | 3299.83–3300.19 | 3299.83–3300.19 / peak about 0.122 | same as `g1` | agreement within 1e-8 relative |
+| corrupted A | 3299.884033 | **1.1038177728633202e36** / same | not captured in this earlier single check | 0.000452250504 / 0.000452250505 |
+| corrupted B | 3299.888672 | **5.622067807704904e36** / same | 3299.888672 | 0.000452250504 / 0.000452250505 |
+| transient gauge-only reading **[1 RUN ONLY]** | **2.9397622377423785e36** | 3301.794998 / 0.122568 | 3301.795166 | 0.000452250504 / 0.000452250505 |
+
+For every detailed run `wet5.cur` was `0` and its physical labels were `wet50`,
+`wet51`. The two ordinary instruments therefore selected the same programmed side;
+there is no source-level stale-pair mistake to fix. The first unconstrained healthy
+check also showed why the held-still method matters: saturation agreed, but the tiny
+film fell from 0.00045225 to 0.000034108 while requestAnimationFrame continued to
+dry the sheet between reads. With steps stopped, film agrees too.
+
+**What it proves.**
+
+- The direct texture copy and compute `textureLoad` gauge agree to normal rounding on
+  healthy paint, repeatedly.
+- On two independently caught current-tree corrupted states, the dumped saturation
+  is impossible while the immediate compute gauge is healthy; the second one has a
+  confirming gauge both before and after the dump. The existing current-tree
+  dump-derived `13/16`, `14/16`, and 1e37 peak numbers are therefore **suspect**:
+  they cannot yet be treated as stored paint state.
+- The one observed reverse mismatch shows that neither instrument may be treated as
+  an unquestioned referee once the fault is active. This is consistent with a
+  transient bad GPU read, but that mechanism is still an inference.
+
+**What it does NOT prove.** This does not show that the canvas is healthy, that the
+baseline read-guard result is wrong, or that the fault is definitely driver/hardware.
+It also does not prove `copyTextureToBuffer` is the bad reader: the one gauge-only
+event shows compute readback can disagree too. We have not yet captured both paths in
+one command encoder or shown which physical texture is actually consumed by the next
+fluid pass.
+
+### E10 — One command encoder still splits compute read from texture copy (2026-07-28)
+
+**Purpose.** E9 left a small ordering gap: the gauge and the texture copy were
+separate GPU submissions, although no paint step was allowed between them. Remove
+that gap and repeat until the disagreement is reproduced.
+
+**Method.** Added temporary debug-only `compareWet5ReadPaths()` to `FluidEngine` and
+exposed it on `CanvasEngine`. It opens one command encoder, records the normal
+`recordGauge()` compute pass from `wet5.src`, then copies that same `wet5.srcTex` to
+a mapped buffer, and submits the encoder once. It returns gauge lane 1, CPU float64
+sum/peak of copied `wet5.x`, and `wet5.cur`. TypeScript build passed; WGSL is
+unchanged. On AMD/Polaris, ran the standard held-still 26-stroke recipe from E9;
+the public frame-loop `e.step` remained a no-op until this one-encoder probe
+completed. Five runs: three controls, then two bad-copy events.
+
+**Raw result.**
+
+| run | gauge saturation from compute | copied `sum(wet5.x)` | copied peak | `wet5.cur` |
+|---|---:|---:|---:|---:|
+| control 1 | 3301.764404 | 3301.764797 | 0.122260 | 0 |
+| control 2 | 3300.156982 | 3300.157331 | 0.122670 | 0 |
+| control 3 | 3299.917725 | 3299.917304 | 0.122606 | 0 |
+| bad copy 1 | **3299.781250** | **3.989174902916941e36** | **3.324676102772779e36** | 0 |
+| bad copy 2 | **3299.826904** | **8.700973713581334e36** | **8.700973713581334e36** | 0 |
+
+**What it proves.**
+
+1. The E9 disagreement is reproduced twice with no separate submissions, no
+   intervening paint step, and an explicitly recorded current ping-pong side. It is
+   not a stale-pair bug and not readback ordering between `sampleGauges()` and
+   `dump()`.
+2. On this current tree and GPU, a raw `copyTextureToBuffer` read can produce absurd
+   `wet5` values while a compute `textureLoad` of the same programmed source, in the
+   same encoder, sees a normal value. The direct dump is therefore **not a valid
+   detector of stored current-tree explosions on this machine**.
+3. Consequently ~~the current-tree `13/16` and `14/16` dump-based blowup rates~~
+   **are RETRACTED as rates at E10.** Their raw readback events happened, but they do
+   not establish that the painting state was corrupted. The current-tree stored-state
+   failure rate is now **unknown**.
+
+**What it does NOT prove.** It does not prove the compute path can never receive a
+bad read (E6 still shows the read guard closes the baseline fault), that the artist's
+visible blob is external, or that the driver is at fault rather than a WebGPU/runtime
+issue. It also does not prove the copied side is always wrong; it proves this copy
+path cannot be used alone as an acceptance detector here. A visually or
+compute-observable detector is still required before counting current-tree failures.
+
 ---
 
 ## 10. Reference: the containment already in place
