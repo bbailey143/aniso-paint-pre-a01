@@ -133,26 +133,33 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-07-28 (water/paper foundation pass)
 **By:** Codex
-**Build state:** `npm.cmd run build` passes after E11/E12's debug-only alarm and
-ink-traffic switch. Chrome compiled and exercised the shader on AMD/Polaris with
-null validation errors. This checkout still has unrelated untracked `bench/`,
-`claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`, and
-`process_video.py`; do not touch them.
-**Git state:** E11/E12 are committed locally as `d712903`. A push to
-`https://github.com/bbailey143/aniso-paint-pre-a01` / `webgpu-test` was blocked
-pending Bartford's explicit authorization to publish these project changes. Do not
-claim the NVIDIA computer can pull this milestone until that push succeeds.
+**Build state:** `npm.cmd run build` passes with the shared water/paper correction.
+Chrome compiled and exercised the shaders on AMD/Polaris. Two identical controlled
+runs conserved water and reproduced the same paper ordering and deep-puddle travel;
+see `docs/13-water-paper-behavior-log.md` E2. This checkout still has unrelated
+untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`,
+and `process_video.py`; do not touch them.
+**Git state:** Bartford authorized publication and Codex pushed E11/E12 through
+`0bf9470` to `origin/webgpu-test`. The water/paper milestone is committed at the
+current local `HEAD`, but its push was rejected by the publication gate pending
+explicit approval for this specific payload. The listed untracked files remain
+unrelated and must not be touched.
 
 ## Current objective
 
-Close, or prove external, the "explosion" fault: a single canvas cell intermittently
-acquires ~1e37, and the solver then spreads it into a growing blob that destroys the
-painting. **Active log: `docs/12-explosion-hunt-log.md` — read its §0b first.**
+Correct the shared water/paper foundation before feature work. Bartford reports that
+tilted water slides as though there is almost no surface resistance or absorption,
+and that a wet area behaves too much like a wall at its dry boundary. The desired
+result is physical: enough surface water must cross onto dry paper under gravity to
+form drips and blooms, while sizing and pore radius govern how quickly each sheet
+absorbs it.
 
-P0–P7 of the plan are complete. **P8 (polish + acceptance) is deliberately on hold**
-until this is closed or accepted as external. Do not start P8.
+The NVIDIA E13 discriminator for the separate explosion fault is explicitly
+**postponed at Bartford's request**, not cancelled. P8 polish remains on hold.
+
+**Active evidence log for this work:** `docs/13-water-paper-behavior-log.md`.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -282,24 +289,25 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION (after E12 — requires the NVIDIA computer)
+## NEXT ACTION — Bartford's hand test, then calibration
 
-There is no higher-value AMD-side edit to make first. Bartford has an older,
-weaker NVIDIA machine; raw speed is irrelevant and the vendor/generation difference
-is exactly what this discriminator needs.
+The shared correction is implemented and two controlled AMD/Polaris runs agree.
+See `docs/13-water-paper-behavior-log.md` E2 for exact values.
 
-1. On the NVIDIA computer, update `webgpu-test` to the commit containing E11/E12,
-   run `npm.cmd ci`, `npm.cmd run build`, and serve the app. Confirm the HUD reports
-   the actual NVIDIA adapter before measuring.
-2. Run the same alarm sequence with normal ink traffic: 200 empty-sheet frames,
-   then two identical batches of eight standard 26-stroke sessions. Read the alarm
-   once after each session; never wait on the CPU per frame. Record validation errors,
-   exact alarm rows, and final gauges.
-3. If NVIDIA is `0/16` while AMD is reproduced `16/16` under the observer, the
-   vendor/hardware path becomes the leading explanation; repeat one short confirmation
-   before closing the fault as external-with-guards. If NVIDIA also alarms, the cause
-   is broader than AMD/Polaris and investigation stays in the shared app/browser path.
-4. Append E13. Do not begin P8 or feature work until this route is interpreted.
+1. Bartford should paint on Cold Press with the evaporation slider at zero: make
+   one merely damp wash and one visibly deep puddle, then tilt halfway. The damp
+   wash should grip/soak; the puddle should visibly cross its old dry edge and
+   form a downhill tongue. Repeat on Hot Press and Rough; Hot should stay on the
+   surface longest, Rough should soak fastest.
+2. If the *shape* is right but timing is wrong, calibrate only the
+   `[UNVERIFIED]` `WATERCOLOR.absorptionCoupling` row in
+   `src/media/library.ts` against real-paper reference plates. Do not fork the
+   shader or alter paper rows to compensate.
+3. If water still feels too slippery or too pinned, capture the exact paper,
+   water load, tilt amount, and about how many seconds it should take. Adjust the
+   shared mobility/resistance mapping only with a repeated conservation test.
+4. The NVIDIA E13 experiment remains postponed until Bartford finishes this
+   behaviour pass; do not ask him to switch computers yet.
 
 ## Recently completed
 

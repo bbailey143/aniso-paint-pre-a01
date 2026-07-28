@@ -7,9 +7,10 @@
 import type { Gpu } from './gpu';
 import { createColorLibrary, PIGMENT_COUNT } from '../color/library';
 import { PIGMENTS } from '../color/pigments';
+import type { WetMedium } from '../media/types';
 import type { Recipe } from '../color/km';
 import type { Paper } from '../substrate/papers';
-import { FluidEngine, type Gauges, type FluidParams } from './fluid';
+import { DEFAULT_FLUID, FluidEngine, type Gauges, type FluidParams } from './fluid';
 import paperWgsl from './shaders/paper.wgsl?raw';
 import compositeWgsl from './shaders/composite.wgsl?raw';
 
@@ -121,6 +122,14 @@ export class CanvasEngine {
   get mixWeights(): Float32Array<ArrayBuffer> { return this.mixWeights_; }
 
   setFluid(p: Partial<FluidParams>) { this.fluid.setParams(p); }
+  /** Select a wet material by feeding its data row into the shared solver. */
+  setWetMedium(m: WetMedium) {
+    this.fluid.setParams({
+      viscosity: m.viscosity,
+      absorptionCoupling: m.absorptionCoupling,
+      rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
+    });
+  }
   setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
   /** Wipe the sheet. A blank document has no history, so the slot map resets too. */
   clear() {

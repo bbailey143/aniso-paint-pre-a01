@@ -68,6 +68,8 @@ export interface FluidParams {
   toothAmp: number;
   /** Fraction of the newest dry layer returning to suspension per unit time. */
   rewetRate: number;
+  /** Wet-medium strength applied to the shared Lucas-Washburn uptake. */
+  absorptionCoupling: number;
   /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
@@ -91,6 +93,8 @@ export const DEFAULT_FLUID: FluidParams = {
   toothAmp: 0.45,          // cold press, the default sheet
   // Watercolour is reactivatable — this is what makes a dried wash come back.
   rewetRate: 0.10,
+  // Watercolour's provisional row value; explicitly unverified in media/library.ts.
+  absorptionCoupling: 0.01,
   handoffEnabled: true,
 };
 
@@ -302,9 +306,9 @@ export class FluidEngine {
     this.ink0 = new PingPong(device, INK_RES, 'ink0', INK_FORMAT);
     this.ink1 = new PingPong(device, INK_RES, 'ink1', INK_FORMAT);
 
-    // Params: 16 scalars (4 vec4 worth) + 8 vec4 pigment rows = 192 bytes.
+    // Params: 20 scalars (5 vec4 worth) + 8 vec4 pigment rows = 208 bytes.
     this.paramsBuf = device.createBuffer({
-      size: 16 * 4 + 8 * 16,
+      size: 20 * 4 + 8 * 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'fluid-params',
     });
     this.fluxBuf = device.createBuffer({
@@ -447,7 +451,7 @@ export class FluidEngine {
   }
 
   private writeParams() {
-    const buf = new ArrayBuffer(16 * 4 + 8 * 16);
+    const buf = new ArrayBuffer(20 * 4 + 8 * 16);
     const dv = new DataView(buf);
     const p = this.params;
     dv.setUint32(0, this.n, true);
@@ -466,11 +470,12 @@ export class FluidEngine {
     dv.setFloat32(52, p.paperInfluence, true);
     dv.setFloat32(56, this.frame / 60, true);
     dv.setFloat32(60, p.rewetRate, true);
+    dv.setFloat32(64, p.absorptionCoupling, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
       const pig = id !== undefined && id >= 0 ? PIGMENTS[id] : undefined;
-      const o = 64 + i * 16;
+      const o = 80 + i * 16;
       dv.setFloat32(o + 0, pig ? pig.rho : 0.2, true);
       dv.setFloat32(o + 4, pig ? pig.omega : 3.0, true);
       dv.setFloat32(o + 8, pig ? pig.gamma : 0.3, true);

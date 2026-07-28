@@ -26,6 +26,13 @@ struct Params {
   time: f32,
   rewetRate: f32,   // fraction of dry1 returning to suspension per unit time
 
+  // Wet-medium row. Keep shared physics here: a new medium changes values,
+  // never the capillary or movement methods (D3 / Card 7).
+  absorptionCoupling: f32,
+  _mediumPad0: f32,
+  _mediumPad1: f32,
+  _mediumPad2: f32,
+
   // Pigment library for the 8 active slots: (rho density, omega staining,
   // gamma granulation, pad) — Card 3. Cells store amounts; library stores
   // behaviour. Filled per-frame to match the active slot->pigment map.

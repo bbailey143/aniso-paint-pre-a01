@@ -11,9 +11,13 @@
 @group(0) @binding(4) var wet0_out: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(5) var wet5_out: texture_storage_2d<rgba32float, write>;
 
-const ALPHA: f32 = 0.35;    // absorption rate into the sheet
 const KDIFF: f32 = 0.18;    // capillary spread, must stay under 0.25
 const EPS_WET: f32 = 0.004; // saturation at which the mask expands
+// Y13's upper watercolour-paper pore radius and C97's reference viscosity.
+// These normalise SI paper data into the app's dimensionless grid; neither is
+// a tuned visual constant (docs/08-substrate.md and docs/05-fluid.md).
+const RC_MAX: f32 = 2.5e-4;
+const MU_REF: f32 = 0.1;
 
 // THE FAULT WAS HERE — and it was a READ, not a write. See docs/12, E1-E6.
 //
@@ -59,7 +63,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let w0 = textureLoad(wet0_in, c, 0);
   let w5 = textureLoad(wet5_in, c, 0);
-  let cap = textureLoad(paper, c, 0).y;
+  let paperCell = textureLoad(paper, c, 0);
+  let cap = paperCell.y;
 
   // The cell's own read is guarded too, so this covers ANY read of `wet5_in` in
   // this pass, not only the four neighbours. Fallback 0: a cell whose own stored
@@ -75,7 +80,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let ddiff = k * ((sl - s_in) + (sr - s_in) + (su - s_in) + (sd - s_in));
 
   let room = max(cap - s_in, 0.0);
-  let take = min(min(ALPHA * P.dt * hf_in, hf_in), room);
+
+  // Lucas-Washburn integrated over one step. Since dl/dt is proportional to
+  // 1/l, squared penetration depth grows linearly. `s/cap` is the paper's
+  // dimensionless penetration depth. Sizing is a barrier, r_c is the paper's
+  // documented absorptiveness dial, and the wet-medium row supplies viscosity
+  // and coupling. r_c=0 therefore gives exactly zero uptake for a future canvas.
+  let depth = select(0.0, clamp(s_in / cap, 0.0, 1.0), cap > WET_EPS);
+  let pore = clamp(paperCell.w / RC_MAX, 0.0, 1.0);
+  let sizingTransmission = clamp(1.0 - paperCell.z, 0.0, 1.0);
+  let viscosityResponse = MU_REF / max(P.viscosity, WET_EPS);
+  let depthRate = P.absorptionCoupling * sizingTransmission * pore * viscosityResponse;
+  let nextDepth = min(sqrt(depth * depth + max(depthRate * P.dt, 0.0)), 1.0);
+  let penetrationTake = max(nextDepth - depth, 0.0) * cap;
+  let take = min(min(penetrationTake, hf_in), room);
 
   let hf = max(hf_in - take, 0.0);
   let s = max(s_in + ddiff + take, 0.0);

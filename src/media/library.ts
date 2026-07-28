@@ -21,7 +21,12 @@ export const WATERCOLOR: WetMedium = {
   openTime: 90, valueShift: 0.18,   // dries lighter, Card 7 says 10-30 %
   reactivatable: true, oneWayDoor: false,
   solvent: 'water', viscosity: 0.1, evapRate: 0.0015,
-  absorptionCoupling: 1.0, pigmentBoost: 1.0,
+  // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
+  // consumed a Cold Press surface film in under ten solver steps once the
+  // paper row was actually connected. 0.01 keeps uptake visible while leaving
+  // a genuinely wet wash enough surface life to run and bloom. It still needs
+  // calibration against the real-paper reference plates in Card 9.
+  absorptionCoupling: 0.01, pigmentBoost: 1.0,
 };
 
 /**

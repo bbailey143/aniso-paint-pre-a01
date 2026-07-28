@@ -11,6 +11,7 @@ import { Palette } from './ui/palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
+import { WATERCOLOR } from './media/library';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 
@@ -76,6 +77,7 @@ async function main() {
     },
   });
   engine.setPaper(PAPERS[1]);              // cold press default
+  engine.setWetMedium(WATERCOLOR);
   engine.setMix(palette.recipe);
 
   // Start with a usable colour so the first stroke shows something.

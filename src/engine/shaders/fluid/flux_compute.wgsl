@@ -13,6 +13,26 @@ fn pr(c: vec2<i32>, n: i32) -> f32 {
   return textureLoad(press_in, c, 0).x;
 }
 
+fn height_at(c: vec2<i32>, n: i32) -> f32 {
+  if (oob(c, n)) { return 0.0; }
+  return sane(textureLoad(wet0_in, c, 0).y, WATER_LIM);
+}
+
+/**
+ * A26 thin-film mobility on one cell face.
+ *
+ * The average is deliberately allowed to include a dry neighbour. This is the
+ * documented fix that makes dry paper a resistive destination rather than an
+ * artificial wall. Dividing by mobility + viscous resistance maps the physical
+ * mobility to a stable 0..1 response without a new threshold or magic speed.
+ */
+fn face_response(h1: f32, h2: f32) -> f32 {
+  let mean_h = 0.5 * (h1 + h2);
+  let mobility = mean_h * mean_h * mean_h;
+  let resistance = max(P.viscosity * P.drag, WET_EPS);
+  return mobility / (mobility + resistance);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let n = i32(P.grid);
@@ -39,10 +59,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (!oob(up, n)) { let wu = textureLoad(wet0_in, up, 0); vN = clamp(wu.w - (p_here - pr(up, n)), -1.0, 1.0); }
 
   var o = vec4<f32>(
-    max(uE, 0.0) * h * P.dt,
-    max(-uW, 0.0) * h * P.dt,
-    max(vS, 0.0) * h * P.dt,
-    max(-vN, 0.0) * h * P.dt,
+    max(uE, 0.0) * h * face_response(h, height_at(r, n)) * P.dt,
+    max(-uW, 0.0) * h * face_response(h, height_at(l, n)) * P.dt,
+    max(vS, 0.0) * h * face_response(h, height_at(dn, n)) * P.dt,
+    max(-vN, 0.0) * h * face_response(h, height_at(up, n)) * P.dt,
   );
 
   if (c.x >= n - 1) { o.x = 0.0; }
