@@ -1,3 +1,84 @@
+# Round 9 — the explosion. Contained on the pigment side, NOT explained.
+
+**Read this first.** Round 8 (the dead `clear()`) is below it.
+
+Bartford's report, with screenshots: a dark blob that "comes out of nowhere" and keeps
+growing, water spots appearing and blooming as perfect circles, `pigment = Infinity`,
+and `water = 1.74e37` with `wet cells = 262144` — every cell in the grid.
+
+## Reproduced
+
+A painting session of 26 strokes with the load and water sliders where he had them.
+It fires within about 25 strokes, roughly one session in three.
+
+## What is established, by measurement
+
+1. **It is a single cell.** Never two. Dumping all eleven textures at the moment the
+   meter blows finds exactly one cell holding ~1e36-1e37, everything else pristine.
+2. **It arrives in one frame.** The meter goes 677 -> 3.92e37 between consecutive
+   frames. Watched for fourteen frames afterwards it does not move: ratio 1.0000
+   every frame. It is not a runaway that grows; it is a value that appears.
+3. **The solver then spreads it.** That is the blob and the blooming circles. The
+   seed is one cell; the physics does the rest, faithfully.
+4. **It is not deterministic.** The same run with the same parameters and the same
+   stroke sequence blew up once and was clean the next time. Adding a full GPU sync
+   every frame makes it much rarer, which is the signature of timing, not formula.
+5. **It is not the arithmetic.** With EVERY fluid pass disabled and only the brush
+   deposit running, it still fires. The segments feeding that deposit were scanned
+   on the CPU at the moment it fired: max pigment 0.0153, max radius 0.45, zero
+   non-finite values. Healthy input, garbage output.
+6. **It is not idle memory decay.** 4800 frames of the full solver on a cleared,
+   empty sheet: zero spontaneous non-zero cells. It requires painting.
+7. **It is not Codex's water charge.** It fires identically at `waterCharge = 0`.
+8. **The bit patterns are not uniform noise.** 0x7de87df5, 0x7de87c32, 0x7e325c65,
+   0x7e438bc1, and once exactly 0x7f800000 (+Infinity). All positive, all clustered
+   just under overflow. Random bits would scatter across exponents and signs.
+9. **The cell moves.** (209,100) twice, then (169,276), (233,212), (361,212),
+   (137,180). Not a fixed address.
+
+## What was done — containment, and it is only containment
+
+`sane()` in `common.wgsl`. Every pass that writes an accumulating field now rejects
+NaN, negatives, and anything past a ceiling six orders of magnitude above a real
+value. A cell holding 1e37 units of pigment is not a large amount of paint, it is
+not paint, so dropping it loses nothing real.
+
+| | blowups per session |
+|---|---|
+| before | 4 in 14 |
+| pigment fields guarded | 4 in 14 — but pigment now clean; all escapes were water |
+| every field guarded | **1 in 16**, water only |
+
+**Pigment — which is what renders as the blob — is fully contained.** Across 16
+sessions of 26 strokes the pigment total never left its physical range (peak 4182.3,
+and an independent CPU sum of the texture agreed to 4181.149).
+
+Physics is untouched by the guards, verified after: a wash laid 165.5792 and settled
+165.5792 (drift 4.6e-5); the drying handoff moved all 165.5792 from wet to dry
+exactly; ink held 2871.05 through a glaze; the wash held 198.1423. Identical to the
+pre-guard numbers.
+
+## Why this is NOT closed
+
+The last water escape passes through a field whose **every writer is guarded**. A
+value that large cannot get past `sane()`, and it is there anyway. So it is not
+entering through any store this code controls — it appears between a guarded write
+and the next read.
+
+`[HYPOTHESIS — NOT PROVEN, do not repeat as fact]` The same symptom is already on
+the record from the Rust/wgpu bench on `main`, quoted in `zero_fill.wgsl`: "a
+nondeterministic 1e37 in the water field that survived several rounds of analysis as
+a phantom instability". Different host language, different codebase, same GPU
+(amd / gcn-4, Polaris), same signature. That points below our code — driver or
+hardware — rather than at the shaders. It has NOT been tested on another GPU, and
+until it has, this is a guess and is labelled one.
+
+**Next, in order:** run the same soak on a different GPU. If it is clean there, this
+is the machine and the guard is the right answer. If it fires there too, the cause is
+ours and the guard is hiding it.
+
+---
+
 # Round 8 — "clear sheet" had stopped clearing, and it took the watercolour with it
 
 **Read this first. Rounds 7 and 6 follow.**

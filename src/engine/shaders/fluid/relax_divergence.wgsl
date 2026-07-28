@@ -34,7 +34,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (oob(c, n)) { return; }
 
   let w0 = textureLoad(wet0_in, c, 0);
-  if (w0.x < 0.5) { textureStore(wet0_out, c, w0); return; }
+  if (w0.x < 0.5) { textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), w0.z, w0.w)); return; }
 
   let delta_c = -XI * dv(c, n);
   let delta_e = -XI * dv(vec2<i32>(c.x + 1, c.y), n);
@@ -42,5 +42,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let nu = w0.z + (delta_c - delta_e);
   let nv = w0.w + (delta_c - delta_s);
-  textureStore(wet0_out, c, vec4<f32>(w0.x, w0.y, clamp(nu, -1.0, 1.0), clamp(nv, -1.0, 1.0)));
+  // Containment (see `sane` in common.wgsl). The film rides through this pass
+  // untouched; a copied field still has to come out sane.
+  textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), clamp(nu, -1.0, 1.0), clamp(nv, -1.0, 1.0)));
 }

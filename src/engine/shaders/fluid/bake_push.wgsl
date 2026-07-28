@@ -32,6 +32,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     b2 = b2 + textureLoad(dry1b_in, c, 0);
   }
 
-  textureStore(dry2a_out, c, a2);
-  textureStore(dry2b_out, c, b2);
+  // Containment (see `sane` in common.wgsl). Every pass that writes an
+  // accumulating field guards it, because the meter and the eye both see the
+  // LAST writer of a frame — guarding only the entry point let the seed
+  // through anywhere downstream of it.
+  textureStore(dry2a_out, c, sane4(a2, PIG_LIM));
+  textureStore(dry2b_out, c, sane4(b2, PIG_LIM));
 }

@@ -67,6 +67,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     g[k] = max(gk, 0.0);
   }
 
-  textureStore(wet1_out, c, vec4<f32>(g[0], g[1], g[2], g[3]));
-  textureStore(wet2_out, c, vec4<f32>(g[4], g[5], g[6], g[7]));
+  // Containment (see `sane` in common.wgsl). This pass writes EVERY cell every
+  // frame, so it is the scrub as well as the barrier: a seed that lands
+  // anywhere is cleared here before the advection can carry it to a neighbour.
+  // That is what stops one cell becoming a spreading blob.
+  textureStore(wet1_out, c, sane4(vec4<f32>(g[0], g[1], g[2], g[3]), PIG_LIM));
+  textureStore(wet2_out, c, sane4(vec4<f32>(g[4], g[5], g[6], g[7]), PIG_LIM));
 }

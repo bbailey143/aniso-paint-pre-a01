@@ -127,8 +127,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
+  // Containment. See `sane` in common.wgsl — this is where the 4e37 seed was
+  // measured entering, with every fluid pass disabled. It is a guard rail, not
+  // a diagnosis: it keeps one bad cell from becoming a growing blob, and it
+  // costs a healthy stroke nothing, because no real deposit comes near PIG_LIM.
+  w0.y = sane(w0.y, WATER_LIM);
+  // The paper's saturation rides through this pass untouched, so it was left
+  // unguarded at first — and that is exactly where the last surviving blowup
+  // landed (wet5.x = 2.98e36). A field being merely COPIED is not a field that
+  // is safe; it still has to come out sane.
+  w5.x = sane(w5.x, WATER_LIM);
   textureStore(wet0_out, c, w0);
-  textureStore(wet1_out, c, glo);
-  textureStore(wet2_out, c, ghi);
+  textureStore(wet1_out, c, sane4(glo, PIG_LIM));
+  textureStore(wet2_out, c, sane4(ghi, PIG_LIM));
   textureStore(wet5_out, c, w5);
 }

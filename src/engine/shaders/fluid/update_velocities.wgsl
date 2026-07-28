@@ -28,7 +28,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let m = w0.x;
   let h = w0.y;
   if (m < 0.5 || h <= WET_EPS) {
-    textureStore(wet0_out, c, vec4<f32>(w0.x, w0.y, 0.0, 0.0));
+    textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), 0.0, 0.0));
     return;
   }
 
@@ -64,5 +64,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   nu = clamp(nu, -1.0, 1.0);   // never move more than one cell per step
   nv = clamp(nv, -1.0, 1.0);
 
-  textureStore(wet0_out, c, vec4<f32>(w0.x, w0.y, nu, nv));
+  // Containment (see `sane` in common.wgsl). The film rides through this pass
+  // untouched; a copied field still has to come out sane.
+  textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), nu, nv));
 }

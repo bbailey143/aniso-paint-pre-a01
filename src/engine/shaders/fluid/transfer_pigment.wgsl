@@ -50,8 +50,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  textureStore(wet1_out, c, vec4<f32>(g[0], g[1], g[2], g[3]));
-  textureStore(wet2_out, c, vec4<f32>(g[4], g[5], g[6], g[7]));
-  textureStore(wet3_out, c, vec4<f32>(d[0], d[1], d[2], d[3]));
-  textureStore(wet4_out, c, vec4<f32>(d[4], d[5], d[6], d[7]));
+  // Containment (see `sane` in common.wgsl). Every pass that writes an
+  // accumulating field guards it, because the meter and the eye both see the
+  // LAST writer of a frame — guarding only the entry point let the seed
+  // through anywhere downstream of it.
+  textureStore(wet1_out, c, sane4(vec4<f32>(g[0], g[1], g[2], g[3]), PIG_LIM));
+  textureStore(wet2_out, c, sane4(vec4<f32>(g[4], g[5], g[6], g[7]), PIG_LIM));
+  textureStore(wet3_out, c, sane4(vec4<f32>(d[0], d[1], d[2], d[3]), PIG_LIM));
+  textureStore(wet4_out, c, sane4(vec4<f32>(d[4], d[5], d[6], d[7]), PIG_LIM));
 }

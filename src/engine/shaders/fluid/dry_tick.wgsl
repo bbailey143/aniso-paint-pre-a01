@@ -41,6 +41,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var justDried = 0.0;
   if (w0.x >= 0.5 && m < 0.5) { justDried = 1.0; }
 
-  textureStore(wet0_out, c, vec4<f32>(m, hf, w0.z, w0.w));
-  textureStore(wet5_out, c, vec4<f32>(s, w, w5.z, justDried));
+  // Containment for the water side (see `sane` in common.wgsl). One catch put
+  // exactly +Infinity (0x7f800000) into a water cell, so the film and the
+  // paper's saturation get the same guard the pigment does. This pass writes
+  // every cell every frame, so it scrubs as well as blocks.
+  textureStore(wet0_out, c, vec4<f32>(m, sane(hf, WATER_LIM), w0.z, w0.w));
+  textureStore(wet5_out, c, vec4<f32>(sane(s, WATER_LIM), w, w5.z, justDried));
 }

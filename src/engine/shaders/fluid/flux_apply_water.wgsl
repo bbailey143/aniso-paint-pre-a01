@@ -31,5 +31,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var m = w0.x;
   if (h_new > WET_EPS) { m = 1.0; }
 
-  textureStore(wet0_out, c, vec4<f32>(m, h_new, w0.z, w0.w));
+  // Containment (see `sane` in common.wgsl). Every pass that writes an
+  // accumulating field guards it, because the meter and the eye both see the
+  // LAST writer of a frame — guarding only the entry point let the seed
+  // through anywhere downstream of it.
+  textureStore(wet0_out, c, vec4<f32>(m, sane(h_new, WATER_LIM), w0.z, w0.w));
 }
