@@ -140,6 +140,10 @@ ink-traffic switch. Chrome compiled and exercised the shader on AMD/Polaris with
 null validation errors. This checkout still has unrelated untracked `bench/`,
 `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`, and
 `process_video.py`; do not touch them.
+**Git state:** E11/E12 are committed locally as `d712903`. A push to
+`https://github.com/bbailey143/aniso-paint-pre-a01` / `webgpu-test` was blocked
+pending Bartford's explicit authorization to publish these project changes. Do not
+claim the NVIDIA computer can pull this milestone until that push succeeds.
 
 ## Current objective
 
