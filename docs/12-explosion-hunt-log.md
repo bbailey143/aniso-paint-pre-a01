@@ -189,10 +189,18 @@ All wet-band textures are **rgba32float** (D6 — half-float lost 6.5% of pigmen
 4. **Non-deterministic on the current tree.** Identical run, identical parameters,
    identical stroke sequence: blew up once, clean the next time. Adding a full GPU
    sync every frame makes it markedly rarer.
-5. **It is NOT the arithmetic of the fluid passes.** With **every** pass in `skip`
-   (only the brush deposit running) it still fires. The CPU-side stroke segments were
-   scanned at the instant it fired: max pigment `0.0153`, max radius `0.45`, **zero**
-   non-finite values. Healthy input, garbage output.
+5. ~~**It is NOT the arithmetic of the fluid passes.** With every pass in `skip`
+   (only the brush deposit running) it still fires.~~ **RETRACTED at E2.** On the
+   baseline the explosion happens during IDLE frames with no deposit at all, which
+   points squarely AT the fluid passes. The original observation was made on the
+   guarded current tree at a 1-in-3 rate and was probably a coincidence of timing.
+   Re-run it on the baseline before trusting it. (The sub-finding that the CPU-side
+   stroke segments were all finite and small at the firing instant still stands.)
+5b. **It fires during idle frames, brush off the paper** (E2): saturation healthy at
+   0.0896 at the end of a stroke, 5.2e35 twenty frames later. ~x65 per frame.
+5c. **It is the paper saturation field `s` (`wet5.x`) that goes first** (E1): 738 bad
+   cells, all in that one channel, in a coherent block pinned to the canvas edge,
+   while pigment was still perfectly healthy at 845.6.
 6. **It requires painting.** 4800 frames of the full solver on a cleared, empty sheet
    produced **zero** spontaneous non-zero cells. So it is not idle memory decay.
 7. **It predates the Codex session.** See E0 below. Baseline `4b1f747`: **24/24**.
@@ -214,7 +222,7 @@ All wet-band textures are **rgba32float** (D6 — half-float lost 6.5% of pigmen
 |---|---|
 | Codex's ink band / water charge / tilt picker | baseline `4b1f747` fires 24/24 (E0) |
 | The new water-charge slider specifically | fires identically at `waterCharge = 0` |
-| Fluid-pass arithmetic (advection, transfer, capillary, rewet, drying) | fires with all of them in `skip` |
+| ~~Fluid-pass arithmetic~~ | **RETRACTED at E2 — do not treat as excluded.** The idle-frame onset points at these passes. |
 | Bad CPU-side stroke segments | scanned at the firing instant, all finite and small |
 | Idle VRAM decay | 4800 idle frames on an empty sheet, zero events |
 | A slow numerical runaway | value appears in one frame, then frozen for 14 frames |
@@ -290,6 +298,88 @@ Codex session moved the conservation panel from behind the palette to the lower 
 The fault did not arrive; the instrument did.
 
 ---
+
+### E1 — Where does it land on the baseline? (2026-07-28)
+
+**Purpose.** On the current tree the fault always presented as ONE cell. Before
+hunting a mechanism, establish what it actually looks like on the deterministic
+baseline, where it fires every time.
+
+**Method.** Ran the section 3.3 session on `4b1f747` (port 5174). Sampled the gauge
+once per stroke — coarse on purpose, see gotcha 8. On the first stroke that tripped,
+dumped **all eleven textures** and listed every cell that was non-finite or > 1e6.
+
+**Raw result.** First bad stroke: **4** (0-indexed). Gauge trail:
+
+| stroke | pigment | water | wet cells |
+|---|---|---|---|
+| 0 | 169.526 | 127.144 | 4535 |
+| 1 | 337.784 | 253.338 | 11000 |
+| 2 | 507.838 | 380.879 | 18748 |
+| 3 | 677.395 | 508.046 | 26025 |
+| **4** | 845.636 (healthy!) | **3.22e16** | 35704 |
+
+**738 bad cells. Every single one in `wet5` channel 0 — the paper saturation `s`.**
+No other texture, no other channel. Confined to a near-solid rectangle
+**x 94–132 (39 columns) × y 0–23 (24 rows)**, hard against the **top edge** of the
+canvas. Values ramp smoothly along x: 1.80e6, 1.50e7, 1.06e8, 6.50e8, 3.46e9 —
+roughly ×6–7 per cell. Max 5.13e14, median 1.19e11.
+
+**What it proves.**
+- On the baseline this is **not** a single random cell. It is a **coherent, spatially
+  smooth, exponentially ramped block** in ONE field (`s`), pinned to a boundary.
+  That is the signature of a **numerical instability**, not memory corruption.
+- Pigment was still perfectly healthy (845.6) at the moment water had already reached
+  3.2e16. **Water/saturation goes first.** The pigment blowups seen on the current
+  tree are downstream.
+- The trigger stroke was at y=268; the damage is at y=0–23. **It is nowhere near the
+  brush.**
+
+**What it does NOT prove.** It does not show where the block STARTED — the dump is
+after the stroke plus 20 idle frames, so this is the state after it had time to
+spread. E2 answers that. It also does not yet reconcile with the earlier
+current-tree observation that the fault fired with every fluid pass in `skip` (only
+the deposit running); that observation is now **suspect** and should be re-run on the
+baseline before being trusted.
+
+---
+
+### E2 — When does it start? (2026-07-28)
+
+**Purpose.** E1 showed the aftermath. Find the moment of onset, and whether it grows
+or appears.
+
+**Method.** Same session on the baseline, but dump `wet5` and report the peak
+saturation and its location **twice per stroke** — immediately after the stroke ends,
+and again after the 20 idle settle frames. Normal per-cell `s` is bounded by the
+paper's capacity and runs < 1, so cells over 2 are already wrong and are counted.
+
+**Raw result.**
+
+| stroke | peak `s` after stroke | cells>2 | peak `s` after 20 idle frames | cells>2 |
+|---|---|---|---|---|
+| 0 | 0.09062 | 0 | 0.077316 | 0 |
+| 1 | 0.090165 | 0 | 0.076905 | 0 |
+| 2 | 0.091188 | 0 | 0.077782 | 0 |
+| 3 | 0.09088 | 0 | 0.077524 | 0 |
+| **4** | **0.089571** | **0** | **5.2061e+35 at (273,228)** | **545** |
+
+**What it proves. This is the most important entry in the log so far.**
+- The field is **completely healthy at the end of stroke 4** (0.0896, zero bad cells)
+  and is at 5.2e35 twenty frames later. **The explosion happens during IDLE frames,
+  with the brush off the paper and no segments being deposited.**
+- Growth is ~1e36 over 20 frames ≈ **×65 per frame**. Violent, and exponential.
+- Therefore it is **NOT the brush deposit**, and not any stroke input.
+- Peak sits at (273,228) here vs the x94–132/y0–23 block in E1, i.e. the location
+  differs between the onset frame and the aftermath — consistent with something that
+  starts somewhere and floods outward.
+
+**What it does NOT prove.** It does not identify the pass. E3 bisects that. Note the
+direct contradiction with the earlier current-tree claim that it fires with all
+passes skipped — **that claim is now formally in doubt** and is flagged in section 7.
+
+**Consequence for section 6:** fact 5 ("it is not the arithmetic of the fluid
+passes") is RETRACTED as of E2 — see the strike in section 6.
 
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
 
