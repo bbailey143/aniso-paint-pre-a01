@@ -34,6 +34,40 @@ html, body {
   cursor: crosshair;
 }
 
+/* Tablet pens often suppress the operating-system cursor while hovering or
+   drawing. This locator follows pen PointerEvents and remains visible through
+   contact; mouse users keep the native crosshair they already had. */
+#pen-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 1px solid rgba(24, 31, 38, 0.92);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(245, 247, 250, 0.92);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(1);
+  transition: opacity 0.06s linear, transform 0.06s linear;
+}
+#pen-cursor::before,
+#pen-cursor::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(24, 31, 38, 0.92);
+  box-shadow: 0 0 0 0.5px rgba(245, 247, 250, 0.92);
+  transform: translate(-50%, -50%);
+}
+#pen-cursor::before { width: 8px; height: 1px; }
+#pen-cursor::after { width: 1px; height: 8px; }
+#pen-cursor.on { opacity: 1; }
+#pen-cursor.down { transform: scale(0.82); }
+
 .panel {
   position: fixed;
   background: var(--panel);

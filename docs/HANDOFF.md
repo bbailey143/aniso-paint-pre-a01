@@ -133,41 +133,38 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-28 (stale-paint drying investigation)
+**Last updated:** 2026-07-28 (brush water, tablet cursor, level creep investigation)
 **By:** Codex
-**Build state:** `npm.cmd run build` passes with the shared water/paper and
-below-mask drying corrections. Chrome compiled and exercised the shaders on
-AMD/Polaris. Two identical controlled thin-water runs now finish evaporation with
-`wet cells = 0`, and two heavier runs conserve and hand pigment into the dry layer;
-see `docs/13-water-paper-behavior-log.md` E3. This checkout still has unrelated
+**Build state:** `npm.cmd run build` passes with the shared water/paper,
+below-mask drying, added-water, and pen-cursor corrections. Chrome exercised the
+page on AMD/Polaris. Two identical strokes now keep pigment at 100% added water;
+two identical level tests show wet-cell creep without directional centre movement.
+See `docs/13-water-paper-behavior-log.md` E4. This checkout still has unrelated
 untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`,
 and `process_video.py`; do not touch them.
 **Git state:** Bartford authorized publication and Codex pushed E11/E12 through
-`0bf9470` to `origin/webgpu-test`. The water/paper milestone is committed at the
-current local `HEAD`, but its push was rejected by the publication gate pending
-explicit approval for this specific payload. The listed untracked files remain
-unrelated and must not be touched.
+`0bf9470` to `origin/webgpu-test`. The three local behavior milestones through
+the current `HEAD` are not pushed. E4 is committed at the current local `HEAD`.
+The listed untracked files remain unrelated and must not be touched.
 
 ## Current objective
 
-Correct the shared water/paper foundation before feature work. Bartford reports that
-tilted water slides as though there is almost no surface resistance or absorption,
-and that a wet area behaves too much like a wall at its dry boundary. The desired
-result is physical: enough surface water must cross onto dry paper under gravity to
-form drips and blooms, while sizing and pore radius govern how quickly each sheet
-absorbs it.
+Correct and hand-check the shared water/paper foundation before feature work. The
+current pass covers brush dilution, tablet location feedback, absorption, drying,
+and distinguishing downhill film travel from directionless capillary creep.
 
 The NVIDIA E13 discriminator for the separate explosion fault is explicitly
 **postponed at Bartford's request**, not cancelled. P8 polish remains on hold.
 
 **Active evidence log for this work:** `docs/13-water-paper-behavior-log.md`.
 
-**Checkpoint:** Bartford's stale-paint recording is diagnosed and the independent
-drying defect is corrected. The clip records one AMD transient water-gauge jump
-`104.01 → 1.0244241027175636e+35 → 104.01`; that belongs to the postponed
-NVIDIA/driver discriminator and was not relabelled as a drying defect. The current
-drying edits and E3 log are uncommitted. Preserve the committed water/paper
-foundation at `c9791ce`, and do not begin the postponed NVIDIA test.
+**Checkpoint:** E4 is implemented and measured. Added water no longer replaces
+pigment; rinse is the clean-water-only action. A custom pen locator follows pen
+hover/contact while mouse keeps its native crosshair. Repeated controlled testing
+shows wet cells may keep expanding level through symmetric fibre creep while the
+water centre remains stationary to under one millionth of a cell. Bartford's
+physical tablet and hand remain the artist acceptance gate. Do not begin the
+postponed NVIDIA test.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -297,19 +294,19 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Bartford hand-checks drying and bloom timing
+## NEXT ACTION — Bartford verifies the three corrections by hand
 
-1. On Cold Press, paint a damp wash and a deep puddle at the default dry setting.
-   The damp wash should lose its wet sheen and stop moving; the puddle should remain
-   workable longer, then leave dry pigment rather than permanent water.
-2. Repeat once at maximum dry. The conservation water number must fall all the way
-   to zero even after `wet cells` reaches zero. Pigment should remain visible and its
-   conservation number should hold because pigment dries; it does not evaporate.
-3. If the shape is right but timing is wrong, calibrate the existing
-   `[UNVERIFIED]` watercolor evaporation row against the 1–5 minute acceptance
-   target. Do not add a watercolor-only shader branch.
-4. Keep the NVIDIA E13 experiment postponed until Bartford finishes this behavior
-   pass. The recorded one-frame jump remains open and separate.
+1. Refresh port 5175. With Ultramarine selected, compare water at 0% and 100%;
+   both strokes must be blue, while 100% is visibly wetter/more mobile. Rinse must
+   still produce a clean-water-only brush.
+2. Hover and draw with the physical tablet. The ring-and-cross pen locator must
+   remain visible before contact and during the stroke.
+3. Tilt a wet wash, then level it with drying near minimum. Its fuzzy wet boundary
+   may continue broadening, but a downhill tongue must not keep marching as though
+   gravity were still applied. Raising “drying” should arrest both.
+4. If the levelled puddle visibly keeps travelling in one direction rather than
+   broadening around its existing shape, capture that isolated case for a
+   film-centre timing correction. Keep NVIDIA E13 postponed.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration
 

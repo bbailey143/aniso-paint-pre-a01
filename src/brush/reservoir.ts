@@ -48,20 +48,21 @@ export class Reservoir {
   }
 
   /**
-   * Dip the brush. `load` preserves the existing brush fullness; `waterCharge`
-   * then replaces colour with clean water in a single, bounded mix. At zero it
-   * is exactly the historical pigment-loaded brush. At one it is a full,
-   * pigment-free water brush.
+   * Dip the brush. `load` is the normal fluid already present in the paint;
+   * `waterCharge` adds clean water up to the tuft's full fluid holding.
+   *
+   * Added water must not silently remove pigment. A clean-water-only brush is
+   * the explicit rinse action; this control changes dilution and flow while
+   * leaving the selected pigment charge intact.
    */
   charge(mix: Float32Array, load = 1, waterCharge = 0) {
     const water = Math.min(1, Math.max(0, load + (1 - load) * waterCharge));
-    const pigment = 1 - Math.min(1, Math.max(0, waterCharge));
     const n = this.bristles * this.segments;
     for (let i = 0; i < n; i++) {
       const cap = this.capacity[i];
       this.water[i] = cap * water;
       for (let k = 0; k < 8; k++) {
-        this.pigment[i * 8 + k] = cap * mix[k] * pigment;
+        this.pigment[i * 8 + k] = cap * mix[k];
       }
     }
   }

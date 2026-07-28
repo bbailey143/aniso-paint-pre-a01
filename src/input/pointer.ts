@@ -41,6 +41,8 @@ export interface PointerCallbacks {
   onStrokeEnd?(s: StylusSample): void;
   /** Every sample including hover (down=false), after per-sample derivation. */
   onSample?(s: StylusSample): void;
+  /** Pointer left the painting surface while not captured in a stroke. */
+  onPointerLeave?(pointerType: string): void;
 }
 
 export class PointerInput {
@@ -148,5 +150,6 @@ export class PointerInput {
   private onLeave = (e: PointerEvent) => {
     if (e.pointerId === this.activeId) return; // captured strokes keep going
     this.prev = null;
+    this.cb.onPointerLeave?.(e.pointerType);
   };
 }

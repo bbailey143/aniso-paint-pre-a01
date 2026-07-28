@@ -146,3 +146,59 @@ artist-calibrated or matches the 1–5 minute acceptance range. The one-frame
 `1.0244e35` jump is the separate AMD/Polaris transient already tracked in
 `docs/12`; this drying correction does not close it, and the postponed NVIDIA
 discriminator is still needed after the behavior pass.
+
+## E4 — Added water keeps color; level creep is directionless (2026-07-28)
+
+**Purpose.** Diagnose Bartford's second behavior recording: 100% water charge
+removed all pigment, a tablet pen had no visible cursor, and wet-cell count kept
+growing after the tilted sheet returned level.
+
+**Method.** Inspect `20260728-2234-27.0103556.mp4`, trace brush charging and pointer
+events, then correct and live-test those paths. Run two identical painted-stroke
+comparisons at 0% versus 100% added water. Run two identical tilt-then-level tests
+with evaporation disabled; measure wet-cell count and the absorbed-water centre.
+
+**Raw result.**
+
+- The 90.8-second, 1920×994 recording confirms all three reports. In the latter
+  section, the board returns level while water remains about `9092.3`, drying is
+  at minimum, and wet cells continue rising until drying is increased; water then
+  falls to `0` and wet cells follow to `0`.
+- `Reservoir.charge()` explicitly multiplied pigment by
+  `1 - waterCharge`; at 100% it therefore produced a pigment-free brush. This
+  contradicted the UI wording “add clean water” and duplicated the explicit rinse
+  action.
+- After correction, reservoir totals at 0% versus 100% added water were:
+  water `163.8646183 → 273.1076927`, while pigment stayed exactly
+  `273.1076927`.
+- Two identical round-brush strokes each emitted `4414` footprint segments.
+  Run 1 laid pigment `72.2355576 / 72.2355499` at 0% / 100% added water;
+  run 2 laid `72.2355576 / 72.2355576`. Water increased from
+  `43.3413382 / 43.3413372` to `72.2355480 / 72.2355547`.
+- Windows/browser pen input can hide the operating-system cursor. A new
+  PointerEvent-driven pen locator was exercised with a synthetic pen-hover event:
+  it appeared at the supplied `400px / 300px` location with computed opacity `1`.
+  A headed screenshot on `webgpu: amd / gcn-4` shows the ring-and-cross locator
+  clearly on light paper. Mouse input retains its native crosshair.
+- In each of two identical controlled level tests, absorbed water was
+  `7.8808665` at leveling and remained `7.8808651–7.8808675` with evaporation
+  off. Wet cells grew `836 → 844 → 879 → 923 → 947` over 100 level steps, but
+  the water centre stayed at approximately `260.012044 / 189.094215`; its total
+  movement was below `0.000001` cell. Capillary alarm was `0` both times.
+- `npm.cmd run build` passed before live testing. The updated page ran on
+  `webgpu: amd / gcn-4`.
+
+**What it proves.** The 100%-water pigment loss was incorrect control behavior and
+is fixed: added water now increases fluid without erasing color, while rinse remains
+the deliberate clean-water-only action. Pen location is now rendered by the app
+instead of depending on the tablet driver's cursor. Continued wet-cell growth after
+leveling can be valid fibre creep: in the repeated controlled case the boundary grew
+while the water centre did not drift at all. The renamed “drying” control is the
+evaporation-speed control Bartford inferred it to be.
+
+**What it does NOT prove.** A synthetic pen event cannot prove every tablet driver
+delivers hover events; Bartford's physical tablet remains the acceptance test.
+Wet-cell growth alone does not certify every visible run as correct: if a leveled
+deep surface puddle keeps travelling directionally for too long, that requires a
+separate film-centre timing test. The evaporation and absorption constants remain
+`[UNVERIFIED]` pending real-paper timing calibration.

@@ -254,12 +254,12 @@ export class Palette {
           <span>load</span>
           <input id="loading" type="range" min="0.02" max="1" step="0.02" />
         </label>
-        <label class="loading-row wet-only" title="Add clean water to the brush. At 100%, it lays water with no pigment.">
+        <label class="loading-row wet-only" title="Add clean water without removing pigment. Use rinse for a clean-water-only brush.">
           <span>water</span>
           <input id="water-charge" type="range" min="0" max="1" step="0.01" />
         </label>
         <label class="loading-row">
-          <span>dry</span>
+          <span title="Evaporation speed">drying</span>
           <input id="evap" type="range" min="0" max="0.004" step="0.0001" />
         </label>
         <section class="tilt-control" aria-label="paper tilt">

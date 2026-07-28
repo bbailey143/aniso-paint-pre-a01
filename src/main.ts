@@ -34,6 +34,13 @@ async function main() {
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
   const engine = new CanvasEngine(gpu);
   const stroke = new StrokeEngine(BRUSHES[0], 1.0);
+  // Windows commonly hides the system cursor while a tablet pen is in range or
+  // touching down. Keep a canvas-drawn locator driven by the same PointerEvent
+  // samples as the brush so pen hover and painting never become blind.
+  const penCursor = document.createElement('div');
+  penCursor.id = 'pen-cursor';
+  penCursor.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(penCursor);
   // Palette construction immediately announces its initial mix. Keep this
   // startup value outside the palette object so that first announcement can
   // charge the brush before `palette` itself has been assigned.
@@ -108,6 +115,15 @@ async function main() {
     },
     onStrokeEnd() { stroke.end(); },
     onSample(s: StylusSample) {
+      if (s.pointerType === 'pen') {
+        const rect = canvas.getBoundingClientRect();
+        penCursor.style.left = `${rect.left + s.x}px`;
+        penCursor.style.top = `${rect.top + s.y}px`;
+        penCursor.classList.add('on');
+        penCursor.classList.toggle('down', s.down);
+      } else {
+        penCursor.classList.remove('on', 'down');
+      }
       smoothV = smoothV * 0.8 + s.velocity * 0.2;
       setText('s-type', s.pointerType);
       setText('s-pressure', s.down || s.pointerType !== 'mouse' ? s.pressure.toFixed(3) : '—');
@@ -118,6 +134,9 @@ async function main() {
       if (!s.down) return;
       const g = toGrid(s);
       if (g) stroke.add(g.gx, g.gy, s);
+    },
+    onPointerLeave(pointerType) {
+      if (pointerType === 'pen') penCursor.classList.remove('on', 'down');
     },
   });
 

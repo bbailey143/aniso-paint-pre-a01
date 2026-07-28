@@ -36,7 +36,7 @@ export class StrokeEngine {
   /** The mix currently on the brush, and how heavily it was charged. */
   private mix = new Float32Array(8);
   private loading = 0.6;
-  /** 0 = normal colour charge; 1 = full clean-water charge. */
+  /** Extra clean water added to the colour charge, 0..1. */
   private waterCharge = 0;
 
   /** Cells per solve step — never let the tuft jump more than this. */
