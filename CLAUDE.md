@@ -1,5 +1,12 @@
 # CLAUDE.md — aniso-paint (webgpu-test branch)
 
+> **START AT [`docs/HANDOFF.md`](docs/HANDOFF.md).** Several AI models work this repo
+> in relay — Claude, Codex and Gemini take turns as credits run out, often mid-task.
+> That file is the baton: the protocol every model follows, and the current state with
+> the exact next action. Read it, then this file, then whichever log it points you at.
+> **Update its Part B before you start work, not after** — a session can be cut off at
+> any moment, and anything saved "for the end" will never be written.
+
 Read this before doing anything else on this branch.
 
 ## What this is
