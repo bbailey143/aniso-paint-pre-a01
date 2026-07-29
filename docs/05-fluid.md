@@ -96,14 +96,6 @@ the boundary is replenished from the interior → outward flow carrying pigment.
 implements it by lowering water pressure near the mask edges: Gaussian-blur the wet
 mask with a K×K kernel, then `p ← p − η(1 − M′)M`.
 
-`[BUILD — E8]` In this implementation the scheduling mask also contains absorbed
-water, so the pinned edge must instead come from continuous **surface-film
-coverage**. A binary film threshold exposed the 512-cell grid, and an equal-weight
-square blur produced dotted box rings when strengthened. The live path therefore
-uses a compact circular, centre-weighted kernel. The remaining visible cell texture
-is the current 512² watercolor pigment/fluid field under the 1024² document, not a
-renderer outline; eliminating it fully is a later resolution/storage decision.
-
 ## A26 grafts
 
 - **`cos(α)` diffusion factor.** Multiply diffusion by the cosine of canvas tilt; at
