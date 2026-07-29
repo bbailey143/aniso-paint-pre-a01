@@ -15,6 +15,11 @@ export interface ReservoirDef {
   capacityBelly: number;
   /** Capacity at the tip. */
   capacityTip: number;
+  /**
+   * Extra nominal capacities carried as exterior water at maximum water charge.
+   * Above 1 lets the control reach a deliberately flooded/dripping brush.
+   */
+  waterOvercharge: number;
   /** Fraction of the reservoir's holding that transfers to canvas per contact step. */
   downRate: number;
   /** Fraction of canvas holding that transfers back up (lifting/scrubbing). */

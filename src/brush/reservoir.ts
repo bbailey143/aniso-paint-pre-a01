@@ -48,21 +48,30 @@ export class Reservoir {
   }
 
   /**
-   * Dip the brush. `load` is the normal fluid already present in the paint;
-   * `waterCharge` adds clean water up to the tuft's full fluid holding.
+   * Dip the brush. `load` is how much paint is in the tuft; `waterCharge` is
+   * clean water added on top of that paint charge.
    *
    * Added water must not silently remove pigment. A clean-water-only brush is
    * the explicit rinse action; this control changes dilution and flow while
    * leaving the selected pigment charge intact.
+   *
+   * `[UNVERIFIED — artist-control mapping]` `capacity` describes the tuft's
+   * normal internal paint holding. A freshly flooded brush can also carry water
+   * around the outside of the hairs. `waterOvercharge` is that brush-specific
+   * exterior holding in nominal capacities. Keeping it in the same reservoir
+   * field is the smallest model that lets "load" and "water" remain independent
+   * physical controls; a later exterior-film model can split the storage without
+   * changing their meaning.
    */
   charge(mix: Float32Array, load = 1, waterCharge = 0) {
-    const water = Math.min(1, Math.max(0, load + (1 - load) * waterCharge));
+    const paintLoad = Math.min(1, Math.max(0, load));
+    const extraWater = Math.min(1, Math.max(0, waterCharge));
     const n = this.bristles * this.segments;
     for (let i = 0; i < n; i++) {
       const cap = this.capacity[i];
-      this.water[i] = cap * water;
+      this.water[i] = cap * (paintLoad + extraWater * this.def.waterOvercharge);
       for (let k = 0; k < 8; k++) {
-        this.pigment[i * 8 + k] = cap * mix[k];
+        this.pigment[i * 8 + k] = cap * mix[k] * paintLoad;
       }
     }
   }

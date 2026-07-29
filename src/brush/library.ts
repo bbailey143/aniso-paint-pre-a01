@@ -28,6 +28,9 @@ export const BRUSHES: BrushDef[] = [
     reservoir: {
       capacityBelly: 2.6,   // the belly holds far more than the tip
       capacityTip: 0.6,
+      // [UNVERIFIED] Exterior water carried by a flooded sable, in nominal
+      // reservoir capacities. Maximum water is intentionally a dripping brush.
+      waterOvercharge: 3.0,
       downRate: 0.012,   // per CELL TRAVELLED now, not per step — see reservoir.ts
       upRate: 0.10,
     },
@@ -51,6 +54,9 @@ export const BRUSHES: BrushDef[] = [
     reservoir: {
       capacityBelly: 2.3,
       capacityTip: 0.55,
+      // [UNVERIFIED] Same flooded-water range as the round until reference
+      // brush tests justify a different exterior holding for the flat.
+      waterOvercharge: 3.0,
       downRate: 0.013,   // per CELL TRAVELLED now, not per step — see reservoir.ts
       upRate: 0.12,
     },

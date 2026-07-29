@@ -268,3 +268,82 @@ with the real-paper reference plates. These measurements do not say that the
 visible crossing speed or final bloom shape is ideal. A synthetic pen event also
 cannot certify a particular tablet driver's hover stream; Bartford's physical
 tablet remains the final cursor test.
+
+## E6 — Paint load and added water now produce distinct washes (2026-07-29)
+
+**Purpose.** Diagnose Bartford's recording in which strokes made with different
+water-slider values looked and travelled alike, including while the sheet was
+tilted.
+
+**Method.** Inspect `20260729-0043-57.8200406.mp4`. Trace the UI through
+`StrokeEngine.charge()` and `Reservoir.charge()`. At fixed Round Sable, load
+`0.6`, pressure `0.75`, Cold Press, Dioxazine Purple, full downhill tilt, and
+normal drying `0.0015`, measure brush output and GPU pigment travel at water
+`0`, `0.25`, `0.5`, `0.75`, and `1`. Hold the adaptive controller at the same
+starting state and replay every accepted GPU comparison twice. Render the five
+revised strokes together for a headed visual check.
+
+**Raw result.**
+
+- The 25.1947-second, 1920×1080 clip shows two groups of similar purple strokes.
+  In the saved tilted portion, changing the water slider does not create a clear
+  progression in the visible downhill shapes.
+- The old relationship was
+  `water = load + (1 - load) × waterCharge`, while pigment ignored load and
+  always filled its entire nominal capacity. At load `0.6`, the five laid
+  water/pigment ratios were only `0.6, 0.7, 0.8, 0.9, 1.0`. In two exact GPU
+  runs, minimum-to-maximum water changed the pigment centre shift only
+  `2.9719165 → 3.9865746` cells after 120 full-tilt steps. The numerical frontier
+  changed `24 → 42` cells, but most of that was a faint trace; the dense visible
+  stroke remained nearly the same.
+- `load` now scales the normal paint charge—both its pigment and base water.
+  Added water is independent and does not remove pigment. A brush-row
+  `waterOvercharge` value describes exterior water carried around a flooded
+  tuft; both current sable rows provisionally use `[UNVERIFIED] 3.0` nominal
+  capacities at maximum water.
+- At load `0.6`, the revised laid pigment remained `35.1366568` at all five
+  water settings, while laid water was:
+
+| water control | laid water | water / pigment |
+|---:|---:|---:|
+| `0` | `35.1366568` | `1.0000000` |
+| `0.25` | `79.0574781` | `2.2500000` |
+| `0.5` | `122.9782967` | `3.4999999` |
+| `0.75` | `166.8991171` | `4.7499999` |
+| `1` | `210.8199363` | `5.9999999` |
+
+  The brush-output comparison reproduced to every printed digit on its second
+  run.
+- Two exact live GPU replays produced:
+
+| water | initial surface film | film after 120 tilt steps | pigment frontier advance | pigment-centre shift |
+|---:|---:|---:|---:|---:|
+| `0` | `51.2351007` | `0` | `24` | `2.9719165` |
+| `0.25` | `118.1941295` | `0` | `46` | `4.3552279` |
+| `0.5` | `185.5099982` | `0.8553973` | `48` | `4.8328096` |
+| `0.75` | `252.8292321` | `12.0636514` | `50` | `5.0614560` |
+| `1` | `320.1490995` | `38.2750767` | `50` | `5.1754824` |
+
+  Every capillary alarm was `0`.
+- The headed five-stroke render shows increasingly broad and persistent downhill
+  fringes from ordinary paint to the flooded maximum. The maximum remains visibly
+  wet after the lower settings have soaked/dried.
+- Load `0.2 / 0.6 / 1` now gives matching normal water and pigment totals
+  `54.6215389 / 163.8646183 / 273.1076927`. Rinse still returns pigment `0`
+  with water `273.1076927`.
+- `npm.cmd run build` passed. Chrome ran the final source on
+  `webgpu: amd / gcn-4` with no page, shader, or WebGPU error.
+
+**What it proves.** The report was real: the old controls compressed the useful
+water range and made load semantically ineffective for pigment. Load and water
+are now independent shared brush quantities. Zero water is an ordinary paint
+charge; maximum water is a deliberately flooded brush that stays wetter and
+develops a broader downhill wash, without erasing its pigment. The range is a
+brush data property rather than a watercolor-only engine branch.
+
+**What it does NOT prove.** `waterOvercharge = 3.0` is not a measured sable
+constant and remains `[UNVERIFIED]`. The upper three settings approach the
+solver's maximum downhill pigment-front speed; their largest difference is
+retained water and fringe breadth rather than proportionally greater travel.
+Bartford's hand test decides whether the five visible steps are sufficiently
+distinct and whether the maximum carries too much or too little water.
