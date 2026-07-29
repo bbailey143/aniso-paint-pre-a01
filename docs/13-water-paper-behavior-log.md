@@ -347,3 +347,89 @@ solver's maximum downhill pigment-front speed; their largest difference is
 retained water and fringe breadth rather than proportionally greater travel.
 Bartford's hand test decides whether the five visible steps are sufficiently
 distinct and whether the maximum carries too much or too little water.
+
+## E7 — Shared wet-layer resistance, gravity response, and drying optics (2026-07-29)
+
+**Purpose.** Correct Bartford's report that a new wet stroke glides down an
+existing wet wash at essentially the same speed as it does over dry paper, that
+maximum tilt makes every film fall too quickly, and that drying does not visibly
+lighten watercolor or leave a concentrated rim.
+
+**Method.** Review the reported `0:36–0:52` passage, trace the medium row through
+`UpdateVelocities`, `FlowOutward`, `DryTick`, and `Composite`, and keep every new
+control in the shared wet-medium property surface. Use one repeatable direct
+ultramarine stroke on Cold Press, with a pure-water underlayer for the wet case.
+Measure pigment centre, breadth, frontier, film, water, pigment, rendered centre
+RGB, rim/interior concentration, and the post-capillary alarm. Pause the normal
+animation and replay every accepted comparison twice on AMD/Polaris.
+
+**Raw result.**
+
+- Before the correction, a 120-step full-tilt stroke shifted `7.8499 / 8.0092`
+  cells over dry paper and `7.9063 / 7.9129` cells when its lower end overlapped
+  a pre-wet wash. The underlying wetness was effectively invisible to motion.
+- The first proposed row (`gravityResponse = 0.12`,
+  `wetLayerDrag = 0.18`) was rejected. In the corrected full-overlap instrument,
+  the extra depth still dominated: dry-underlayer travel was
+  `7.2979 / 7.3703`, while wet-underlayer travel increased to
+  `8.8792 / 8.9256`.
+- The accepted shared relationship uses the local combined wet load
+  `(absorbed + surface water) / paper capacity` to add resistance. The
+  provisional watercolor row is now `[UNVERIFIED]`:
+  `drag = 0.06`, `gravityResponse = 0.03`, `wetLayerDrag = 0.55`, and
+  `edgeDarkening = 0.045`. The same shader and properties are available to
+  every future wet-medium row.
+- Final level and full-tilt comparisons were:
+
+| underlayer | board | pigment-centre shift | breadth increase | frontier advance |
+|---|---:|---:|---:|---:|
+| dry | level | `-0.0480 / -0.0693` | `0.2211 / 0.2259` | `3 / 4` |
+| dry | full tilt | `1.34366 / 1.34373` | `0.46312 / 0.46328` | `9 / 9` |
+| pre-wet | level | `-0.0864 / -0.0879` | `0.3205 / 0.3192` | `5 / 5` |
+| pre-wet | full tilt | `0.94975 / 0.94906` | `0.48904 / 0.48793` | `10 / 10` |
+
+  The wet underlayer therefore reduced coherent downhill centre travel by about
+  `29%` while slightly increasing broadening. Every alarm was `0`.
+- A flooded direct stroke still crossed farther into dry paper. At deposited
+  water `0.5`, the frontier advanced `9 / 9` cells and the centre shifted
+  `1.34570 / 1.34519`; at water `2.0`, the frontier advanced `13 / 13` cells.
+  The flooded centre shift was only `0.50567 / 0.50866` because the pigment
+  dispersed across a broader retained film instead of riding one fast tongue.
+- `valueShift`, already present in the shared medium contract but previously
+  unwired, now controls a wetness-dependent optical value response without
+  changing pigment amount. Two identical normal-drying spots rendered centre
+  RGB `128,166,203` wet and `150,189,226` dry: luminance
+  `165.6667 → 188.3333`, a `13.6821%` lightening within Card 9's `10–30%`
+  target. Water reached `0`; pigment remained `63.65414`; alarms were `0`.
+- The drying spot's rim/interior pigment ratio rose from
+  `0.33463 → 0.39195` in both runs. Correcting `FlowOutward` to use the actual
+  surface-film edge rather than the much broader absorbed-water scheduling mask
+  is physically necessary, but the isolated row contribution remained small:
+  drying with `edgeDarkening = 0` ended at `0.39173 / 0.39157`, versus
+  `0.39195 / 0.39195` at `0.045`.
+- The conservative flux equation was not changed. Ordinary no-evaporation water
+  drift was `+1.40e-7` in both repeated tilted runs. Direct pigment sums still
+  varied by `-0.039% / -0.071%` over 120 steps; running the same level scene
+  with the old movement values was worse at `-0.108% / -0.145%`.
+  High-water and pre-wet comparisons also had intermittent sub-`0.11%` gauge
+  variation with alarm `0`. This small AMD/Polaris numerical variability is
+  recorded, not treated as exact conservation or as closure of the postponed
+  hardware fault.
+- `npm.cmd run build` passed. Chrome compiled and ran all changed shaders on
+  `webgpu: amd / gcn-4`; the page and WebGPU error logs were empty.
+
+**What it proves.** Gravity is now one shared board field with a per-medium
+response, and drag is a shared material response that includes the wet state
+already held by the substrate. A pre-wet layer measurably brakes coherent travel
+and broadens the wash, maximum tilt is much slower, and a genuinely flooded
+stroke still crosses a dry boundary. The existing universal `valueShift`
+property now produces a visible, pigment-conserving wet-to-dry change, and a
+drying spot leaves more pigment at its rim than it began with. No
+watercolor-only motion or render branch was added.
+
+**What it does NOT prove.** The four watercolor row values are not measured
+material constants and remain `[UNVERIFIED]`; Bartford's hand decides their final
+feel. The numerical rim is not yet proof of a beautiful coffee ring or
+cauliflower bloom, and the isolated `edgeDarkening` contribution is small in
+this test. The sub-`0.11%` AMD/Polaris variability means this entry does not claim
+exact conservation or close the postponed NVIDIA discriminator.

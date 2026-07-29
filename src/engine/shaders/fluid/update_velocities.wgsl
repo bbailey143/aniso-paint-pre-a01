@@ -6,8 +6,9 @@
 
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
-@group(0) @binding(2) var paper: texture_2d<f32>;
-@group(0) @binding(3) var wet0_out: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(2) var wet5_in: texture_2d<f32>;
+@group(0) @binding(3) var paper: texture_2d<f32>;
+@group(0) @binding(4) var wet0_out: texture_storage_2d<rgba32float, write>;
 
 fn hf_at(c: vec2<i32>, n: i32) -> f32 {
   if (oob(c, n)) { return 0.0; }
@@ -44,8 +45,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   du = du - P.paperInfluence * (paper_h(r, n) - ph);
   dv = dv - P.paperInfluence * (paper_h(d_, n) - ph);
 
-  du = du + P.gravityX;
-  dv = dv + P.gravityY;
+  // The tilt puck describes one shared board-gravity field. Each wet medium
+  // answers that field through its row rather than receiving a hard-coded full
+  // acceleration. This is what lets water, ink, acrylic, and oil later share
+  // gravity without pretending they fall at the same speed.
+  du = du + P.gravityX * P.gravityResponse;
+  dv = dv + P.gravityY * P.gravityResponse;
 
   let uL = select(0.0, textureLoad(wet0_in, l, 0).z, !oob(l, n));
   let uR = select(0.0, textureLoad(wet0_in, r, 0).z, !oob(r, n));
@@ -59,8 +64,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   du = du + P.viscosity * (uL + uR + uU + uD - 4.0 * w0.z);
   dv = dv + P.viscosity * (vL + vR + vU + vD - 4.0 * w0.w);
 
-  var nu = (w0.z + P.dt * du) * (1.0 - P.drag);
-  var nv = (w0.w + P.dt * dv) * (1.0 - P.drag);
+  // A fresh film does not skate over an existing damp wash as though the lower
+  // layer were absent. The local wet load includes liquid already absorbed by
+  // the sheet and standing at its surface. It adds continuous viscous
+  // resistance, while a deep flooded brush can still win through the cubic
+  // mobility in flux_compute.
+  let paperCell = textureLoad(paper, c, 0);
+  let sat = sane(textureLoad(wet5_in, c, 0).x, WATER_LIM);
+  let wetLoad = select(0.0, clamp((sat + h) / paperCell.y, 0.0, 1.0),
+                       paperCell.y > WET_EPS);
+  let localDrag = clamp(P.drag + P.wetLayerDrag * wetLoad, 0.0, 0.95);
+  var nu = (w0.z + P.dt * du) * (1.0 - localDrag);
+  var nv = (w0.w + P.dt * dv) * (1.0 - localDrag);
   nu = clamp(nu, -1.0, 1.0);   // never move more than one cell per step
   nv = clamp(nv, -1.0, 1.0);
 

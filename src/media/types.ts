@@ -57,6 +57,14 @@ export interface WetMedium extends Medium {
   solvent: 'water' | 'oil';
   /** C97 mu. */
   viscosity: number;
+  /** C97 kappa — ordinary resistance to surface flow. */
+  drag: number;
+  /** How strongly the medium responds to the board's shared gravity field. */
+  gravityResponse: number;
+  /** Extra resistance from liquid already held in the substrate below. */
+  wetLayerDrag: number;
+  /** C97/Deegan outward drying flow that carries pigment toward a pinned edge. */
+  edgeDarkening: number;
   /** Dimensionless, per unit time. */
   evapRate: number;
   /** How strongly it soaks in via Lucas-Washburn. */

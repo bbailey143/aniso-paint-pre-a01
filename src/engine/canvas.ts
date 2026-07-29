@@ -56,6 +56,7 @@ export class CanvasEngine {
   private dryWeights_: Float32Array<ArrayBuffer> = new Float32Array(8);
   private thickScale = 5.0;
   private kInstrument = 1.0;
+  private valueShift = 0.0;
   private reliefStrength = 2.2;
 
   constructor(gpu: Gpu) {
@@ -126,10 +127,16 @@ export class CanvasEngine {
   setWetMedium(m: WetMedium) {
     this.fluid.setParams({
       viscosity: m.viscosity,
+      drag: m.drag,
+      gravityResponse: m.gravityResponse,
+      wetLayerDrag: m.wetLayerDrag,
+      edgeEta: m.edgeDarkening,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
     });
+    this.kInstrument = m.kInstrument;
+    this.valueShift = m.valueShift;
   }
   setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
   /** Wipe the sheet. A blank document has no history, so the slot map resets too. */
@@ -248,6 +255,7 @@ export class CanvasEngine {
     dv.setFloat32(48, this.thickScale, true);
     dv.setFloat32(52, this.reliefStrength, true);
     dv.setFloat32(56, this.kInstrument, true);
+    dv.setFloat32(60, this.valueShift, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

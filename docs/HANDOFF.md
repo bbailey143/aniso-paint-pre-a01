@@ -133,20 +133,21 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (E6 distinct load and water behavior complete)
+**Last updated:** 2026-07-29 (E7 layered-flow and drying correction complete)
 **By:** Codex
 **Build state:** `npm.cmd run build` passes with the shared water/paper,
-below-mask drying, independent paint-load/added-water, and global pen-cursor
-corrections. Chrome exercised the page on AMD/Polaris with no page, shader, or
-WebGPU error. E6's five water settings produced distinct brush ratios and tilted
-wash measurements in two exact replays. See
-`docs/13-water-paper-behavior-log.md` E6. This checkout still has unrelated
+below-mask drying, independent paint-load/added-water, layered-flow resistance,
+medium gravity response, wet-to-dry value shift, and global pen-cursor corrections.
+Chrome exercised every changed shader on AMD/Polaris with no page, shader, or
+WebGPU error. E7's level/tilt, dry/wet-underlayer, flooded, and optical comparisons
+were each repeated twice. See `docs/13-water-paper-behavior-log.md` E7. This checkout still has unrelated
 untracked `bench/`, `claude-uncommitted-diff.patch`, two `.mp4` files in `docs/`,
 and `process_video.py`; do not touch them.
 **Git state:** Bartford authorized publication and Codex pushed E11/E12 through
 `0bf9470` to `origin/webgpu-test`. The three local behavior milestones through
 E4 plus E5 are not pushed. E6 is committed at the current local HEAD; it must
-not be pushed without fresh authorization.
+not be pushed without fresh authorization. E7 is committed at the current local
+HEAD and also must not be pushed without fresh authorization.
 The listed untracked files remain unrelated and must not be touched.
 
 ## Current objective
@@ -160,14 +161,29 @@ The NVIDIA E13 discriminator for the separate explosion fault is explicitly
 
 **Active evidence log for this work:** `docs/13-water-paper-behavior-log.md`.
 
-**Checkpoint:** E6 is implemented and measured. The old control compressed a
+**Checkpoint:** E6 is implemented, measured, and artist-accepted. The old control compressed a
 load-0.6 brush into water/pigment ratios `0.6 → 1.0`, while pigment ignored load.
 Load now scales the normal paint charge; water is added independently. The current
 sable rows use `[UNVERIFIED] waterOvercharge = 3.0`, allowing maximum water to be
 a deliberately flooded brush. The five ratios are now
 `1.0, 2.25, 3.5, 4.75, 6.0`; repeated tilted tests and a headed render show
 progressively broader, longer-lived washes. Rinse remains pure water. Bartford's
-hand test is the artist acceptance gate. Do not begin the postponed NVIDIA test.
+hand test passed: Bartford called the result beautiful. Do not begin the postponed
+NVIDIA test.
+
+**E7 COMPLETE — shared layered-flow and drying response.** Wet media now own reusable
+row values for ordinary drag, gravity response, resistance from the local wet load,
+and edge-darkening strength. Full-tilt centre travel fell from about `8` cells to
+`1.34` over dry paper and `0.95` over a pre-wet layer; the wet layer broadens rather
+than accelerating the new color. A flooded stroke still advanced its frontier
+`13` cells versus `9` for the ordinary stroke. The existing shared `valueShift`
+now makes the tested ultramarine spot lighten `13.68%` on drying without changing
+pigment. Its rim/interior concentration increased `0.3346 → 0.3920`. The isolated
+edge-darkening-row contribution was small, so visual coffee-ring/cauliflower quality
+remains an artist hand-check. The provisional watercolor row is
+`drag 0.06 / gravityResponse 0.03 / wetLayerDrag 0.55 / edgeDarkening 0.045`;
+all four remain `[UNVERIFIED]`. Sub-`0.11%` AMD/Polaris amount variability remains
+recorded and does not close the postponed hardware fault.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -297,21 +313,23 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Bartford hand-checks the five-step water range
+## NEXT ACTION — Bartford hand-checks E7's shared material response
 
-1. Refresh `http://127.0.0.1:5175`. Keep Round, Cold Press, load near `0.6`,
-   normal drying, and one fixed downhill tilt. Paint comparable strokes at water
-   `0`, about `0.25`, `0.5`, `0.75`, and `1`.
-2. The low end should behave like ordinary paint. Increasing water should broaden
-   and lengthen the downhill fringe; the top settings should remain visibly wet
-   after the low settings have soaked/dried. Maximum is intentionally a flooded,
-   potentially dripping brush.
-3. Also vary load with water at zero. Lower load must now lay less paint rather
-   than the same fully pigmented mark. Rinse must remain clean water.
-4. If the progression is present but its spacing is wrong, calibrate only the
-   `[UNVERIFIED] waterOvercharge` values in `src/brush/library.ts`. If the top
-   settings still look identical despite different retained film, investigate
-   pigment settlement versus water depth next. Keep NVIDIA E13 postponed.
+1. Refresh `http://127.0.0.1:5175`. On Cold Press at normal drying, lay one wet
+   wash, then paint another colored stroke into and across it before tilting.
+   The new color should slow in the wet area, spread and bleed there, and then
+   move downhill deliberately rather than skating over the first wash.
+2. Compare an ordinary-water stroke with a flooded maximum-water stroke at the
+   same tilt. Both should be much slower than before; the flooded one must still
+   push farther across dry paper and form a broader tongue.
+3. Watch one moderate, even stroke and one flooded spot dry. Both should visibly
+   lighten. The moderate mix may remain even; the flooded spot should be the more
+   likely one to leave a dark rim and irregular bloom.
+4. If the motion spacing is wrong, tune only the four `[UNVERIFIED]` watercolor
+   row values in `src/media/library.ts`. If movement is right but the drying
+   shapes are too weak, continue from E7's measured small isolated
+   `edgeDarkening` contribution; do not fake rings in the renderer. Keep NVIDIA
+   E13 postponed.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration
 

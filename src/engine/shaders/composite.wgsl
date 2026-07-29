@@ -19,7 +19,7 @@ struct Comp {
   thickScale: f32,    // maps total pigment amount -> optical thickness
   relief: f32,        // paper relief lighting strength
   kInstrument: f32,   // gloss dial (1 matte .. 0 gloss)
-  _pad: f32,
+  valueShift: f32,    // + dries lighter, - dries darker, 0 unchanged
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -223,6 +223,14 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     -0.9689 * XYZ.x + 1.8758 * XYZ.y + 0.0415 * XYZ.z,
     0.0557 * XYZ.x - 0.2040 * XYZ.y + 1.0570 * XYZ.z,
   );
+
+  // Shared wet-fibre scattering response (Card 7), expressed by the medium's
+  // existing valueShift. Positive watercolor is deeper while wet and returns
+  // lighter as air replaces water; negative acrylic is milky while wet and
+  // cures darker; oil uses zero. This scales outgoing spectral light without
+  // deleting or diluting pigment, and keeps the row value artist-legible:
+  // valueShift 0.18 produces an 18% wet-state value difference.
+  rgb = rgb * max(1.0 - C.valueShift * wetness, 0.1);
 
   // Relief lighting from the paper height gradient (tooth catches the light).
   let texel = 1.0 / vec2f(textureDimensions(paper));

@@ -70,6 +70,10 @@ export interface FluidParams {
   rewetRate: number;
   /** Wet-medium strength applied to the shared Lucas-Washburn uptake. */
   absorptionCoupling: number;
+  /** Wet-medium response to the board's shared, normalised gravity field. */
+  gravityResponse: number;
+  /** Extra drag from saturation already held in the substrate. */
+  wetLayerDrag: number;
   /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
@@ -95,6 +99,8 @@ export const DEFAULT_FLUID: FluidParams = {
   rewetRate: 0.10,
   // Watercolour's provisional row value; explicitly unverified in media/library.ts.
   absorptionCoupling: 0.01,
+  gravityResponse: 1.0,
+  wetLayerDrag: 0.0,
   handoffEnabled: true,
 };
 
@@ -471,6 +477,8 @@ export class FluidEngine {
     dv.setFloat32(56, this.frame / 60, true);
     dv.setFloat32(60, p.rewetRate, true);
     dv.setFloat32(64, p.absorptionCoupling, true);
+    dv.setFloat32(68, p.gravityResponse, true);
+    dv.setFloat32(72, p.wetLayerDrag, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
@@ -658,7 +666,9 @@ export class FluidEngine {
 
     // 2 — UpdateVelocities
     run('vel', () => {
-      this.dispatch(pass, this.pipes.vel, [U, this.wet0.src, this.paper, this.wet0.dst]);
+      this.dispatch(pass, this.pipes.vel, [
+        U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst,
+      ]);
       this.wet0.flip();
     });
 

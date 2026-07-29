@@ -26,6 +26,10 @@ add tempera or casein by tweaking numbers already present on `WaterMedium`.
 |---|---|---|
 | `solvent` | water \| oil | CapillaryFlow, DryTick |
 | `viscosity μ` | resistance to flow | MoveWater |
+| `drag κ` | ordinary surface-flow resistance | MoveWater |
+| `gravityResponse` | how strongly this material answers the shared board tilt | MoveWater |
+| `wetLayerDrag` | added resistance from liquid already held below the surface | MoveWater |
+| `edgeDarkening` | evaporation-fed outward flow toward a pinned edge | FlowOutward |
 | `evapRate` | rate `w` falls (dimensionless, per unit time) | DryTick |
 | `absorptionCoupling` | how strongly it soaks via Lucas-Washburn | CapillaryFlow |
 | `pigmentBoost ζ` | weight incoming pigment over resident (A26) | MovePigment |

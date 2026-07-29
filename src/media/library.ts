@@ -20,7 +20,18 @@ export const WATERCOLOR: WetMedium = {
   downRate: 0.35, upRate: 0.08, teflonMin: 0.02,
   openTime: 90, valueShift: 0.18,   // dries lighter, Card 7 says 10-30 %
   reactivatable: true, oneWayDoor: false,
-  solvent: 'water', viscosity: 0.1, evapRate: 0.0015,
+  solvent: 'water',
+  viscosity: 0.1,
+  // [UNVERIFIED] Shared thin-film controls. These are deliberately properties
+  // of the medium row, not watercolor branches in the solver: a future ink,
+  // acrylic, or oil row can resist and answer gravity differently while using
+  // the same motion equations. Calibrated first against Bartford's report that
+  // the old 0.01 / full-gravity combination slid like water on glass.
+  drag: 0.06,
+  gravityResponse: 0.03,
+  wetLayerDrag: 0.55,
+  edgeDarkening: 0.045,
+  evapRate: 0.0015,
   // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
   // consumed a Cold Press surface film in under ten solver steps once the
   // paper row was actually connected. Even 0.01 consumed an ordinary fully
