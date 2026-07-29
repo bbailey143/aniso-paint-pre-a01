@@ -31,6 +31,12 @@ export const WATERCOLOR: WetMedium = {
   gravityResponse: 0.03,
   wetLayerDrag: 0.55,
   edgeDarkening: 0.045,
+  // [UNVERIFIED] The pigment side of rim formation (log 13, E9). Held at 0 in
+  // this commit so the pass ships inert and the E7 baseline is reproducible to
+  // all digits; calibration is the next step and is Bartford's eye, not a
+  // measured constant. No card supplies either number.
+  rimMigration: 0,
+  rimReach: 2.0,
   evapRate: 0.0015,
   // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
   // consumed a Cold Press surface film in under ten solver steps once the

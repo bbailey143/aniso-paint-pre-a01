@@ -465,3 +465,292 @@ restored unchanged. It also does not prove that stronger coffee rings are
 impossible. A future attempt needs a different, smoother pigment-migration model
 and must be judged first on ordinary hand-painted strokes, not synthetic spot
 numbers alone.
+
+## E9 — Rim formation, redesigned as pigment migration (DESIGN, 2026-07-29)
+
+**Hardware note.** Claude (Opus), Windows 11, `webgpu: amd / gcn-4` — the same
+Polaris part Codex used, so E7's numbers and these are comparable.
+
+**Purpose.** Make the coffee-stain rim artist-visible without the mechanism that
+made E8 look synthetic. This entry is the design and its acceptance instrument,
+written before any shader code exists, so that an interrupted session leaves the
+reasoning rather than a half-edited pass.
+
+### Why E8 failed — the mechanism, not the magnitude
+
+Card 5's physics is right and is not in question: an evaporating drop with a pinned
+contact line loses liquid fastest at the boundary, the interior replenishes it, and
+that inward-to-outward flow **carries pigment** to the edge, where it strands.
+
+C97 implements this by lowering *water pressure* near the mask edge
+(`p <- p - eta(1 - M')M`), which is what `flow_outward.wgsl` does today. Pigment
+then reaches the rim only as a passenger of the water it advects with. That
+coupling is the flaw:
+
+> **Rim strength and water-motion strength are the same dial.** You cannot make the
+> ring stronger without making the water move faster.
+
+At E7's `edgeDarkening = 0.045` the water motion is calm and the ring is real but
+faint (rim/interior concentration `0.3346 -> 0.3920`). At E8's `20` the ring
+arrives and the water field is being driven hard at cell scale — and a 512 grid
+driven hard at cell scale *is* dense stippling, needles and false contours.
+E8's radial reweighting did not save it, because the amplification was in the
+velocity coupling, not in the kernel shape.
+
+**Therefore: do not scale the water route. Split the dial in two.**
+
+### The design
+
+Keep C97's pressure term exactly as E7 accepted it — carded, measured, and
+artist-approved at `0.045`. **Add** a second, independent term for the same
+physical cause that moves suspended pigment *directly*, so rim strength no longer
+borrows from water speed.
+
+New pass `rim_migration.wgsl`, inserted **after `outward` and before
+`fluxCompute`** — the drying drift and the bulk advection both act on suspension
+within a frame, and settling (`transfer`) happens after both. It reads `wet0`
+(film), `press` (see below), `wet1`/`wet2` (suspended pigment) and writes
+`wet1`/`wet2` — two storage textures, inside WebGPU core's limit of four.
+
+**1. A deliberately smooth direction field.** `flow_outward.wgsl` already sweeps a
+9x9 neighbourhood of the film. Extend that same loop to also accumulate a
+Gaussian-weighted mean film height `hbar` and emit it in the unused `press.y`
+channel. Cost is a few extra ALU ops in a loop already being run; no new pass, no
+new texture.
+
+`hbar` is smooth at the scale of its kernel *by construction*, so its gradient
+cannot carry cell-scale structure. That is the whole defence against E8's failure
+mode, and it is structural rather than a matter of choosing a small number.
+
+**2. Conservative, antisymmetric transfer.** For each of the four edge neighbours
+`q` of cell `c`, pigment in slot `k` moves down the `hbar` gradient:
+
+```
+out(a->b, k) = rimMigration * dryingDrive * conc_k(a)
+               * max(hbar(a) - hbar(b), 0) * holds(b) * limit(a)
+
+g_k(c) <- g_k(c) - sum_q out(c->q, k) + sum_q out(q->c, k)
+```
+
+Both cells sharing an edge evaluate the *same expression* for that edge, so the
+ledger balances exactly — the trick `flux_apply_pigment.wgsl` already relies on.
+No flux buffer is needed.
+
+- `conc_k(a)` — concentration, not amount, so a thick puddle does not migrate
+  faster merely for being thick.
+- `holds(b)` — the destination must actually have film. Without this, pigment
+  walks out of the water and strands on dry paper.
+- `limit(a)` — caps the total fraction leaving any cell per step (proposed
+  `0.25`). It depends only on `a`'s own four neighbours, so the neighbour can
+  recompute it identically and conservation survives the clamp.
+- `dryingDrive` — the existing `clamp(evapRate / dryRate, 0, 1)` normalisation
+  from `flow_outward.wgsl`, reused unchanged. A wash that is not drying gets no
+  ring, which is the physics and not a safety measure.
+
+**Why this cannot manufacture a spike.** It is a *transfer*, never a source. A
+cell can only lose what it has, bounded by `limit`, and every loss is some other
+cell's gain. Amplification is arithmetically unavailable to it — unlike a pressure
+bias, which feeds a velocity field that then multiplies.
+
+### What this adds to the medium row — and why it is not a watercolour branch
+
+Per `src/media/types.ts`, a medium is a data row plugged into shared equations.
+Two new `WetMedium` properties, both `[UNVERIFIED]`:
+
+| row | meaning | why it differs per medium |
+|---|---|---|
+| `rimMigration` | how strongly suspended pigment drifts toward a receding film edge | Particle mobility in the vehicle. Watercolour rings famously; gouache's binder load holds pigment where it lands; oil does not dry by evaporation at all and should be `0`. |
+| `rimReach` | Gaussian sigma in cells for the film blur — the width of the rim's catchment | A ring's width tracks the ratio of evaporation to internal transport. Fine transparent washes strand a narrow line; heavier bodied paint leaves a broad soft shoulder. |
+
+`rimReach` is a **weight** inside the existing fixed +/-4 window, not the window
+itself, so per-medium cost stays constant and the kernel already in
+`flow_outward.wgsl` is reused rather than widened.
+
+Setting `rimMigration = 0` restores today's E7 behaviour exactly. That is the
+regression path and also the correct oil row.
+
+**Fence status.** The *physics* is Card 5 / C97 / Deegan and is cited there. The
+*route* — a direct pigment term instead of only C97's pressure term — is not on any
+card and is offered as a recorded decision with the reason above, for Bartford to
+ratify or reject. It does not replace C97's term; it runs alongside it.
+
+### Acceptance instrument — built and baselined BEFORE the change
+
+E8 passed its own numeric test and still looked terrible, because the test measured
+the rim and nothing measured the artifact. So the artifact now has a number too.
+
+`roughness` — over cells holding more than a quarter of the mean slot-0 pigment,
+the mean absolute discrete Laplacian of total slot-0 pigment (`wet1 + wet3 +
+dry1a + dry2a`, channel `.x`), divided by the mean. High = cell-scale structure,
+which is what stippling is. `peakLapOverMean` is the same quantity's worst cell.
+
+**Baseline, restored E7 base, four horizontal strokes, load 0.75, water 0, Cold
+Press, 120 settle steps, dried out:**
+
+| run | pigment | roughness | peakLapOverMean |
+|---|---|---|---|
+| first session after page load | 635.520 | 0.5234 | 4.850 |
+| second | 633.541 | 0.5250 | 4.861 |
+| third (identical repeat) | 633.541 | 0.5250 | 4.861 |
+
+Runs two and three are **bit-identical**, so this instrument is deterministic on
+this GPU and a change of even the fourth digit is a real change. The first session
+after a page load differs by `0.3%`; use second-and-later sessions as the
+reference. Why the first differs is **not known** and is not worth a story.
+
+**Acceptance for the eventual E9 measurement, in this order:**
+
+1. Ordinary brush strokes and flooded washes at actual display scale, judged by
+   Bartford. This is first, not last.
+2. `roughness` must not rise materially above `0.5250`. A rim that arrives with a
+   roughness of `2` is E8 again with better paperwork.
+3. Rim/interior concentration ratio should exceed E7's `0.3920`, measured on the
+   same synthetic drying spot E7 used — **supporting evidence only.**
+4. Pigment conservation across the pass within the sub-`0.11%` AMD/Polaris band
+   already recorded at E7, and `rimMigration = 0` reproducing the E7 baseline to
+   all digits.
+
+**What this design does NOT claim.** That a smooth `hbar` gradient produces a rim
+that *reads as paint* — smooth and conservative rules out E8's failure, it does not
+guarantee beauty. That the two new row values are physical constants; they are
+not, and no card supplies them. That the roughness metric captures every ugly
+outcome — it catches cell-scale noise, and would not catch a rim that is smooth
+but too wide or wrongly coloured. Bartford's eye remains the acceptance test;
+this is only a tripwire on the specific way E8 went wrong.
+
+## E10 — E9 measured: conserves, ships inert, NOT good enough to turn on (2026-07-29)
+
+**Hardware.** Claude (Opus), Windows 11, `webgpu: amd / gcn-4`.
+
+**Purpose.** Measure the E9 rim-migration pass against its own acceptance list.
+
+**Method.** Implemented as designed in E9 (files listed in the baton). Swept
+`rimMigration` over `0, 0.003, 0.03, 0.3, 3, 30` at `rimReach = 2`, on two test
+objects: the four-stroke session from E9, and a flooded puddle. Every reading has
+a WebGPU validation scope around it. Repeated runs throughout.
+
+### Raw result — what is solid
+
+**Conservation is exact.** Across the whole sweep, total pigment held at
+`1239.16` on the ring object and `633.5414` on the strokes, varying in the sixth
+significant figure. The antisymmetric edge ledger works; the limiter does not leak.
+
+**Inert by default, verified.** Six consecutive `rimMigration = 0` sessions are
+**bit-identical** to the pre-E9 baseline: pigment `633.541443`, roughness
+`0.5249959`, peakLap `4.861012`. Turning the row to zero is a true regression
+path, not approximately one.
+
+**No validation errors** anywhere, and no shader compile error, once a real bug
+was fixed: the params uniform buffer was allocated at a fixed `208` bytes and the
+two new rows pushed the write to `224`. Chrome rejected the write and every
+parameter silently stopped updating — all gauges read `0`. The buffer size, the
+`ArrayBuffer` in `writeParams`, and the struct in `common.wgsl` are now
+commented as three places that must agree.
+
+### Raw result — the correction that mattered
+
+The first implementation divided a smooth numerator by the **raw** per-cell film
+height. ~~The direction field being a blur makes cell-scale amplification
+arithmetically unavailable.~~ **RETRACTED at E10:** the *direction* was smooth
+and the *magnitude* was not, because `1/h_f` is a per-cell quantity sitting in
+the middle of the transfer fraction. Measured effect of moving the denominator to
+the blurred film, four-stroke object:
+
+| `rimMigration` | roughness, raw denominator | roughness, blurred denominator |
+|---|---|---|
+| 0 | 0.4776 | 0.4774 |
+| 0.03 | 0.6135 | 0.5028 |
+| 0.3 | 1.2198 | 0.9748 |
+| 3 | 2.6666 | 2.7045 |
+
+Reproduced identically. It is a real improvement at low strength and no help at
+high strength. **The lesson generalises beyond this pass: every factor in a
+transfer fraction has to come from the smooth field, not just the gradient.**
+
+### Raw result — where the added structure actually lives
+
+The single roughness number cannot tell a rim from stipple, which E9 admitted and
+then immediately needed. Split it: `interior` = mask cells whose whole 5x5
+neighbourhood is in the mask; `edgeBand` = the rest of the mask.
+
+Four strokes, blurred denominator, reproduced identically:
+
+| `rimMigration` | interior rough | edgeBand rough | interior cells |
+|---|---|---|---|
+| 0 | 0.3476 | 0.5923 | 2123 |
+| 0.03 | 0.3435 | 0.6314 | 2208 |
+| 0.3 | 0.4516 | 1.2467 | 2597 |
+| 3 | 0.6754 | 2.2214 | 336 |
+
+On **strokes**, `0.3` puts its new structure in the edge band: `+110%` there
+against `+30%` in the interior. That is a rim, and the rendered strokes read as
+darker-edged marks rather than as noise.
+
+On a **flooded puddle** (filled pool object, corrected — see instrument errors
+below), the same setting does the opposite. Alternating runs, each value repeated:
+
+| `rimMigration` | pigment | rim/interior | interior rough | edgeBand rough |
+|---|---|---|---|---|
+| 0 | 7370.14 | 0.19151 | 0.5168 | 0.2763 |
+| 0.3 | 7369.62 | 0.20680 | 1.9672 | 1.6292 |
+| 0 (repeat) | 7369.28 | 0.19170 | 0.5211 | 0.2857 |
+| 0.3 (repeat) | 7368.63 | 0.20629 | 1.9689 | 1.5683 |
+
+Interior roughness rises **3.8x** and edge roughness **5.7x**, for a rim ratio
+gain of `0.1915 -> 0.2065` — an 8% rim improvement bought with a near-4x rise in
+cell-scale structure through the entire body of the wash. Note also that on this
+object the baseline has *more* interior structure than edge structure
+(`0.517` vs `0.276`), the reverse of the stroke object, so the two test objects
+are not interchangeable and their numbers must not be compared across.
+
+Interior structure now **exceeds** edge structure, and the rendered wash carries a
+dense concentric texture across its whole body. It looks synthetic. Radial profile
+went from monotone falling (`0.405` centre to `0.027` rim) to humped
+(`0.339, 0.294, 0.306, 0.339, 0.345, 0.371, 0.333, ...`) — pigment did move
+outward, but as a broad interior redistribution, not a stranded ring.
+
+### Instrument errors found and fixed in this entry
+
+Two, both mine, both caught by looking at the render rather than the number:
+
+1. **The first "puddle" was not a puddle.** Its 45 concentric rings were spaced
+   ~13 px apart, wider than the brush footprint, so it painted a bullseye of
+   separate rings. Every rim ratio measured on it — the `0.2147 -> 0.2350` series
+   in the sweep above — was measuring **ring spacing**, not a rim, and is
+   **retracted**. Ring spacing is now ~2 px and the object is a filled pool.
+2. **One premature interpretation, stated out loud and wrong.** On seeing
+   roughness rise across the sweep I called the trade-off bad before splitting
+   interior from edge. On strokes it is not bad. The number rose for two different
+   reasons and I read only one of them.
+
+The residual concentric texture in the puddle result is **partly confounded**: the
+test object is painted as concentric rings, so a term that amplifies existing
+deposition structure would produce concentric artifacts on this object
+specifically. That confound is not resolved here and the visual verdict on washes
+should be treated as suggestive, not settled.
+
+**What it proves.** The pass is arithmetically sound: conservative to six figures,
+inert at zero to all digits, no validation errors, and the params-buffer arithmetic
+is now correct. The gradient-of-blurred-film route does move pigment outward, and
+on brush strokes it produces edge-localised darkening.
+
+**What it does NOT prove — and why this is not shipped ON.** It does not produce a
+coffee ring on a wash. The direction field is the gradient of a blur with a
+fixed +/-4 window, so it has support only in a band a few cells wide around the
+film edge; it physically cannot carry pigment from the middle of a puddle to its
+rim, which is the entire Deegan mechanism. What reaches the edge at high strength
+arrives by repeated short hops, and the hops leave their own texture. The wash
+verdict is also confounded as noted. `rimMigration` stays `0` in
+`src/media/library.ts`; nothing about the paint Bartford sees has changed.
+
+**Recommended next route (not yet ratified).** Stop building a second pigment
+transport path and drive the ring from **non-uniform evaporation**, which is what
+Deegan actually describes: weight the evaporation in `dry_tick.wgsl` toward the
+film edge using the same blurred film already in `press.y`. The pool then thins at
+its rim, the existing *validated* conservative flux carries water inward-to-outward
+to replenish it, and `flux_apply_pigment.wgsl` carries pigment along for free. No
+new transport term, no second ledger, and the driving quantity is a thickness
+gradient rather than a velocity injection. It adds one shared row —
+`edgeEvaporation`, `0` for oil, low for bodied paint, high for watercolour — and
+the rim strength stops borrowing from water speed without needing a bespoke
+mechanism to do it.

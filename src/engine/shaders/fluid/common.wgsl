@@ -31,7 +31,14 @@ struct Params {
   absorptionCoupling: f32,
   gravityResponse: f32,
   wetLayerDrag: f32,
-  _mediumPad2: f32,
+  /** Pigment-side rim strength (E9). 0 = pure C97, water-side only. */
+  rimMigration: f32,
+
+  /** Gaussian sigma in cells for the film blur that aims rimMigration. */
+  rimReach: f32,
+  _mediumPad3: f32,
+  _mediumPad4: f32,
+  _mediumPad5: f32,
 
   // Pigment library for the 8 active slots: (rho density, omega staining,
   // gamma granulation, pad) — Card 3. Cells store amounts; library stores

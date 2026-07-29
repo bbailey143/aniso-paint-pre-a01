@@ -133,8 +133,9 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (E8 strong-rim experiment rejected and reverted)
-**By:** Codex
+**Last updated:** 2026-07-29 (Claude picking up after E8's rollback; E9 rim redesign
+about to start)
+**By:** Claude (Opus), continuing from Codex
 **Build state:** `npm.cmd run build` passes with the shared water/paper,
 below-mask drying, independent paint-load/added-water, layered-flow resistance,
 medium gravity response, wet-to-dry value shift, and global pen-cursor corrections.
@@ -325,19 +326,79 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Confirm restored E7, then redesign rim formation separately
+## IN FLIGHT (Claude, 2026-07-29)
 
-1. Refresh `http://127.0.0.1:5175` and confirm ordinary strokes again look like
-   the previously accepted E7 paint: no dense dot field, spikes, or repeated
-   contour bands. This is the immediate artist check after the rollback.
-2. Preserve E7's accepted motion and drying base. Do not change its
-   `drag 0.06 / gravityResponse 0.03 / wetLayerDrag 0.55 / edgeDarkening 0.045`
-   while investigating rim visibility.
-3. Before another ring implementation, design a separate shared pigment-migration
-   mechanism that does not amplify individual 512-grid cells. Acceptance must
-   begin with ordinary brush strokes and flooded washes at actual display scale;
-   synthetic circles and a numerical rim ratio are supporting measurements only.
-4. Keep NVIDIA E13 postponed until Bartford explicitly says he is ready to switch
+Dev server on `http://127.0.0.1:5173` (vite.config.ts pins 5173; the baton's old
+5175 was a collision that session, not a setting).
+
+**E9 is implemented and inert, uncommitted.** `npm.cmd run build` passes and the
+page loads with no shader or WebGPU validation error on `webgpu: amd / gcn-4`.
+The design entry is in `docs/13-water-paper-behavior-log.md` E9. Changed files:
+
+- `src/engine/shaders/fluid/rim_migration.wgsl` — new pass (the whole mechanism)
+- `src/engine/shaders/fluid/flow_outward.wgsl` — also emits a Gaussian-blurred
+  film height in `press.y`; its own pressure bias is UNCHANGED
+- `src/engine/shaders/fluid/common.wgsl` — `rimMigration`, `rimReach` in Params
+- `src/engine/fluid.ts` — pass wiring, params packing, **buffer resized 208 -> 224**
+- `src/media/types.ts`, `src/media/library.ts` — the two new rows
+- `src/engine/canvas.ts` — rows fed to the solver
+
+**Shipping default is `rimMigration = 0`**, which skips the dispatch entirely.
+Verified: six consecutive rim=0 sessions are bit-identical to the pre-E9 E7
+baseline (pigment `633.541443`, roughness `0.5249959`). So this changes no paint
+until someone sets the row — and **it is staying at 0.**
+
+**E10 measured it and it is not good enough to turn on.** It conserves pigment to
+six figures and adds edge darkening to brush strokes, but it does not make a
+coffee ring on a wash: its direction field is the gradient of a fixed +/-4 blur,
+so it only has reach a few cells inside the film edge and cannot carry pigment
+from the middle of a puddle to its rim. At the strength where a wash changes
+visibly, cell-scale structure across the whole wash rises ~4x. Full numbers,
+both instrument errors, and one retracted claim of mine are in
+`docs/13-water-paper-behavior-log.md` E10.
+
+**Nothing is half-edited.** Build passes, no validation errors, default inert.
+
+**If you must abandon this:** safe to leave in tree exactly as is. Do not revert it
+to "get back to E7" — E7 *is* what runs at `rimMigration = 0`. The 208 -> 224
+params-buffer resize is load-bearing for everything else in that file; do not
+partially revert that line. `flow_outward.wgsl` now also emits a blurred film
+height in `press.y`, which the recommended next route needs, so keep that too.
+
+`git status` in the repo root tells you the truth. The five untracked items
+listed under Build state are unrelated — leave them.
+
+## NEXT ACTION — Rim from non-uniform evaporation, not a second transport path
+
+Awaiting Bartford's word on the route change; the reasoning is E10's closing
+paragraph. If he says go:
+
+1. **Do not add another pigment transport term.** Two attempts have now failed for
+   the same underlying reason — E8 injected velocity, E9 invented a bespoke drift.
+   Drive the ring from **non-uniform evaporation**, which is what Deegan actually
+   describes and what Card 5 states.
+2. In `dry_tick.wgsl` (the only pass that removes water), weight the evaporation
+   toward the film edge using the blurred film height already emitted in
+   `press.y` by `flow_outward.wgsl`. A pool then thins at its rim; the existing
+   **already-validated** conservative flux replenishes it from the interior; and
+   `flux_apply_pigment.wgsl` carries the pigment along at no extra cost. The
+   driving quantity becomes a thickness gradient, which is intrinsically smooth,
+   instead of a velocity injection.
+3. Add exactly one shared row, `edgeEvaporation` on `WetMedium`, `[UNVERIFIED]`:
+   `0` for oil (it does not dry by evaporation), low for bodied paint, higher for
+   watercolour. `0` must reproduce current behaviour to all digits, the way
+   `rimMigration = 0` does now — that regression path is worth the small effort
+   every time.
+4. **Preserve E7's accepted base:** `drag 0.06 / gravityResponse 0.03 /
+   wetLayerDrag 0.55 / edgeDarkening 0.045`. Leave `rimMigration` at `0`.
+5. Watch total water, not just pigment. This route changes *where* water leaves,
+   which the flux ledger has never been asked to balance against before. Any
+   conservation claim needs two identical runs.
+6. Acceptance, in this order: ordinary strokes and a flooded wash at display scale
+   judged by Bartford; then interior-vs-edgeBand roughness (E10's split metric,
+   which is the instrument that would have caught E9 a day earlier); then the rim
+   ratio as supporting evidence only.
+7. Keep NVIDIA E13 postponed until Bartford explicitly says he is ready to switch
    computers.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration

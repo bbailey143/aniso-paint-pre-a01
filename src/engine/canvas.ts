@@ -131,6 +131,8 @@ export class CanvasEngine {
       gravityResponse: m.gravityResponse,
       wetLayerDrag: m.wetLayerDrag,
       edgeEta: m.edgeDarkening,
+      rimMigration: m.rimMigration,
+      rimReach: m.rimReach,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,

@@ -4,8 +4,13 @@
 // TS+WebGPU schema. The pass ORDER is part of the contract, not a detail:
 //
 //   Deposit -> UpdateVelocities -> RelaxDivergence xN -> FlowOutward
-//           -> FluxCompute -> MovePigment -> MoveWater
+//           -> RimMigration -> FluxCompute -> MovePigment -> MoveWater
 //           -> TransferPigment -> CapillaryFlow -> DryTick
+//
+// RimMigration sits after FlowOutward because it consumes the blurred film that
+// pass emits, and before the flux ledger so the drying drift and the bulk
+// advection both act on suspension in the same frame — with settling
+// (TransferPigment) after both, which is the order a real ring forms in.
 //
 // MovePigment must run before MoveWater: the fraction of pigment leaving a cell
 // is (water leaving / water present BEFORE the move). Update water first and
@@ -22,6 +27,7 @@ import depositWgsl from './shaders/fluid/deposit.wgsl?raw';
 import velWgsl from './shaders/fluid/update_velocities.wgsl?raw';
 import relaxWgsl from './shaders/fluid/relax_divergence.wgsl?raw';
 import outwardWgsl from './shaders/fluid/flow_outward.wgsl?raw';
+import rimWgsl from './shaders/fluid/rim_migration.wgsl?raw';
 import fluxComputeWgsl from './shaders/fluid/flux_compute.wgsl?raw';
 import fluxPigWgsl from './shaders/fluid/flux_apply_pigment.wgsl?raw';
 import fluxWaterWgsl from './shaders/fluid/flux_apply_water.wgsl?raw';
@@ -74,6 +80,11 @@ export interface FluidParams {
   gravityResponse: number;
   /** Extra drag from saturation already held in the substrate. */
   wetLayerDrag: number;
+  /** Pigment-side rim strength (log 13, E9). 0 skips the pass entirely, which
+   * is both the oil row and the pre-E9 regression path. */
+  rimMigration: number;
+  /** Gaussian sigma in cells for the film blur that aims rimMigration. */
+  rimReach: number;
   /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
@@ -101,6 +112,8 @@ export const DEFAULT_FLUID: FluidParams = {
   absorptionCoupling: 0.01,
   gravityResponse: 1.0,
   wetLayerDrag: 0.0,
+  rimMigration: 0.0,
+  rimReach: 2.0,
   handoffEnabled: true,
 };
 
@@ -312,9 +325,10 @@ export class FluidEngine {
     this.ink0 = new PingPong(device, INK_RES, 'ink0', INK_FORMAT);
     this.ink1 = new PingPong(device, INK_RES, 'ink1', INK_FORMAT);
 
-    // Params: 20 scalars (5 vec4 worth) + 8 vec4 pigment rows = 208 bytes.
+    // Params: 24 scalars (6 vec4 worth) + 8 vec4 pigment rows = 224 bytes.
+    // MUST match the ArrayBuffer in writeParams and the struct in common.wgsl.
     this.paramsBuf = device.createBuffer({
-      size: 20 * 4 + 8 * 16,
+      size: 24 * 4 + 8 * 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'fluid-params',
     });
     this.fluxBuf = device.createBuffer({
@@ -394,6 +408,7 @@ export class FluidEngine {
     this.pipes.vel = mk(velWgsl, 'update_velocities');
     this.pipes.relax = mk(relaxWgsl, 'relax_divergence');
     this.pipes.outward = mk(outwardWgsl, 'flow_outward');
+    this.pipes.rim = mk(rimWgsl, 'rim_migration');
     this.pipes.fluxCompute = mk(fluxComputeWgsl, 'flux_compute');
     this.pipes.fluxPig = mk(fluxPigWgsl, 'flux_apply_pigment');
     this.pipes.fluxWater = mk(fluxWaterWgsl, 'flux_apply_water');
@@ -457,7 +472,10 @@ export class FluidEngine {
   }
 
   private writeParams() {
-    const buf = new ArrayBuffer(20 * 4 + 8 * 16);
+    // 24 scalars (six 16-byte groups) then the 8-slot pigment array. The count
+    // here, the struct in common.wgsl, and the `96 +` offset below must all
+    // agree; a mismatch reads scrambled rows rather than failing.
+    const buf = new ArrayBuffer(24 * 4 + 8 * 16);
     const dv = new DataView(buf);
     const p = this.params;
     dv.setUint32(0, this.n, true);
@@ -479,11 +497,14 @@ export class FluidEngine {
     dv.setFloat32(64, p.absorptionCoupling, true);
     dv.setFloat32(68, p.gravityResponse, true);
     dv.setFloat32(72, p.wetLayerDrag, true);
+    dv.setFloat32(76, p.rimMigration, true);
+    dv.setFloat32(80, p.rimReach, true);
+    // 84, 88, 92 are _mediumPad3..5 — the tail of that 16-byte group.
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
       const pig = id !== undefined && id >= 0 ? PIGMENTS[id] : undefined;
-      const o = 80 + i * 16;
+      const o = 96 + i * 16;
       dv.setFloat32(o + 0, pig ? pig.rho : 0.2, true);
       dv.setFloat32(o + 4, pig ? pig.omega : 3.0, true);
       dv.setFloat32(o + 8, pig ? pig.gamma : 0.3, true);
@@ -684,6 +705,18 @@ export class FluidEngine {
     run('outward', () => {
       this.dispatch(pass, this.pipes.outward, [U, this.wet0.src, this.press.dst]);
       this.press.flip();
+    });
+
+    // 4b — RimMigration (the pigment side of edge darkening, E9). Skipped
+    // entirely at rimMigration = 0, so an oil row and the pre-E9 baseline cost
+    // nothing and reproduce to all digits rather than merely closely.
+    run('rim', () => {
+      if (this.params.rimMigration <= 0) return;
+      this.dispatch(pass, this.pipes.rim, [
+        U, this.wet0.src, this.press.src, this.wet1.src, this.wet2.src,
+        this.wet1.dst, this.wet2.dst,
+      ]);
+      this.wet1.flip(); this.wet2.flip();
     });
 
     // 5 — flux ledger, then pigment BEFORE water (denominator order matters)

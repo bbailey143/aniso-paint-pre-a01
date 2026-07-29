@@ -63,8 +63,32 @@ export interface WetMedium extends Medium {
   gravityResponse: number;
   /** Extra resistance from liquid already held in the substrate below. */
   wetLayerDrag: number;
-  /** C97/Deegan outward drying flow that carries pigment toward a pinned edge. */
+  /** C97/Deegan outward drying flow that carries pigment toward a pinned edge.
+   * This is the WATER side: it lowers pressure at the film edge and pigment
+   * reaches the rim as a passenger. Keep it gentle — see `rimMigration`. */
   edgeDarkening: number;
+  /**
+   * How strongly suspended pigment drifts toward a receding film edge on its
+   * own, independent of how fast the water is moving.
+   *
+   * The reason this exists as a separate row from `edgeDarkening`: C97 gets its
+   * ring by pushing water, so ring strength and water speed are one dial. Turn
+   * it up far enough to see the rim and the water field is being driven at cell
+   * scale, which on a 512 grid reads as stippling and needles (log 13, E8).
+   * This row moves pigment down a deliberately smoothed film gradient instead,
+   * so the rim can be strong while the water stays calm.
+   *
+   * Per medium because it is particle mobility in the vehicle: watercolour rings
+   * famously, a binder-loaded gouache holds pigment where it lands, and oil does
+   * not dry by evaporation at all and should be 0. Zero restores the pure-C97
+   * behaviour exactly.
+   */
+  rimMigration: number;
+  /** Gaussian sigma in cells for the film blur that gives `rimMigration` its
+   * direction — the width of the rim's catchment. Larger = a broader, softer
+   * shoulder; smaller = a narrow stranded line. Weighted inside a fixed 9x9
+   * window, so a medium changing this does not change the cost. */
+  rimReach: number;
   /** Dimensionless, per unit time. */
   evapRate: number;
   /** How strongly it soaks in via Lucas-Washburn. */
