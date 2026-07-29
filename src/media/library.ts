@@ -30,7 +30,12 @@ export const WATERCOLOR: WetMedium = {
   drag: 0.06,
   gravityResponse: 0.03,
   wetLayerDrag: 0.55,
-  edgeDarkening: 0.045,
+  // [UNVERIFIED] The C97-scale 0.045 was numerically almost inert after the
+  // shared wet-load resistance landed. With the continuous film edge and
+  // circular weighted kernel, 20.0 produces a clearly visible pigment-rich
+  // drying rim in a pooled wash without adding pigment or drawing a render
+  // outline. This is an app-scale calibration, not a sourced material constant.
+  edgeDarkening: 20.0,
   evapRate: 0.0015,
   // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
   // consumed a Cold Press surface film in under ten solver steps once the

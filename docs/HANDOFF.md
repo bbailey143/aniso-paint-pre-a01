@@ -133,7 +133,7 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (E7 layered-flow and drying correction complete)
+**Last updated:** 2026-07-29 (E8 stronger rings and edge-kernel correction complete)
 **By:** Codex
 **Build state:** `npm.cmd run build` passes with the shared water/paper,
 below-mask drying, independent paint-load/added-water, layered-flow resistance,
@@ -147,7 +147,8 @@ and `process_video.py`; do not touch them.
 `0bf9470` to `origin/webgpu-test`. The three local behavior milestones through
 E4 plus E5 are not pushed. E6 is committed at the current local HEAD; it must
 not be pushed without fresh authorization. E7 is committed at the current local
-HEAD and also must not be pushed without fresh authorization.
+HEAD. E8 is also committed at the current local HEAD. Neither may be pushed
+without fresh authorization.
 The listed untracked files remain unrelated and must not be touched.
 
 ## Current objective
@@ -181,9 +182,21 @@ now makes the tested ultramarine spot lighten `13.68%` on drying without changin
 pigment. Its rim/interior concentration increased `0.3346 → 0.3920`. The isolated
 edge-darkening-row contribution was small, so visual coffee-ring/cauliflower quality
 remains an artist hand-check. The provisional watercolor row is
-`drag 0.06 / gravityResponse 0.03 / wetLayerDrag 0.55 / edgeDarkening 0.045`;
+`drag 0.06 / gravityResponse 0.03 / wetLayerDrag 0.55`; E8 later recalibrated
+`edgeDarkening` to `20.0`;
 all four remain `[UNVERIFIED]`. Sub-`0.11%` AMD/Polaris amount variability remains
 recorded and does not close the postponed hardware fault.
+
+**E8 COMPLETE — stronger rings and separated pixelation causes.** The hard
+surface-film switch is now continuous (`[UNVERIFIED]` scale `0.02`) and the old
+equal-weight square blur is a circular centre-weighted kernel. This removes the
+artificial box-ring source. Watercolor pigment/fluid still lives at `512×512`
+beneath the `1024×1024` document, so individual cells remain the present fidelity
+ceiling; fully removing them needs a later performance/storage decision.
+`[UNVERIFIED] WATERCOLOR.edgeDarkening` is now `20.0`. A moderate-water probe's
+outer local peak finished at `1.2716×` its neighbours; the clean pooled run reached
+`1.8236×`. No renderer outline was added. A second long pooled repeat reproduced
+the known exact `+2` pigment fault and is excluded; E8 does not close NVIDIA E13.
 
 ## COMPLETED ROUTE (E9–E10; retained for context)
 
@@ -313,23 +326,22 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## NEXT ACTION — Bartford hand-checks E7's shared material response
+## NEXT ACTION — Bartford hand-checks E8 rings and current grid fidelity
 
-1. Refresh `http://127.0.0.1:5175`. On Cold Press at normal drying, lay one wet
-   wash, then paint another colored stroke into and across it before tilting.
-   The new color should slow in the wet area, spread and bleed there, and then
-   move downhill deliberately rather than skating over the first wash.
-2. Compare an ordinary-water stroke with a flooded maximum-water stroke at the
-   same tilt. Both should be much slower than before; the flooded one must still
-   push farther across dry paper and form a broader tongue.
-3. Watch one moderate, even stroke and one flooded spot dry. Both should visibly
-   lighten. The moderate mix may remain even; the flooded spot should be the more
-   likely one to leave a dark rim and irregular bloom.
-4. If the motion spacing is wrong, tune only the four `[UNVERIFIED]` watercolor
-   row values in `src/media/library.ts`. If movement is right but the drying
-   shapes are too weak, continue from E7's measured small isolated
-   `edgeDarkening` contribution; do not fake rings in the renderer. Keep NVIDIA
-   E13 postponed.
+1. Refresh `http://127.0.0.1:5175`. On Cold Press at normal drying, paint one
+   moderate even stroke and one deliberately flooded puddle. Let both finish.
+2. The ordinary stroke should remain comparatively even. The flooded mark should
+   leave a clearly darker, irregular pigment-rich rim; it should no longer be
+   almost invisible.
+3. Inspect the rim shape separately from its cell texture. Square/dotted box rings
+   from E7 should be reduced by the circular kernel, but the roughly two-document-
+   pixel watercolor cells can remain visible. Record whether that remaining
+   texture reads as acceptable paper granulation or objectionable pixelation.
+4. If ring strength is wrong, calibrate only `[UNVERIFIED] edgeDarkening` in
+   `src/media/library.ts`. If the remaining cells are unacceptable, plan the
+   watercolor fidelity/performance step explicitly (higher pigment display field
+   or higher fluid grid) before changing `SIM = 512`; do not hide it with a
+   cosmetic renderer blur. Keep NVIDIA E13 postponed.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration
 

@@ -433,3 +433,79 @@ feel. The numerical rim is not yet proof of a beautiful coffee ring or
 cauliflower bloom, and the isolated `edgeDarkening` contribution is small in
 this test. The sub-`0.11%` AMD/Polaris variability means this entry does not claim
 exact conservation or close the postponed NVIDIA discriminator.
+
+## E8 — Stronger drying rims expose the current watercolor grid (2026-07-29)
+
+**Purpose.** Answer Bartford's question about visible pixelation and strengthen
+drying rings that remained almost too subtle to see after E7.
+
+**Method.** Trace the displayed watercolor resolution and edge pipeline. Sweep
+the shared `edgeDarkening` value on the same centered Cold Press ultramarine
+pool, inspect full radial pigment profiles rather than one broad annulus, then
+exercise both direct numerical pools and the real Round Sable path in headed
+Chrome. Replace only the edge-coverage/kernel shape, rebuild, live-compile, and
+repeat moderate-water and flooded drying cases.
+
+**Raw result.**
+
+- Watercolor fluid and pigment are stored at `512×512` and manually bilinearly
+  displayed on the `1024×1024` document. A simulation cell is therefore about
+  two document pixels before viewport scaling. Strong pigment discontinuities
+  can reveal that grid even though the renderer interpolates between cells.
+- E7 additionally used a hard `surfaceFilm > WET_EPS` switch and an equal-weight
+  `9×9` square blur. A headed strong-ring probe showed dotted concentric boxes.
+  Thus the report was partly the planned coarse-grid fidelity ceiling and partly
+  a correctable edge-kernel artifact.
+- With the old hard/square edge, a value sweep produced final broad
+  rim/interior ratios:
+
+| `edgeDarkening` | final ratio |
+|---:|---:|
+| `0.045` | `0.39235` |
+| `0.5` | `0.39677` |
+| `2` | `0.41391` |
+| `5` | `0.43289` |
+
+  The full profile at `5` exposed the information hidden by that broad ratio:
+  radial band `20` held `0.05103` pigment against `0.02636` immediately inside,
+  a `1.94×` local rim. The original `0.045` band was only `0.02142` and had no
+  local peak.
+- `FlowOutward` now uses continuous
+  `film / (film + [UNVERIFIED] 0.02)` coverage and a circular parabolic
+  centre-weighted radius-four kernel instead of a binary square. The provisional
+  watercolor row is `[UNVERIFIED] edgeDarkening = 20.0`; this is an app-scale
+  artist calibration, not the sourced C97 coefficient.
+- At the final source value, the moderate-water probe's strongest outer local
+  peak increased from `1.20381×` before drying to `1.27158×` after drying in
+  two identical pigment profiles. Its pigment remained exactly `63.6541367`;
+  alarms were `0`. One run retained `1.23888` water at step 900 while the other
+  reached `0`, consistent with the separate AMD variability.
+- The flooded probe developed stronger irregular local peaks. In the clean
+  fully dried run, the strongest outer peak was `1.82364×` its two adjacent
+  bands and water reached `0`. Total pigment read `63.61747` from
+  `63.65413` (`-0.058%`). The repeated run was contaminated by the already-known
+  exact `+2` pigment event: final pigment `65.61751`, with the strongest
+  `1.79921×` peak displaced inward. Both post-capillary alarms were `0`; the
+  contaminated run is recorded and excluded from behavioral acceptance.
+- A real 7,261-segment Round Sable stroke dried without a capillary alarm or
+  stray pigment and correctly stayed comparatively even. Its displayed
+  checker/granulation pattern still revealed individual watercolor cells. The
+  new circular kernel removes the artificial square-ring contribution but
+  cannot make a 512² pigment field cease to be 512².
+- `npm.cmd run build` passed. Chrome compiled the final shaders on
+  `webgpu: amd / gcn-4`; the page and WebGPU error logs were empty.
+
+**What it proves.** The pixelation has two causes that are now separated. The
+binary square edge artifact is corrected in shared physics. The remaining cell
+texture is the current watercolor resolution/storage ceiling and needs a later
+fidelity/performance decision, not a cosmetic smoothing switch. The shared
+edgeward transport can create much darker local pigment rims while an ordinary
+stroke remains more even; no render outline and no pigment-darkening post-effect
+was added.
+
+**What it does NOT prove.** `edgeDarkening = 20` and film scale `0.02` are not
+material constants and remain `[UNVERIFIED]` until Bartford paints with them.
+The direct circular probe exaggerates the grid and is not an artist-facing
+brush sample. The contaminated `+2` repeat means E8 does not establish exact
+pooled-ring reproducibility on this AMD/Polaris GPU, does not close the postponed
+hardware fault, and does not authorize raising the entire fluid grid to 1024².
