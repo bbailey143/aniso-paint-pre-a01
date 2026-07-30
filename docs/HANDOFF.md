@@ -360,7 +360,31 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## IN FLIGHT (Claude, 2026-07-29)
+## IN FLIGHT — NOTHING. Session closed clean, 2026-07-29 evening.
+
+No half-edits, no uncommitted source, no experiment mid-flight. Build passes,
+page loads clean, working tree holds only the five long-standing untracked items.
+A stale pre-merge server that was running on port 5188 for the merge check has
+been stopped and its scratch worktree removed — if you see 5188 anywhere in these
+notes, it is gone.
+
+**TWO THINGS ARE OWED BY BARTFORD, NOT BY THE NEXT MODEL. Do not do them for him
+and do not proceed as though they came back positive:**
+
+1. Water view on a real drying wash — does the dry-down look like paper?
+2. `edgeEvaporation` `10` vs `0` on a flooded wash — is there a soft darker band,
+   and crucially **no** dot field, spikes or contour bands?
+
+**PUSH IS NOT AUTHORIZED.** 18 commits sit ahead of `origin/webgpu-test`. Bartford
+was told the push is independent of those two tests (everything new ships at `0`,
+so pushing changes no paint) and recommended he push as a backup. **He did not
+answer.** Treat it as unauthorized until he says so in his own words. E6, E7 and
+the E8 rollback were already under that same hold.
+
+**Offered and unanswered:** putting the taste dials (`drag`, `gravityResponse`,
+`wetLayerDrag`, `evapRate`, `valueShift`) on live sliders beside the drying one,
+so tuning is Bartford's loop rather than a model's. Worth doing if he says yes;
+do not build it unasked.
 
 Dev server on `http://127.0.0.1:5173` (vite.config.ts pins 5173; the baton's old
 5175 was a collision that session, not a setting).
