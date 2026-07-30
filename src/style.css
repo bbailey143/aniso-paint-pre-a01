@@ -179,6 +179,8 @@ html, body {
 .papers.six .paper { padding: 4px 0; font-size: 10px; }
 .medium-hint { color: var(--ink-dim); font-size: 10px; text-align: center; }
 .medium-info {
+  position: fixed;
+  pointer-events: auto;
   z-index: 40;
   width: 286px;
   max-height: calc(100vh - 24px);
