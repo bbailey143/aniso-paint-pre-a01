@@ -848,3 +848,119 @@ it ships at `0` and Bartford has not yet judged it by hand. That a correctly
 placed ring will still be artifact-free; the pinning change is untested. That
 this closes anything about drying *time*, which nobody has measured against real
 paper.
+
+## E12 — Two brakes on the rim, both found by Bartford's questions (2026-07-30)
+
+**Hardware.** Claude (Opus), Windows 11, `webgpu: amd / gcn-4`.
+
+**Purpose.** Bartford proposed that the edge of a puddle behaves "more like an
+impassable gate than water that happily spreads water", and separately that
+per-pigment dye strength might be unset and affecting the rim. Both were tested
+against the code rather than reasoned about.
+
+### Finding 1 — the gate is real, and it is NOT the wet mask
+
+The obvious suspect is the hard `w0.x < 0.5` test in `flux_compute.wgsl` and
+`update_velocities.wgsl`. **It is not the culprit.** `capillary_flow.wgsl` sets
+`m = 1` wherever paper saturation exceeds `EPS_WET`, so the mask spreads *ahead*
+of the film — visible directly in the water view as a yellow ring well outside
+the blue puddle.
+
+The actual gate is the A26 thin-film mobility in `flux_compute.wgsl`:
+
+```
+face_response = mean_h^3 / (mean_h^3 + viscosity * drag)
+```
+
+It is **cubic** in film height, so it does not taper — it falls off a cliff.
+Measured across a real puddle edge (flooded pool, `edgeEvaporation = 10`, 120
+settle steps, film dumped from `wet0.y` and binned radially):
+
+| radius, cells | film height | face mobility |
+|---|---|---|
+| 2.9 | 0.8711 | 0.991 |
+| 14.6 | 0.5566 | 0.966 |
+| 20.4 | 0.3146 | 0.839 |
+| 26.3 | 0.06103 | **0.0365** |
+| 32.1 | 0 | 0 |
+
+**Mobility collapses 23-fold across six cells.** Water in the outer skin of the
+puddle is not slow, it is very nearly stopped — which is exactly the "impassable
+gate" description, arrived at from the paint side.
+
+**The resistance term is `viscosity * drag` = `0.1 * 0.06` = `0.006`.** E7 raised
+`drag` from `0.01` to `0.06` because Bartford reported water sliding like it was
+on glass. That fix is accepted and it works. But the same number sets where the
+mobility cliff sits, and it moved it:
+
+| `drag` | resistance | mobility at film `0.061` |
+|---|---|---|
+| `0.01` (pre-E7) | `0.001` | `0.185` |
+| `0.06` (E7, current) | `0.006` | `0.0365` |
+
+**E7's accepted drag raise made the thin puddle edge about five times stiffer** —
+and the thin edge is precisely where a coffee ring has to move. This is a genuine
+tension between two things the project wants, not a bug in either.
+
+A second brake stacks on top, in `update_velocities.wgsl`:
+`localDrag = clamp(drag + wetLayerDrag * wetLoad, 0, 0.95)`. With
+`wetLayerDrag = 0.55` and a rim whose paper is saturated by capillary creep,
+`wetLoad` approaches 1 and `localDrag` reaches `0.61` — velocity multiplied by
+`0.39` every step. It is strongest exactly where the paper is wettest, which
+around a spreading wash is the rim.
+
+**`[UNVERIFIED]`** — that relieving either brake produces a better ring. Neither
+was changed here. Lowering `drag` would undo an artist-accepted fix and must not
+be done casually; if the cliff is the problem, the honest fix is likely a
+separate row that keeps bulk drag high while letting a thin drying edge move,
+not a retune of `drag` itself.
+
+### Finding 2 — dye strength IS set, and the test pigment was the worst possible
+
+Bartford's premise was half right. `omega` (C97 staining power) is present on all
+12 pigments, ranging `1.5` (titanium white) to `6.0` (dioxazine purple), sourced
+from C97 for 6 of the 12. It is consumed in `transfer_pigment.wgsl` — but only in
+the **lift** term (`up = d * ... * rho / omega`). It governs how hard it is to
+pick settled pigment back up. It does not affect how far suspended pigment
+travels, so it acts on the rim only indirectly.
+
+The rows that matter more are `rho` (settling rate) and `gamma` (granulation).
+**Ultramarine Blue — the pigment every rim measurement in E7 through E11 used —
+is the extreme outlier on both**, and both values are C97-sourced:
+
+| | `rho` | `gamma` | `omega` |
+|---|---|---|---|
+| Hansa Yellow | 0.12 | 0.08 | 2.2 |
+| Phthalo Blue (GS) | 0.18 | 0.20 | 4.8 |
+| **Ultramarine Blue** | **0.55** | **0.91** | 3.0 |
+
+`rho` is 1.8x the next highest in the library and `gamma` is 3.8x. It drops out
+of suspension fastest and sinks into the paper's hollows hardest — so it is the
+pigment least able to ride the water to a rim.
+
+Ring strength, measured as the strongest interior radial bin over the centre bin
+(`> 1` means a ring exists). Same flooded pool, 1500 settle steps:
+
+| pigment | `edgeEvaporation = 0` | `edgeEvaporation = 10` |
+|---|---|---|
+| Ultramarine Blue | 0.893 | 1.052 |
+| Phthalo Blue (GS) | 0.972 | 1.043 |
+| **Hansa Yellow** | 1.092 | **1.308** |
+
+Repeated: Hansa `1.308` identical, Ultramarine `1.054` vs `1.052`. Pigment totals
+held at `7369` across all six runs.
+
+**Measured as ring strength above flat, Hansa Yellow rings about six times as
+hard as Ultramarine** (`0.308` vs `0.052`). Hansa also shows a hump with edge
+evaporation entirely off.
+
+**What this does NOT prove.** Which of `rho`, `gamma` and `omega` is responsible
+— Hansa is lowest on all three, so three pigments cannot separate them. The clean
+follow-up is to hold a single pigment and vary one row at a time. Nor does it
+prove E11's ring is correctly placed; the hump is still at 25-35% of the radius
+for every pigment tested. It changes the ring's *strength*, not its *position*.
+
+**Consequence for every earlier rim number.** E7's `0.3346 -> 0.3920`, E10's
+sweeps and E11's profiles were all measured on the library's most settle-prone,
+most granulating pigment. They are not wrong, but they are a **worst case**, and
+should be read that way rather than as what watercolour does in general.
