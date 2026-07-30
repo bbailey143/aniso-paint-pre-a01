@@ -26,6 +26,8 @@ export interface PaletteEvents {
   onTiltChange?(gravityX: number, gravityY: number, cosAlpha: number): void;
   /** Fired when the sheet should be wiped. */
   onClear?(): void;
+  /** Debug water display on/off. Changes what is drawn, never what is simulated. */
+  onWaterView?(on: boolean): void;
   /** Rinse the brush: pigment out, clean water in. The sheet is untouched. */
   onRinse?(): void;
   /** Rinse, then re-dip in the current mix — back to a known state. */
@@ -191,6 +193,11 @@ export class Palette {
     this.root.querySelector('#wash-clear')!
       .addEventListener('click', () => this.events.onClear?.());
 
+    const waterView = this.root.querySelector('#water-view') as HTMLInputElement;
+    waterView.addEventListener('change', () => {
+      this.events.onWaterView?.(waterView.checked);
+    });
+
     const flash = (el: Element) => {
       el.classList.add('flash');
       setTimeout(() => el.classList.remove('flash'), 220);
@@ -269,6 +276,10 @@ export class Palette {
           </div>
           <p class="tilt-hint">drag toward downhill</p>
         </section>
+        <label class="loading-row" title="Show where the water is instead of the colour. Deep blue is a lot of standing water, teal is water soaked into the fibres, the yellow line is the wet edge. Display only — it changes nothing about the paint.">
+          <span>water view</span>
+          <input id="water-view" type="checkbox" />
+        </label>
         <button id="wash-clear" class="pal-btn">clear sheet</button>
       </div>`;
   }

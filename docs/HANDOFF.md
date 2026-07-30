@@ -378,6 +378,22 @@ the deposition band tracks it.
 session.** Long-lived pages accumulate the single-cell fault and it silently
 poisons water totals — it fakes a conservation break that is not there.
 
+**WATER VIEW is now in the app** (checkbox above "clear sheet", or
+`__engine.waterView = true`). Bartford asked for it and it is the right
+instrument for the rim work as well: strong blue is standing film, teal is water
+soaked into the fibres, a yellow line marks the wet-mask boundary. Log ramp over
+four decades, `1e-5` to `1e-1` per cell, so the long tail of a dry-down is
+visible rather than one bright flash and then nothing. It reads the same
+textures the paint path reads and writes nothing back — leaving it on cannot
+change what dries or where.
+
+**First thing it showed, recorded as an observation and NOT a conclusion:** on a
+flooded wash the standing-water disc is much smaller than the wet-mask ring
+around it, and the disc shrinks inward as it dries while the mask ring stays put.
+So the last standing water sits in the MIDDLE of the wash. Whether that is why
+E11's ring lands inside rather than at the edge is exactly the question the next
+action asks, and this view is how to answer it by eye before instrumenting it.
+
 **If you must abandon this:** safe to leave in tree exactly as is. Do not revert it
 to "get back to E7" — E7 *is* what runs at `rimMigration = 0`. The 208 -> 224
 params-buffer resize is load-bearing for everything else in that file; do not

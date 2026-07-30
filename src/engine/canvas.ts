@@ -57,6 +57,12 @@ export class CanvasEngine {
   private thickScale = 5.0;
   private kInstrument = 1.0;
   private valueShift = 0.0;
+  /**
+   * Debug display: show where the water is instead of the colour. Purely a
+   * readout — it reads the same textures the paint path reads and feeds nothing
+   * back, so leaving it on cannot change what dries or where.
+   */
+  waterView = false;
   private reliefStrength = 2.2;
 
   constructor(gpu: Gpu) {
@@ -77,7 +83,10 @@ export class CanvasEngine {
       size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
     });
     this.compParams = device.createBuffer({
-      size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
+      // 80, not 64: the water-view flag added a fifth 16-byte group. This size,
+      // the ArrayBuffer in writeCompParams, and `struct Comp` in composite.wgsl
+      // must agree — an overflowing write is rejected whole and silently.
+      size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
     });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
@@ -247,7 +256,7 @@ export class CanvasEngine {
   }
 
   private writeCompParams(viewW: number, viewH: number) {
-    const buf = new ArrayBuffer(64);
+    const buf = new ArrayBuffer(80);
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
@@ -259,6 +268,7 @@ export class CanvasEngine {
     dv.setFloat32(52, this.reliefStrength, true);
     dv.setFloat32(56, this.kInstrument, true);
     dv.setFloat32(60, this.valueShift, true);
+    dv.setFloat32(64, this.waterView ? 1 : 0, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

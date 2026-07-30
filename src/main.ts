@@ -84,6 +84,7 @@ async function main() {
       engine.setFluid({ gravityX, gravityY, cosAlpha });
     },
     onClear() { engine.clear(); },
+    onWaterView(on) { engine.waterView = on; },
     onBrushChange(def, size) {
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);

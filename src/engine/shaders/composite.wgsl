@@ -20,6 +20,13 @@ struct Comp {
   relief: f32,        // paper relief lighting strength
   kInstrument: f32,   // gloss dial (1 matte .. 0 gloss)
   valueShift: f32,    // + dries lighter, - dries darker, 0 unchanged
+
+  // 0 = paint. 1 = the water view: show where the water is instead of the
+  // colour. Buffer is 80 bytes; canvas.ts must agree.
+  waterView: f32,
+  _pad0: f32,
+  _pad1: f32,
+  _pad2: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -52,6 +59,17 @@ fn vs(@builtin(vertex_index) vi: u32) -> VsOut {
   o.pos = vec4f(xy, 0.0, 1.0);
   o.uv = vec2f(xy.x * 0.5 + 0.5, 1.0 - (xy.y * 0.5 + 0.5)); // y-down screen uv
   return o;
+}
+
+/**
+ * Water-view brightness: log ramp over four decades, 1e-5 .. 1e-1 per cell.
+ * The bottom of that range is WET_EPS, the point below which the solver stops
+ * treating a cell as holding water at all — so the ramp fades to nothing at
+ * exactly the moment the paint stops being workable, which is the moment the
+ * artist actually wants to see. Display only; see the note at the call site.
+ */
+fn fn_ramp(v: f32, decades: f32) -> f32 {
+  return clamp(log2(max(v, 0.0) * 1.0e5 + 1.0) / decades, 0.0, 1.0);
 }
 
 fn sinh_(x: f32) -> f32 { let e = exp(x); return (e - 1.0 / e) * 0.5; }
@@ -184,6 +202,64 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let w5v = biload(wet5, uv);
   let wetness = clamp(max(w0v.y * 6.0, w5v.x * 3.0), 0.0, 1.0);
   let kIns = mix(C.kInstrument, 0.0, wetness);
+
+  // ---- Water view -----------------------------------------------------------
+  //
+  // A debug display, not a render mode: it answers "where is the water, and how
+  // much" while a wash dries. Deep blue is a lot, pale blue is a little, and
+  // watching it fade IS watching the sheet dry. Nothing here feeds back into the
+  // simulation — it reads the same two textures the paint path already reads.
+  //
+  // The two kinds of water are shown differently on purpose, because telling
+  // them apart is the whole point of having this:
+  //
+  //   STANDING FILM (wet0.y) — water sitting on top of the paper, the stuff that
+  //   can still flow and carry pigment. Drawn in strong blue.
+  //
+  //   SOAKED IN (wet5.x) — water taken up into the fibres. It no longer flows
+  //   like a film but it keeps the paper workable. Drawn in a duller teal.
+  //
+  // Both scales are display-only and carry no physics.
+  if (C.waterView > 0.5) {
+    let film = max(w0v.y, 0.0);
+    let soak = max(w5v.x, 0.0);
+
+    // Dry paper reads as the paper, dimmed, so the sheet's tooth still gives a
+    // sense of place instead of the mark floating on flat grey.
+    let paperTone = 0.72 + 0.16 * pap.x;
+    var out = vec3f(paperTone * 0.90, paperTone * 0.93, paperTone * 0.97);
+
+    // The amount of water in a drying wash spans about four decades: a fresh
+    // flooded stroke carries ~0.08 per cell, and it is still visibly damp at
+    // ~0.0001. A linear ramp spends its whole range on the first moment and
+    // then shows flat nothing for the entire rest of the dry, which is exactly
+    // the part worth watching. So this is a LOG ramp over 1e-5 .. 1e-1.
+    //
+    // Consequence to keep in mind when reading it: equal steps of colour are
+    // equal RATIOS of water, not equal amounts. Deep blue is not "twice" pale
+    // blue. Nothing here is a measurement — use the CONSERVATION readout for
+    // numbers and this for where and when.
+    let decades = log2(1.0e4);
+    let ramp = fn_ramp(film, decades);
+    let soakAmt = fn_ramp(soak, decades);
+
+    // Soaked-in water first: it lies under the standing film.
+    out = mix(out, vec3f(0.36, 0.62, 0.66), soakAmt * 0.85);
+    // Standing film over it.
+    out = mix(out, vec3f(0.05, 0.24, 0.72), ramp);
+
+    // The wet mask boundary, drawn as a faint line. This is the contact line —
+    // the thing the drying rate is keyed to, and the thing whose behaviour the
+    // rim work turns on. Being able to SEE it is most of why this view exists.
+    let mHere = w0v.x;
+    let e = 1.0 / vec2f(textureDimensions(wet0));
+    let mR = biload(wet0, uv + vec2f(e.x, 0.0)).x;
+    let mD = biload(wet0, uv + vec2f(0.0, e.y)).x;
+    let onEdge = clamp(abs(mR - mHere) + abs(mD - mHere), 0.0, 1.0);
+    out = mix(out, vec3f(0.98, 0.85, 0.30), onEdge * 0.55);
+
+    return vec4f(srgb_encode(out.r), srgb_encode(out.g), srgb_encode(out.b), 1.0);
+  }
 
   let k1 = col.x;
   let k2 = col.y;
