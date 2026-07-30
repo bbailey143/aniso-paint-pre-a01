@@ -133,9 +133,43 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (Claude picking up after E8's rollback; E9 rim redesign
-about to start)
+**Last updated:** 2026-07-29 (Codex's dry-media merge landed and was verified
+against the pre-merge build; wet paint is bit-for-bit unchanged)
 **By:** Claude (Opus), continuing from Codex
+
+## MERGE VERIFICATION — `0892571`, checked 2026-07-29
+
+Codex's dry-media foundation merged with the watercolour work. HEAD is `1eab3e6`,
+17 commits ahead of `origin/webgpu-test`, 0 behind, working tree clean apart from
+the five long-standing untracked items. **Verified, not assumed:**
+
+- Builds; page loads on `webgpu: amd / gcn-4` with no shader or WebGPU
+  validation error.
+- **Wet paint is unchanged by the merge.** The pre-merge commit `68ef979` was
+  checked out into a scratch worktree, served on port 5188, and run through the
+  identical four-stroke harness. Both builds return pigment `633.541565`,
+  interior roughness `0.381677`, edge roughness `0.609925` — the same numbers,
+  not merely close ones. Codex's note that the dry path uses a separate segment
+  layout "so wet-brush footprints stay byte-for-byte unchanged" holds up under
+  measurement.
+- Both uniform-buffer sizes survived intact — fluid params `24*4 + 8*16` with
+  `pig` at offset `96`, composite params `80`. These are the merge's most
+  dangerous surface: a wrong-side merge here fails **silently**, with every
+  parameter frozen and every gauge reading zero. Check them first after any
+  future merge.
+- E11 still works post-merge: `edgeEvaporation = 10` still humps the radial
+  profile (`0.405, 0.379, 0.422, 0.425, 0.404, 0.336, ...`) against a flat
+  `edgeEvaporation = 0` (`0.405, 0.358, 0.357, 0.362, 0.354, 0.358, ...`),
+  pigment conserved, validation null.
+- Water view survived: checkbox present, `__engine.waterView` live.
+- Codex's side is present: ten dry tools (9B/2B/HB/2H, two biros, vine charcoal,
+  conté, wax crayon, chisel fountain) and long-press settings cards.
+
+**Stale reference numbers.** Earlier entries quote a four-stroke baseline of
+interior `0.347627` / edge `0.592322`. Both builds measure `0.381677` /
+`0.609925` today, so that older pair came from a differently-configured session
+and **why is not known**. Do not compare against it. The pre/post-merge
+comparison above is same-day, same-machine, same-harness and is the one to trust.
 **Build state:** `npm.cmd run build` passes with the shared water/paper,
 below-mask drying, independent paint-load/added-water, layered-flow resistance,
 medium gravity response, wet-to-dry value shift, and global pen-cursor corrections.
