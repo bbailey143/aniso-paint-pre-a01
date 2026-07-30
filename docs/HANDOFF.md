@@ -359,6 +359,25 @@ both instrument errors, and one retracted claim of mine are in
 
 **Nothing is half-edited.** Build passes, no validation errors, default inert.
 
+**E11 IS DONE AND IT IS THE ROUTE THAT WORKS.** `dry_tick.wgsl` now evaporates
+faster near a film's edge, scaled by one new row `edgeEvaporation`. No new pass,
+no new transport term — `update_velocities.wgsl` and `flux_apply_pigment.wgsl`
+already move water downhill and carry pigment on it, so thinning the rim is
+enough. Measured, reproduced, and clean: a ring forms while cell-scale structure
+rises only `4%` (E9's route raised it `280%`). Pigment conserved to five figures,
+sheet dries to zero water, no validation errors. Full numbers in `docs/13` E11.
+
+**Open and specific: the ring lands at ~25-35% of the wash radius, not at its
+outer edge.** Not explained. The suspicion — recorded as suspicion — is that
+Deegan needs a *pinned* contact line and nothing here pins one, so the drying
+band walks inward as the wet region shrinks. **Test that before building
+anything:** log the wet-region radius over time in one drying run and see whether
+the deposition band tracks it.
+
+**Instrument rule learned the hard way: reload the page before any measurement
+session.** Long-lived pages accumulate the single-cell fault and it silently
+poisons water totals — it fakes a conservation break that is not there.
+
 **If you must abandon this:** safe to leave in tree exactly as is. Do not revert it
 to "get back to E7" — E7 *is* what runs at `rimMigration = 0`. The 208 -> 224
 params-buffer resize is load-bearing for everything else in that file; do not
@@ -368,37 +387,31 @@ height in `press.y`, which the recommended next route needs, so keep that too.
 `git status` in the repo root tells you the truth. The five untracked items
 listed under Build state are unrelated — leave them.
 
-## NEXT ACTION — Rim from non-uniform evaporation, not a second transport path
+## NEXT ACTION — Find out why the ring sits inside the wash, before pinning anything
 
-Awaiting Bartford's word on the route change; the reasoning is E10's closing
-paragraph. If he says go:
+E11 works and is clean. One thing is wrong with it and it has one cheap test.
 
-1. **Do not add another pigment transport term.** Two attempts have now failed for
-   the same underlying reason — E8 injected velocity, E9 invented a bespoke drift.
-   Drive the ring from **non-uniform evaporation**, which is what Deegan actually
-   describes and what Card 5 states.
-2. In `dry_tick.wgsl` (the only pass that removes water), weight the evaporation
-   toward the film edge using the blurred film height already emitted in
-   `press.y` by `flow_outward.wgsl`. A pool then thins at its rim; the existing
-   **already-validated** conservative flux replenishes it from the interior; and
-   `flux_apply_pigment.wgsl` carries the pigment along at no extra cost. The
-   driving quantity becomes a thickness gradient, which is intrinsically smooth,
-   instead of a velocity injection.
-3. Add exactly one shared row, `edgeEvaporation` on `WetMedium`, `[UNVERIFIED]`:
-   `0` for oil (it does not dry by evaporation), low for bodied paint, higher for
-   watercolour. `0` must reproduce current behaviour to all digits, the way
-   `rimMigration = 0` does now — that regression path is worth the small effort
-   every time.
-4. **Preserve E7's accepted base:** `drag 0.06 / gravityResponse 0.03 /
-   wetLayerDrag 0.55 / edgeDarkening 0.045`. Leave `rimMigration` at `0`.
-5. Watch total water, not just pigment. This route changes *where* water leaves,
-   which the flux ledger has never been asked to balance against before. Any
-   conservation claim needs two identical runs.
-6. Acceptance, in this order: ordinary strokes and a flooded wash at display scale
-   judged by Bartford; then interior-vs-edgeBand roughness (E10's split metric,
-   which is the instrument that would have caught E9 a day earlier); then the rim
-   ratio as supporting evidence only.
-7. Keep NVIDIA E13 postponed until Bartford explicitly says he is ready to switch
+1. **Measure before building.** In one drying run of the pool at
+   `edgeEvaporation = 10`, record every ~100 steps: the radius of the wet region
+   (from the `wet0.x` mask), and the radius of the peak in the dried-pigment
+   radial profile. If the deposition band follows the shrinking wet edge inward,
+   the contact line is retreating and pinning is the fix. If the band sits still
+   while the wet edge retreats past it, pinning is **not** the fix and the
+   suspicion in E11 is wrong — say so loudly, because everything below assumes it.
+2. **Only if step 1 confirms retreat:** pin the contact line. The physical hook is
+   already in the engine — paper tooth and sizing resist a receding meniscus. Look
+   at `capillary_flow.wgsl` and the `PAPER` texture before inventing anything, and
+   expect it to want a shared row (`edgePinning`?) rather than a watercolour case.
+3. **Do not touch what works.** E7's `drag 0.06 / gravityResponse 0.03 /
+   wetLayerDrag 0.55 / edgeDarkening 0.045` stays. `rimMigration` stays `0`.
+   `edgeEvaporation` stays `0` until Bartford has judged it by hand.
+4. **Bartford's hand test is still owed** on E11. He should flood a wash on Cold
+   Press with drying up, and compare `edgeEvaporation` `0` against `10` live:
+   `__engine.setFluid({ edgeEvaporation: 10 })` in the page console, then paint.
+   What to look for: a soft darker band appearing inside the wash, and — the part
+   that matters — **no** dot field, spikes or contour bands anywhere.
+5. Reload the page before each measurement session. See the instrument rule above.
+6. Keep NVIDIA E13 postponed until Bartford explicitly says he is ready to switch
    computers.
 
 ## PREVIOUS NEXT ACTION — Bartford's hand test, then calibration

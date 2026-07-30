@@ -133,6 +133,7 @@ export class CanvasEngine {
       edgeEta: m.edgeDarkening,
       rimMigration: m.rimMigration,
       rimReach: m.rimReach,
+      edgeEvaporation: m.edgeEvaporation,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,

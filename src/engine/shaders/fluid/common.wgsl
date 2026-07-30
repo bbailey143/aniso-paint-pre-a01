@@ -36,7 +36,9 @@ struct Params {
 
   /** Gaussian sigma in cells for the film blur that aims rimMigration. */
   rimReach: f32,
-  _mediumPad3: f32,
+  /** How much faster the film evaporates at its pinned edge than in its
+   * interior. This is the Deegan mechanism itself, not a model of its result. */
+  edgeEvaporation: f32,
   _mediumPad4: f32,
   _mediumPad5: f32,
 

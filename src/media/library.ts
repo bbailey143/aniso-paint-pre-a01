@@ -37,6 +37,9 @@ export const WATERCOLOR: WetMedium = {
   // measured constant. No card supplies either number.
   rimMigration: 0,
   rimReach: 2.0,
+  // [UNVERIFIED] Edge-weighted drying — the actual coffee-ring cause (E11).
+  // No card supplies a ratio; this is calibrated against Bartford's eye.
+  edgeEvaporation: 0,
   evapRate: 0.0015,
   // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
   // consumed a Cold Press surface film in under ten solver steps once the

@@ -85,6 +85,9 @@ export interface FluidParams {
   rimMigration: number;
   /** Gaussian sigma in cells for the film blur that aims rimMigration. */
   rimReach: number;
+  /** How much faster a film dries at its pinned edge than in its interior
+   * (log 13, E11). 0 = evenly, the pre-E11 behaviour. */
+  edgeEvaporation: number;
   /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
@@ -114,6 +117,7 @@ export const DEFAULT_FLUID: FluidParams = {
   wetLayerDrag: 0.0,
   rimMigration: 0.0,
   rimReach: 2.0,
+  edgeEvaporation: 0.0,
   handoffEnabled: true,
 };
 
@@ -499,7 +503,8 @@ export class FluidEngine {
     dv.setFloat32(72, p.wetLayerDrag, true);
     dv.setFloat32(76, p.rimMigration, true);
     dv.setFloat32(80, p.rimReach, true);
-    // 84, 88, 92 are _mediumPad3..5 — the tail of that 16-byte group.
+    dv.setFloat32(84, p.edgeEvaporation, true);
+    // 88, 92 are _mediumPad4..5 — the tail of that 16-byte group.
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
@@ -771,7 +776,12 @@ export class FluidEngine {
 
     // 9 — DryTick (the only pass that removes water). Flags cells that just dried.
     run('dry', () => {
-      this.dispatch(pass, this.pipes.dry, [U, this.wet0.src, this.wet5.src, this.wet0.dst, this.wet5.dst]);
+      // press.src carries the blurred wet mask that edge-weighted evaporation
+      // reads. It was written by `outward` earlier this frame and not touched
+      // since, so this is the current frame's contact line, not last frame's.
+      this.dispatch(pass, this.pipes.dry, [
+        U, this.wet0.src, this.wet5.src, this.press.src, this.wet0.dst, this.wet5.dst,
+      ]);
       this.wet0.flip(); this.wet5.flip();
     });
 

@@ -754,3 +754,97 @@ gradient rather than a velocity injection. It adds one shared row —
 `edgeEvaporation`, `0` for oil, low for bodied paint, high for watercolour — and
 the rim strength stops borrowing from water speed without needing a bespoke
 mechanism to do it.
+
+## E11 — Edge-weighted evaporation: clean, real, ring in the wrong place (2026-07-29)
+
+**Hardware.** Claude (Opus), Windows 11, `webgpu: amd / gcn-4`. Bartford
+authorized this route after reading E10.
+
+**Purpose.** Produce the coffee ring from its actual cause — faster evaporation
+at a film's pinned edge — instead of adding a third way to push paint about.
+
+**Method.** Verified by code reading first that the existing engine will do the
+transport: `update_velocities.wgsl` accelerates water by
+`-(h_neighbour - h_here)`, so a thinner rim really does drive outward flow, and
+`flux_apply_pigment.wgsl` carries pigment on the resulting flux through the
+ledger validated since the bench. So the only change is *where* water leaves.
+
+`flow_outward.wgsl` now also emits its blurred wet mask in `press.z`.
+`dry_tick.wgsl` reads it and scales evaporation by
+`1 + edgeEvaporation * (1 - m_blur)` — 1 deep inside a puddle, higher toward the
+contact line. One new `WetMedium` row, `edgeEvaporation`, `[UNVERIFIED]`,
+default `0`. **No new pass, no new transport term, no second ledger.**
+
+Test object: the corrected filled pool (45 overlapping rings, radius 90 px,
+flooded brush, 1500 settle steps, Cold Press). Radial profile in 12 bins from
+centre to the 99th-percentile radius. Interior/edgeBand roughness split from E10.
+Every run inside a WebGPU validation scope.
+
+### Raw result
+
+`edgeEvaporation = 0` reproduces the pre-E11 four-stroke baseline **to all
+digits** over repeated sessions: pigment `633.541443`, interior roughness
+`0.347627`, edgeBand `0.592322`. The extra texture binding and the multiply by
+`1.0` change nothing.
+
+Pool, fresh page load, each value run twice:
+
+| `edgeEvaporation` | pigment | water | wet cells | interior rough | edgeBand rough |
+|---|---|---|---|---|---|
+| 0 | 7370.11 / 7370.98 | 0 | 0 | 0.5196 / 0.5185 | 0.2705 / 0.2672 |
+| 3 | 7370.41 / 7369.58 | 0 | 0 | 0.5301 / 0.5291 | 0.2587 / 0.2588 |
+| 10 | 7370.62 / 7370.72 | 0 | 0 | 0.5407 / 0.5407 | 0.2446 / 0.2385 |
+
+Radial profile, centre to rim, second run of each:
+
+| | b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7 | b8 |
+|---|---|---|---|---|---|---|---|---|---|
+| `0` | .4053 | .3588 | .3584 | .3623 | .3530 | .3574 | .3191 | .2889 | .2502 |
+| `3` | .4054 | .3570 | .3669 | .3731 | **.3828** | .3689 | .3177 | .2806 | .2431 |
+| `10` | .4003 | .3772 | **.4163** | **.4173** | .4030 | .3366 | .3017 | .2789 | .2403 |
+
+Profiles reproduce to four or five significant figures between runs. No
+validation errors at any setting.
+
+**What it proves.** The mechanism works and it is clean. A ring forms — the flat
+profile develops a genuine hump — and it forms **without the artifact that killed
+both previous attempts**: interior roughness rises `0.5196 -> 0.5407`, about
+`4%`, against E9's `0.52 -> 1.97`. Edge-band roughness actually *falls*. Pigment
+is conserved to five figures and the sheet dries to exactly zero water. The
+rendered wash reads as paint at display scale, not as fabric or stipple. Setting
+the row to `0` is a true regression path.
+
+Two failed routes pushed paint and both put the grid into the mark; this one
+changes only where water leaves and lets the existing physics move the paint, and
+the grid does not appear. That is the result worth keeping from today.
+
+**What it does NOT prove — the ring is in the wrong place.** The hump sits at
+roughly `25-35%` of the radius, not at the outer edge where a coffee ring
+belongs, and the outermost bins are unchanged (`.125 / .059 / .028` at every
+setting). The rim/interior ratio therefore *falls* rather than rises. **Why the
+ring lands there is not established and no mechanism is offered here.**
+
+The obvious suspicion, recorded as a suspicion and nothing more: Deegan's ring
+requires a **pinned** contact line, and nothing in this engine pins one. As the
+wash dries, its wet region shrinks, so the edge that drying tracks moves inward
+and the enhanced-evaporation band follows it. `[UNVERIFIED]` — the cheap test is
+to log the wet-region radius over time in a single drying run and see whether the
+band's position tracks it. Do that before building anything.
+
+**Instrument note — a scare that was not real, and a new rule.** Mid-session the
+pool began finishing with 68-148 units of water left instead of 0, and water
+*rose* with longer settling. That looked like this change breaking conservation.
+It is not: it appears at `edgeEvaporation = 0` as well, only after many sessions
+have run in one page, always with `wetCells = 1`, and it vanishes on a fresh page
+load. It is consistent with the already-documented single-cell fault in
+`docs/12`, and is **not** attributed further here.
+
+**Rule for anyone measuring this engine: reload the page before a measurement
+session.** Long-lived pages accumulate the fault and it silently poisons water
+totals. Every number in this entry comes from a freshly loaded page.
+
+**Also not proven.** That `edgeEvaporation` belongs at any particular value —
+it ships at `0` and Bartford has not yet judged it by hand. That a correctly
+placed ring will still be artifact-free; the pinning change is untested. That
+this closes anything about drying *time*, which nobody has measured against real
+paper.

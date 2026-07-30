@@ -89,6 +89,21 @@ export interface WetMedium extends Medium {
    * shoulder; smaller = a narrow stranded line. Weighted inside a fixed 9x9
    * window, so a medium changing this does not change the cost. */
   rimReach: number;
+  /**
+   * How much faster the film dries at its pinned edge than in its interior.
+   * `0` = evenly, which is what every medium did before this row existed.
+   * `2` means the rim loses water three times as fast as the middle.
+   *
+   * This is the coffee ring, and unlike `edgeDarkening` and `rimMigration` it
+   * does not model the ring — it sets up the cause and lets the existing water
+   * and pigment transport produce the ring on its own. Nothing pushes paint.
+   *
+   * Per medium because it is really "does this stuff dry by losing solvent to
+   * the air, and how exposed is its edge": high for watercolour, lower for a
+   * bodied paint whose surface skins over, and **0 for oil**, which does not
+   * dry by evaporation at all — it cures, and it famously leaves no ring.
+   */
+  edgeEvaporation: number;
   /** Dimensionless, per unit time. */
   evapRate: number;
   /** How strongly it soaks in via Lucas-Washburn. */

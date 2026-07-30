@@ -53,7 +53,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   // artist's faster-drying setting does not exceed that physical ceiling.
   let dryingDrive = clamp(P.evapRate / max(P.dryRate, WET_EPS), 0.0, 1.0);
   let bias = -P.edgeEta * dryingDrive * (1.0 - m_blur) * m;
-  // .x is the pressure bias flux_compute reads. .y is the smoothed film that
-  // rim_migration reads. Nothing else uses this texture's other channels.
-  textureStore(press_out, c, vec4<f32>(bias, h_blur, 0.0, 0.0));
+  // .x is the pressure bias flux_compute reads. .y is the smoothed film height
+  // rim_migration reads. .z is the blurred wet MASK, which dry_tick reads to
+  // find the contact line: it is 1 deep inside a puddle and falls toward 0 at
+  // the edge, so `1 - m_blur` is "how close am I to the rim", smoothly.
+  textureStore(press_out, c, vec4<f32>(bias, h_blur, m_blur, 0.0));
 }
