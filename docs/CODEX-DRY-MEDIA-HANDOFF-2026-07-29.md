@@ -14,10 +14,9 @@ Do not switch branches, reset files, or overwrite `docs/HANDOFF.md` in the
 shared checkout while Claude is working.  The dry-media work is isolated and
 can be brought across as a deliberate, reviewable change later.
 
-**Exact dry-media checkpoints to apply, in order:** `fbb1bf8` (`Build shared
-dry-media foundation`) and `cd25abc` (`Add long-press medium settings cards`)
-and `21a100b` (`Pin settings cards for tools and papers`) from
-`codex/pencil-tuning`.
+**Integration status:** these checkpoints were merged into `webgpu-test` as
+`0892571` on 2026-07-29. Do not apply them again. The original checkpoints —
+`fbb1bf8`, `cd25abc`, and `21a100b` — remain listed here only as history.
 
 ## What is ready in the dry-media branch
 
