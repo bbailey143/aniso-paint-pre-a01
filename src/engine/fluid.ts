@@ -57,6 +57,9 @@ const TOTAL_LANES = 16;
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
 const SEG_FLOATS = 8;          // vec2 a, vec2 b, radius, water, pigment, pad
+// Dry tools also carry the long axis of a tilted contact ellipse. It remains a
+// separate layout so wet-brush footprints stay byte-for-byte unchanged.
+const DRY_SEG_FLOATS = 10;
 
 export interface FluidParams {
   dt: number;
@@ -255,8 +258,9 @@ export class FluidEngine {
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
   private segBuf: GPUBuffer;
+  private inkSegBuf: GPUBuffer;
   /** The same stroke footprints in the finer dry-media coordinate system. */
-  private inkSegs = new Float32Array(MAX_SEGS * SEG_FLOATS);
+  private inkSegs = new Float32Array(MAX_SEGS * DRY_SEG_FLOATS);
   private ctlBuf: GPUBuffer;
   private mixBuf: GPUBuffer;
   private partialsBuf: GPUBuffer;
@@ -346,6 +350,10 @@ export class FluidEngine {
     this.segBuf = device.createBuffer({
       size: MAX_SEGS * SEG_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'segments',
+    });
+    this.inkSegBuf = device.createBuffer({
+      size: MAX_SEGS * DRY_SEG_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'dry-segments',
     });
     this.ctlBuf = device.createBuffer({
       size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
@@ -568,16 +576,19 @@ export class FluidEngine {
     this.gpu.device.queue.submit([enc.finish()]);
   }
 
-  /** Bounding box of a run of segments, padded by each one's radius. */
-  private segBounds(segments: Float32Array, from: number, n: number) {
+  /** Bounding box of a run of segments, padded by each contact shape. */
+  private segBounds(segments: Float32Array, from: number, n: number,
+                    stride = SEG_FLOATS, hasTiltedContact = false) {
     let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     for (let i = 0; i < n; i++) {
-      const o = (from + i) * SEG_FLOATS;
+      const o = (from + i) * stride;
       const r = segments[o + 4] + 1;
-      minX = Math.min(minX, segments[o] - r, segments[o + 2] - r);
-      maxX = Math.max(maxX, segments[o] + r, segments[o + 2] + r);
-      minY = Math.min(minY, segments[o + 1] - r, segments[o + 3] - r);
-      maxY = Math.max(maxY, segments[o + 1] + r, segments[o + 3] + r);
+      const ex = hasTiltedContact ? Math.abs(segments[o + 8]) : 0;
+      const ey = hasTiltedContact ? Math.abs(segments[o + 9]) : 0;
+      minX = Math.min(minX, segments[o] - r - ex, segments[o + 2] - r - ex);
+      maxX = Math.max(maxX, segments[o] + r + ex, segments[o + 2] + r + ex);
+      minY = Math.min(minY, segments[o + 1] - r - ey, segments[o + 3] - r - ey);
+      maxY = Math.max(maxY, segments[o + 1] + r + ey, segments[o + 3] + r + ey);
     }
     return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0]);
   }
@@ -591,7 +602,8 @@ export class FluidEngine {
    * independent things happening on the same sheet, which is what it is in life.
    */
   depositDry(segments: Float32Array<ArrayBuffer>, segCount: number,
-             mixWeights: Float32Array<ArrayBuffer>, edge = 1) {
+             mixWeights: Float32Array<ArrayBuffer>, edge = 1,
+             profile: 'round' | 'chisel' = 'round') {
     if (segCount <= 0) return;
     const { device } = this.gpu;
     device.queue.writeBuffer(this.mixBuf, 0, mixWeights);
@@ -606,8 +618,8 @@ export class FluidEngine {
       // That keeps a 0.5 mm pen narrow while preserving its ink-per-distance.
       const scale = INK_RES / this.n;
       for (let i = 0; i < n; i++) {
-        const src = (done + i) * SEG_FLOATS;
-        const dst = i * SEG_FLOATS;
+        const src = (done + i) * DRY_SEG_FLOATS;
+        const dst = i * DRY_SEG_FLOATS;
         this.inkSegs[dst] = segments[src] * scale;
         this.inkSegs[dst + 1] = segments[src + 1] * scale;
         this.inkSegs[dst + 2] = segments[src + 2] * scale;
@@ -616,17 +628,20 @@ export class FluidEngine {
         this.inkSegs[dst + 5] = segments[src + 5];
         this.inkSegs[dst + 6] = segments[src + 6];
         this.inkSegs[dst + 7] = segments[src + 7];
+        this.inkSegs[dst + 8] = segments[src + 8] * scale;
+        this.inkSegs[dst + 9] = segments[src + 9] * scale;
       }
       device.queue.writeBuffer(
-        this.segBuf, 0, this.inkSegs, 0, n * SEG_FLOATS);
-      const ctl = this.segBounds(this.inkSegs, 0, n);
+        this.inkSegBuf, 0, this.inkSegs, 0, n * DRY_SEG_FLOATS);
+      const ctl = this.segBounds(this.inkSegs, 0, n, DRY_SEG_FLOATS, true);
       ctl[5] = edge;                    // rim falloff, per medium
+      ctl[6] = profile === 'chisel' ? 1 : 0;
       device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const enc = device.createCommandEncoder({ label: 'dry-deposit' });
       const pass = enc.beginComputePass();
       this.dispatchAt(pass, this.pipes.dryDepositInk, INK_RES, [
-        { buffer: this.paramsBuf }, { buffer: this.segBuf },
+        { buffer: this.paramsBuf }, { buffer: this.inkSegBuf },
         { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.ink0.src, this.ink1.src, this.inkPaper,
         this.ink0.dst, this.ink1.dst,
@@ -1047,4 +1062,4 @@ export class FluidEngine {
   }
 }
 
-export { MAX_SEGS, SEG_FLOATS };
+export { MAX_SEGS, SEG_FLOATS, DRY_SEG_FLOATS };

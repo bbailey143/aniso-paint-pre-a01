@@ -76,6 +76,13 @@ brush, and substrate supply the constants they read.
   layer, modulated by paper tooth (a height threshold) and stroke velocity — which
   is what makes fast strokes on rough paper break up and slow strokes lay smooth.
 
+### Current dry-media rows
+
+The built dry library now includes graphite (9B, 2B, HB, 2H), blue and black
+ballpoints, vine charcoal, Conte crayon, wax crayon, and a chisel fountain pen.
+They are parameter rows on the same contact and deposition path, not separate
+drawing engines.
+
 ## Why this shape
 
 The whole point of the specialist/library split is extensibility with a fixed code

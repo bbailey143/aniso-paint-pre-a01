@@ -19,9 +19,10 @@ struct Seg {
   a: vec2<f32>,
   b: vec2<f32>,
   radius: f32,
-  water: f32,       // always 0 for a dry medium
+  particleSize: f32,
   pigment: f32,
   reach: f32,       // 0..1 how deep into the tooth the tip gets
+  lean: vec2<f32>,  // major-axis vector of the tilted contact ellipse
 };
 
 struct Ctl {
@@ -33,7 +34,7 @@ struct Ctl {
   /** Rim falloff in inverse cells. 1 spreads the edge over a whole cell, which
    * reads as wet; higher tightens it to the crisp edge a paste leaves. */
   edge: f32,
-  _p1: f32,
+  profile: f32,     // 0 = round/oval, 1 = chisel
   _p2: f32,
 };
 
@@ -53,6 +54,29 @@ fn segDist(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
   if (len2 < 1e-8) { return distance(p, a); }
   let t = clamp(dot(p - a, ab) / len2, 0.0, 1.0);
   return distance(p, a + ab * t);
+}
+
+// A dry tool may touch as a round point or as an oval side-contact. `lean`
+// stores both the long-axis direction and its half-length, while `radius` is
+// the short-axis half-width. This is shared dry-tool geometry: graphite is
+// simply the first row that asks for a strong oval.
+fn tiltedContact(p: vec2<f32>, s: Seg) -> f32 {
+  let ab = s.b - s.a;
+  let len2 = dot(ab, ab);
+  var centre = s.a;
+  if (len2 >= 1e-8) {
+    let t = clamp(dot(p - s.a, ab) / len2, 0.0, 1.0);
+    centre = s.a + ab * t;
+  }
+  let leanLength = length(s.lean);
+  let major = max(leanLength, s.radius);
+  let axis = s.lean / max(leanLength, 1e-6);
+  let side = vec2<f32>(-axis.y, axis.x);
+  let d = p - centre;
+  let along = dot(d, axis) / major;
+  let across = dot(d, side) / max(s.radius, 1e-6);
+  if (C.profile > 0.5) { return max(abs(along), abs(across)); }
+  return along * along + across * across;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -78,7 +102,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
       let d = segDist(pos, s.a, s.b);
-      if (d < s.radius + 0.9) {
+      if (d < max(s.radius, length(s.lean)) + 0.9) {
         // TRUE COVERAGE, by supersampling the cell 4x4.
         //
         // [TRAP, measured twice] Any falloff of the form `g(d / radius)` samples
@@ -105,7 +129,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
           for (var sx = 0u; sx < 4u; sx = sx + 1u) {
             let sp = vec2<f32>(f32(c.x) + (f32(sx) + 0.5) * 0.25,
                                f32(c.y) + (f32(sy) + 0.5) * 0.25);
-            if (segDist(sp, s.a, s.b) <= s.radius) { acc = acc + 1.0; }
+            if (tiltedContact(sp, s) <= 1.0) { acc = acc + 1.0; }
           }
         }
         // Gamma on coverage: below 1 spreads the rim (graphite feathers, loose
@@ -137,8 +161,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let ride = 1.0 - P.toothAmp * (1.0 - toothH);
         let need = 1.0 - clamp(s.reach, 0.0, 1.0);
         let gate = smoothstep(need - 0.18, need + 0.18, ride);
+        // Smaller particles seat more readily in the paper's microstructure;
+        // larger charcoal and crayon particles bridge it. This is the shared
+        // particle term from the physical-medium row, applied after the same
+        // height gate every dry tool uses.
+        let particleSeat = ride / max(ride + s.particleSize, 1e-4);
 
-        lay = lay + f * gate * s.pigment;
+        lay = lay + f * gate * particleSeat * s.pigment;
       }
     }
 

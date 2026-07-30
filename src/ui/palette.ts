@@ -11,7 +11,9 @@ import { PAPERS, type Paper } from '../substrate/papers';
 import { BRUSHES } from '../brush/library';
 import type { BrushDef } from '../brush/types';
 import { DRY_TOOLS } from '../media/library';
-import type { DryMedium } from '../media/types';
+import type { DryMedium, GranularDry, InkMedium } from '../media/types';
+
+type SettingsGroup = { heading: string; rows: Array<[string, string]> };
 
 export interface PaletteEvents {
   /** Fired whenever the active mix or loading changes. */
@@ -50,6 +52,7 @@ export class Palette {
   private mixHexLabel!: HTMLElement;
   private recipeRow!: HTMLElement;
   private events: PaletteEvents;
+  private mediumInfo?: HTMLElement;
 
   constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
@@ -86,8 +89,10 @@ export class Palette {
       const el = document.createElement('button');
       el.className = 'pal-btn paper' + (i === 0 ? ' on' : '');
       el.textContent = b.name.replace(' Sable', '');
+      const consumeBrushHold = this.installSettingsHold(el, () => this.showBrushInfo(b, el));
       el.title = `${b.name} — ${b.kind === 'flat' ? 'two spines (spreads, scratches)' : 'one spine (points)'}`;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (event) => {
+        if (consumeBrushHold(event)) return;
         clearAll();
         el.classList.add('on');
         this.brush = b;
@@ -101,12 +106,40 @@ export class Palette {
       const el = document.createElement('button');
       el.className = 'pal-btn paper';
       el.textContent = t.name;
+      let holdTimer: number | undefined;
+      let blockClickUntil = 0;
+      const cancelHold = () => {
+        if (holdTimer !== undefined) {
+          window.clearTimeout(holdTimer);
+          holdTimer = undefined;
+        }
+      };
+      el.addEventListener('pointerdown', (event) => {
+        if (!event.isPrimary || event.button !== 0) return;
+        cancelHold();
+        holdTimer = window.setTimeout(() => {
+          holdTimer = undefined;
+          // Releasing a pen or finger can still make a click. Ignore only that
+          // release, not the painter's next normal tool selection.
+          blockClickUntil = performance.now() + 1800;
+          this.showMediumInfo(t.medium, el);
+        }, 550);
+      });
+      el.addEventListener('pointerup', cancelHold);
+      el.addEventListener('pointercancel', cancelHold);
+      el.addEventListener('pointerleave', cancelHold);
+      el.addEventListener('contextmenu', (event) => event.preventDefault());
       el.title = t.medium.kind === 'ink'
         ? 'Ballpoint — rides the peaks and skips the valleys; the ball starves and recovers as it rolls'
         : `Graphite ${t.name} — ${t.medium.hardness > 0
             ? 'hard: lays little, catches only the peaks of the tooth'
             : 'soft: lays heavily and fills the valleys'}`;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (event) => {
+        if (performance.now() < blockClickUntil) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         clearAll();
         el.classList.add('on');
         this.root.classList.add('dry-mode');
@@ -134,7 +167,9 @@ export class Palette {
       const b = document.createElement('button');
       b.className = 'pal-btn paper' + (i === 1 ? ' on' : ''); // cold press default
       b.textContent = p.name;
-      b.addEventListener('click', () => {
+      const consumePaperHold = this.installSettingsHold(b, () => this.showPaperInfo(p, b));
+      b.addEventListener('click', (event) => {
+        if (consumePaperHold(event)) return;
         papers.querySelectorAll('.paper').forEach((e) => e.classList.remove('on'));
         b.classList.add('on');
         this.events.onPaperChange?.(p);
@@ -217,6 +252,259 @@ export class Palette {
     });
   }
 
+  /** The shared press-and-hold gesture used by media, brushes, and papers. */
+  private installSettingsHold(el: HTMLElement, open: () => void) {
+    let holdTimer: number | undefined;
+    let blockClickUntil = 0;
+    const cancelHold = () => {
+      if (holdTimer !== undefined) {
+        window.clearTimeout(holdTimer);
+        holdTimer = undefined;
+      }
+    };
+    el.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      cancelHold();
+      holdTimer = window.setTimeout(() => {
+        holdTimer = undefined;
+        // Keep the report pinned through browsers that delay the release click.
+        blockClickUntil = performance.now() + 1800;
+        open();
+      }, 550);
+    });
+    el.addEventListener('pointerup', cancelHold);
+    el.addEventListener('pointercancel', cancelHold);
+    el.addEventListener('pointerleave', cancelHold);
+    el.addEventListener('contextmenu', (event) => event.preventDefault());
+    return (event: MouseEvent) => {
+      if (performance.now() >= blockClickUntil) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    };
+  }
+
+  /** A reusable, pinned report card. Only its own X closes it. */
+  private showSettingsCard(
+    titleText: string, subtitleText: string, noteText: string,
+    anchor: HTMLElement, groups: SettingsGroup[],
+  ) {
+    this.closeMediumInfo();
+    const card = document.createElement('aside');
+    card.className = 'medium-info panel';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', `${titleText} settings`);
+
+    const head = document.createElement('div');
+    head.className = 'medium-info-head';
+    const title = document.createElement('div');
+    const name = document.createElement('span');
+    name.className = 'hud-title';
+    name.textContent = titleText;
+    const subtitle = document.createElement('span');
+    subtitle.className = 'medium-info-sub';
+    subtitle.textContent = subtitleText;
+    title.append(name, subtitle);
+    const close = document.createElement('button');
+    close.className = 'medium-info-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = 'Close settings';
+    close.setAttribute('aria-label', 'Close settings');
+    close.addEventListener('click', () => this.closeMediumInfo());
+    head.append(title, close);
+    card.appendChild(head);
+
+    const note = document.createElement('p');
+    note.className = 'medium-info-note';
+    note.textContent = noteText;
+    card.appendChild(note);
+    for (const { heading, rows } of groups) {
+      const group = document.createElement('section');
+      group.className = 'medium-info-group';
+      const label = document.createElement('h3');
+      label.textContent = heading;
+      group.appendChild(label);
+      for (const [setting, value] of rows) {
+        const row = document.createElement('div');
+        row.className = 'medium-info-row';
+        const settingLabel = document.createElement('span');
+        settingLabel.textContent = setting;
+        const settingValue = document.createElement('b');
+        settingValue.textContent = value;
+        row.append(settingLabel, settingValue);
+        group.appendChild(row);
+      }
+      card.appendChild(group);
+    }
+
+    document.body.appendChild(card);
+    const rect = anchor.getBoundingClientRect();
+    const width = 286;
+    card.style.left = `${Math.max(12, Math.min(window.innerWidth - width - 12, rect.left - width - 10))}px`;
+    card.style.top = `${Math.max(12, Math.min(window.innerHeight - 120, rect.top))}px`;
+    this.mediumInfo = card;
+  }
+
+  private showBrushInfo(brush: BrushDef, anchor: HTMLElement) {
+    const number = (value: number) => value.toFixed(2);
+    this.showSettingsCard(
+      brush.name, 'brush settings',
+      'Shared working settings. Values without units use this engine’s 0–1 scale.',
+      anchor,
+      [
+        { heading: 'Tuft shape', rows: [
+          ['shape', brush.kind === 'flat' ? 'flat — two active sides' : 'round — one active centreline'],
+          ['chain segments', String(brush.segments)],
+          ['tuft length', `${number(brush.length)} cells`],
+          ['width / length', `${number(brush.widthRatio)}×`],
+          ['taper', number(brush.taper)],
+          ['bristle count', String(brush.bristles)],
+        ] },
+        { heading: 'Handling', rows: [
+          ['ferrule spring', number(brush.stiffness)],
+          ['tip softness', number(brush.stiffnessTaper)],
+          ['pressure spread', number(brush.splayFromPressure)],
+          ['base drag', number(brush.friction.mu)],
+          ['preferred-stroke glide', number(brush.friction.cEta)],
+          ['direction focus', number(brush.friction.k)],
+          ['shape memory', number(brush.plasticity)],
+        ] },
+        { heading: 'Paint holding', rows: [
+          ['belly capacity', number(brush.reservoir.capacityBelly)],
+          ['tip capacity', number(brush.reservoir.capacityTip)],
+          ['extra water range', number(brush.reservoir.waterOvercharge)],
+          ['lays down', number(brush.reservoir.downRate)],
+          ['picks up', number(brush.reservoir.upRate)],
+        ] },
+      ],
+    );
+  }
+
+  private showPaperInfo(paper: Paper, anchor: HTMLElement) {
+    const number = (value: number) => value.toFixed(2);
+    this.showSettingsCard(
+      paper.name, 'paper settings',
+      'These values define the sheet for every tool. Capillary radius is shown in micrometres.',
+      anchor,
+      [
+        { heading: 'Surface', rows: [
+          ['tooth depth', number(paper.toothAmp)],
+          ['grain frequency', `${paper.featureFreq} features / sheet`],
+          ['sizing', number(paper.sizing)],
+        ] },
+        { heading: 'Water in the sheet', rows: [
+          ['capillary radius', `${number(paper.rc * 1e6)} µm`],
+          ['minimum holding', number(paper.cMin)],
+          ['maximum holding', number(paper.cMax)],
+        ] },
+      ],
+    );
+  }
+
+  /** A temporary, read-only report for one shared dry-medium row. */
+  private showMediumInfo(medium: GranularDry | InkMedium, anchor: HTMLElement) {
+    this.closeMediumInfo();
+
+    const card = document.createElement('aside');
+    card.className = 'medium-info panel';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', `${medium.name} material settings`);
+
+    const head = document.createElement('div');
+    head.className = 'medium-info-head';
+    const title = document.createElement('div');
+    const name = document.createElement('span');
+    name.className = 'hud-title';
+    name.textContent = medium.name;
+    const subtitle = document.createElement('span');
+    subtitle.className = 'medium-info-sub';
+    subtitle.textContent = 'material settings';
+    title.append(name, subtitle);
+    const close = document.createElement('button');
+    close.className = 'medium-info-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = 'Close material settings';
+    close.setAttribute('aria-label', 'Close material settings');
+    close.addEventListener('click', () => this.closeMediumInfo());
+    head.append(title, close);
+    card.appendChild(head);
+
+    const note = document.createElement('p');
+    note.className = 'medium-info-note';
+    note.textContent = 'Shared working settings. Values without units use this engine’s 0–1 scale.';
+    card.appendChild(note);
+
+    const number = (value: number) => value.toFixed(2);
+    const addGroup = (heading: string, rows: Array<[string, string]>) => {
+      const group = document.createElement('section');
+      group.className = 'medium-info-group';
+      const label = document.createElement('h3');
+      label.textContent = heading;
+      group.appendChild(label);
+      for (const [setting, value] of rows) {
+        const row = document.createElement('div');
+        row.className = 'medium-info-row';
+        const settingLabel = document.createElement('span');
+        settingLabel.textContent = setting;
+        const settingValue = document.createElement('b');
+        settingValue.textContent = value;
+        row.append(settingLabel, settingValue);
+        group.appendChild(row);
+      }
+      card.appendChild(group);
+    };
+
+    addGroup('Contact', [
+      ['tip shape', medium.contactProfile],
+      ['tip radius', `${number(medium.tipRadius)} cells`],
+      ['base width / length', `${number(medium.contactAspect)}×`],
+      ['side contact begins', `${number(medium.tiltStart)}°`],
+      ['full side length', `${number(medium.tiltAspect)}×`],
+    ]);
+    addGroup('Mark on paper', [
+      ['paper-tooth gate', number(medium.toothThreshold)],
+      ['speed breakup', number(medium.velocityCoupling)],
+      ['pressure response', number(medium.pressureExp)],
+      ['deposit amount', number(medium.deposition)],
+      ['edge crispness', number(medium.edgeSharpness)],
+    ]);
+    addGroup('Material', [
+      ['particle size', number(medium.physics.pigmentParticleSize)],
+      ['binder body', number(medium.physics.binderViscosity)],
+      ['material hardness', number(medium.physics.mediumHardness)],
+      ['friction release', number(medium.physics.shearRate)],
+      ['paper hold', number(medium.physics.adhesionStrength)],
+      ['paper compression start', number(medium.physics.compressiveYield)],
+      ['potential sheen', number(medium.physics.specularPotential)],
+      ['fine surface reflection', number(medium.physics.microReflectance)],
+      ['optical density', number(medium.physics.refractiveIndex)],
+    ]);
+    if (medium.kind === 'ink') {
+      addGroup('Ink delivery', [
+        ['delivery', medium.flowMode === 'ball' ? 'rolling ball' : 'wetted fountain nib'],
+        ['flow starvation', number(medium.skipStrength)],
+        ['starvation length', `${number(medium.skipScale)} cells`],
+        ['fine chatter', number(medium.chatter)],
+      ]);
+    }
+
+    document.body.appendChild(card);
+    const rect = anchor.getBoundingClientRect();
+    const width = 286;
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left - width - 10));
+    const top = Math.max(12, Math.min(window.innerHeight - 120, rect.top));
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+    this.mediumInfo = card;
+  }
+
+  private closeMediumInfo() {
+    this.mediumInfo?.remove();
+    this.mediumInfo = undefined;
+  }
+
   private template(): string {
     return `
       <div class="pal-head">
@@ -251,6 +539,7 @@ export class Palette {
         <div id="brushes" class="papers"></div>
         <div class="pal-sub">dry media</div>
         <div id="dry-tools" class="papers six"></div>
+        <p class="medium-hint">press and hold a tool or paper for settings</p>
         <label class="loading-row">
           <span>size</span>
           <input id="brush-size" type="range" min="0.15" max="2.4" step="0.025" />
