@@ -9,6 +9,33 @@
 // The line that must never blur (D3): the library stores BEHAVIOUR, cells store
 // AMOUNTS. Nothing here is ever cached per-cell.
 
+/**
+ * The reusable physical part of every material row. Values are normalised to
+ * this engine's 0..1 ranges, not copied per pixel: a cell stores amounts while
+ * the library owns material behaviour. These fields come from the unified
+ * medium schema and are shared by dry media now and wet media as it grows.
+ */
+export interface MediumPhysics {
+  /** Fine particles settle into tooth; large particles bridge over it. */
+  pigmentParticleSize: number;
+  /** 0 = freely flowing binder, 1 = effectively dry/immobile binder. */
+  binderViscosity: number;
+  /** Resistance to crushing or deforming the material itself. */
+  mediumHardness: number;
+  /** How readily friction shears material from the tool onto the surface. */
+  shearRate: number;
+  /** How readily sheared material remains attached to the surface. */
+  adhesionStrength: number;
+  /** Stress needed before a hard tool begins to compress paper fibres. */
+  compressiveYield: number;
+  /** Capacity for a smooth, reflective deposited surface. */
+  specularPotential: number;
+  /** Fine-scale surface reflectance independent of pigment colour. */
+  microReflectance: number;
+  /** Normalised optical-density control for the deposited material. */
+  refractiveIndex: number;
+}
+
 /** Everything every medium has. The shared ancestry. */
 export interface Medium {
   name: string;
@@ -20,6 +47,8 @@ export interface Medium {
    * Goes through the same sticky slot allocator and the same KM render as
    * paint: a pencil is not a special case in the optics. */
   pigments: Array<[string, number]>;
+  /** The common physical medium vector. */
+  physics: MediumPhysics;
 
   // ---- optical -------------------------------------------------------------
   /** Saunderson surface-reflection constants. */
@@ -87,17 +116,27 @@ export interface DryMedium extends Medium {
   toothThreshold: number;
   /** 0..1 — how fast strokes break the line up. Graphite high, ballpoint low. */
   velocityCoupling: number;
+  /** Temporary artist-facing hardness label; physics.mediumHardness drives the equations. */
+  hardness: number;
   /** -1 (soft, 6B) .. +1 (hard, 4H). Scales deposition AND tooth catch: a hard
    * lead lays little and only on peaks, a soft one fills the valleys. */
-  hardness: number;
+  /** Base tip shape. A fountain nib is a crisp chisel, not a stretched dot. */
+  contactProfile: 'round' | 'chisel';
+  /** Long-to-short contact ratio before stylus tilt adds its own broadside. */
+  contactAspect: number;
   /** Granulation — how much settles into valleys rather than sitting on top. */
-  particleSize: number;
 
   // ---- tip geometry --------------------------------------------------------
   /** Contact radius in grid cells at size 1. */
   tipRadius: number;
-  /** How much lean widens the mark — the side of the lead, not the point. */
-  tiltWiden: number;
+  /** Lean angle, in degrees from vertical, at which side contact begins. */
+  tiltStart: number;
+  /**
+   * Extra length of the contact patch along the direction of lean at a fully
+   * laid-over angle. This is shared contact geometry: graphite, charcoal,
+   * crayons, markers, and chisel tools can each supply their own row.
+   */
+  tiltAspect: number;
   /** Pressure response exponent. ~1 for graphite, near 0 for a ballpoint,
    * which is what makes a biro's line so flat. */
   pressureExp: number;
@@ -127,6 +166,8 @@ export interface GranularDry extends DryMedium {
  */
 export interface InkMedium extends DryMedium {
   kind: 'ink';
+  /** A rolling ball meters paste; a fountain uses a steady wetted nib. */
+  flowMode: 'ball' | 'fountain';
   /** 0..1 — how deep the flow dips when the ball starves. */
   skipStrength: number;
   /** Distance in cells over which the flow starves and recovers. */

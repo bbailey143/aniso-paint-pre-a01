@@ -11,7 +11,7 @@
 // accumulates the footprints into the frame's segment buffer.
 
 import type { StylusSample } from './pointer';
-import { MAX_SEGS, SEG_FLOATS } from '../engine/fluid';
+import { MAX_SEGS, SEG_FLOATS, DRY_SEG_FLOATS } from '../engine/fluid';
 import { Brush } from '../brush/brush';
 import type { BrushDef, BrushInput } from '../brush/types';
 import { DryTool } from '../media/dry-tool';
@@ -26,7 +26,7 @@ export class StrokeEngine {
   private count = 0;
   /** Dry media get their own footprint buffer, because the two go to different
    * GPU passes: wet through the fluid band, dry straight to the floor (P7). */
-  private dryBuf: Float32Array<ArrayBuffer> = new Float32Array(FRAME_SEGS * SEG_FLOATS);
+  private dryBuf: Float32Array<ArrayBuffer> = new Float32Array(FRAME_SEGS * DRY_SEG_FLOATS);
   private dryCount = 0;
   /** Null while a wet tool is selected. */
   private dry: DryTool | null = null;
@@ -169,9 +169,13 @@ export class StrokeEngine {
 
   /** Same, for the dry-media channel (P7). `edge` is the rim falloff the
    * active medium wants — soft for graphite, crisp for a ballpoint. */
-  drainDry(): { data: Float32Array<ArrayBuffer>; count: number; edge: number } {
+  drainDry(): { data: Float32Array<ArrayBuffer>; count: number; edge: number; profile: 'round' | 'chisel' } {
     const count = this.dryCount;
     this.dryCount = 0;
-    return { data: this.dryBuf, count, edge: this.dry ? this.dry.edgeSharpness : 1 };
+    return {
+      data: this.dryBuf, count,
+      edge: this.dry ? this.dry.edgeSharpness : 1,
+      profile: this.dry ? this.dry.contactProfile : 'round',
+    };
   }
 }

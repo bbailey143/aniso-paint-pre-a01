@@ -175,7 +175,7 @@ html, body {
 .surface { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
 .pal-sub { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
 .papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
-.papers.six { grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.papers.six { grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .papers.six .paper { padding: 4px 0; font-size: 10px; }
 /* With a dry tool in hand the wet controls do nothing — dim them rather than
    remove them, so the layout does not jump when switching tools. */

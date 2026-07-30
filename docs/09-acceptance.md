@@ -50,7 +50,7 @@ interaction, visible and correct.
 
 ## Dry media behaviour
 
-Pencil: hardness reads (4H faint, catches peaks; 6B dark, fills valleys); fast strokes
+Pencil: hardness reads (2H faint, catches peaks; 9B dark, fills valleys); fast strokes
 on rough paper break up. Ballpoint: consistent thin line, near-flat pressure response.
 
 ## `[REQUIREMENT]` Reactivity
@@ -68,6 +68,13 @@ Rebelle developer's actual method — being an artist is the advantage here, not
 ---
 
 ## P7 — dry media, measured
+
+**Superseded calibration plate.** The values below were recorded for the former
+6B/4H five-grade library and its earlier circular tilt contact. They remain as
+historical evidence only; do not use them as acceptance numbers for the current
+9B/2B/HB/2H set, the directional broadside contact, or the added dry tools. The
+next plate must measure all current rows against the unified physical-medium
+vector.
 
 `cov` is the fraction of the line that is continuous; `mean` is pigment laid per
 cell. Pressure 0.7 throughout, so the only variables are speed, grade, and sheet.
@@ -98,8 +105,10 @@ Every target behaviour falls out of the parameter rows, not special cases:
   light line on smooth (100 % at 0.096 — a seventh of a 6B). That is a 4H.
 - **A ballpoint ignores both.** 0.370 rough vs 0.385 smooth, 100 % either way.
   Flatness is the point of a biro.
-- **Tilt draws with the flank.** A 6B at 70° lays a 6.9–8.0 cell band against
-  1.7–2.0 upright.
+- **Tilt draws with the flank.** A 9B at 70° must lay an obvious directional
+  broadside oval, aligned with the pen's lean, rather than a merely larger round
+  line. Its long axis should be at least four times the upright point diameter;
+  the next tablet check establishes the final measured range.
 
 ## Beading — the check that has to be on every stroke test
 

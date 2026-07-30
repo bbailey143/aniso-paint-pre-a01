@@ -213,8 +213,9 @@ export class CanvasEngine {
   }
 
   /** Lay dry media. No fluid pass runs; this goes straight to the dry floor. */
-  depositDry(segments: Float32Array<ArrayBuffer>, segCount: number, edge = 1) {
-    this.fluid.depositDry(segments, segCount, this.dryWeights_, edge);
+  depositDry(segments: Float32Array<ArrayBuffer>, segCount: number, edge = 1,
+             profile: 'round' | 'chisel' = 'round') {
+    this.fluid.depositDry(segments, segCount, this.dryWeights_, edge, profile);
   }
 
   /**

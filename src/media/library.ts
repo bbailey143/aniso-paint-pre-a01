@@ -1,164 +1,122 @@
-// The media library — rows, not code (Card 7, D3).
+// The media library: behaviour lives in rows; cells store only amounts.
 //
-// [UNVERIFIED] Every numeric constant in this file is reasoned from the card's
-// property surface, not measured. Card 7 is explicit that the SHAPE of each row
-// is settled but the numbers are tuned on the bench against 09-acceptance.md.
-// They stay marked until that happens. Do not cite them as sourced.
-//
-// The pigment choices are not invented: they name rows in the measured BE16
-// library (D5). Graphite is laid as bone black, a ballpoint as phthalo blue.
+// [UNVERIFIED] The dry-media values below are normalised working values from
+// the unified physical-medium schema. They are intentionally visible here so
+// artist testing can tune a material without creating a special code path.
 
-import type { WetMedium, GranularDry, InkMedium, Tool } from './types';
+import type { WetMedium, GranularDry, InkMedium, Tool, MediumPhysics } from './types';
 
 type DryRow = GranularDry | InkMedium;
 
 export const WATERCOLOR: WetMedium = {
-  name: 'Watercolour', slug: 'watercolour', family: 'wet',
-  pigments: [],                     // the palette supplies these
-  k1: 0.03, k2: 0.65, kInstrument: 1.0,
-  hasBody: false, bodyShrink: 0,
-  downRate: 0.35, upRate: 0.08, teflonMin: 0.02,
-  openTime: 90, valueShift: 0.18,   // dries lighter, Card 7 says 10-30 %
-  reactivatable: true, oneWayDoor: false,
-  solvent: 'water',
-  viscosity: 0.1,
-  // [UNVERIFIED] Shared thin-film controls. These are deliberately properties
-  // of the medium row, not watercolor branches in the solver: a future ink,
-  // acrylic, or oil row can resist and answer gravity differently while using
-  // the same motion equations. Calibrated first against Bartford's report that
-  // the old 0.01 / full-gravity combination slid like water on glass.
-  drag: 0.06,
-  gravityResponse: 0.03,
-  wetLayerDrag: 0.55,
-  edgeDarkening: 0.045,
-  evapRate: 0.0015,
-  // [UNVERIFIED] Dimensionless Lucas-Washburn time scale. The original 1.0
-  // consumed a Cold Press surface film in under ten solver steps once the
-  // paper row was actually connected. Even 0.01 consumed an ordinary fully
-  // wet brush film in about 20 animation frames — before a painter could reach
-  // the tilt control. 0.0001 preserves the same paper/medium equation and paper
-  // ordering while giving a brush-laid wash useful surface life. It still needs
-  // calibration against the real-paper reference plates in Card 9.
-  absorptionCoupling: 0.0001, pigmentBoost: 1.0,
+  name: 'Watercolour', slug: 'watercolour', family: 'wet', pigments: [],
+  physics: {
+    pigmentParticleSize: 0.12, binderViscosity: 0.10, mediumHardness: 0,
+    shearRate: 0.35, adhesionStrength: 0.45, compressiveYield: 1,
+    specularPotential: 0.18, microReflectance: 0.35, refractiveIndex: 0.62,
+  },
+  k1: 0.03, k2: 0.65, kInstrument: 1,
+  hasBody: false, bodyShrink: 0, downRate: 0.35, upRate: 0.08, teflonMin: 0.02,
+  openTime: 90, valueShift: 0.18, reactivatable: true, oneWayDoor: false,
+  solvent: 'water', viscosity: 0.1,
+  drag: 0.06, gravityResponse: 0.03, wetLayerDrag: 0.55,
+  edgeDarkening: 0.045, evapRate: 0.0015,
+  absorptionCoupling: 0.0001, pigmentBoost: 1,
 };
 
-/**
- * Graphite, one row per grade.
- *
- * `hardness` runs -1 (6B) to +1 (4H) and is the ONLY thing that differs between
- * these five. That is the card's claim made literal: a new grade is a number,
- * not a code path. Everything downstream reads `hardness` — how deep the lead
- * reaches into the tooth, and how much it leaves.
- */
-function graphite(name: string, slug: string, hardness: number): GranularDry {
+function physics(
+  pigmentParticleSize: number, binderViscosity: number, mediumHardness: number,
+  shearRate: number, adhesionStrength: number, compressiveYield: number,
+  specularPotential: number, microReflectance: number, refractiveIndex: number,
+): MediumPhysics {
   return {
-    name, slug, family: 'dry', kind: 'granular',
-    pigments: [['bone-black', 1]],
-    // Graphite is not matte — it has that grey sheen, which is a LOW
-    // K_instrument. This is the one place a pencil differs optically from paint
-    // and it is why a heavy 6B passage glares when you tilt the page.
-    k1: 0.03, k2: 0.65, kInstrument: 0.45,
-    hasBody: false, bodyShrink: 0,
-    downRate: 1.0, upRate: 0.0, teflonMin: 1.0,
-    openTime: 0, valueShift: 0,
-    reactivatable: false, oneWayDoor: true,
-
-    toothThreshold: 0.5,
-    // A soft lead crumbles onto the paper whatever the speed; a hard one skips.
-    velocityCoupling: 0.55 + 0.25 * hardness,
-    hardness,
-    particleSize: 0.5 - 0.3 * hardness,
-    // A pencil point covers about two document pixels, which on the coarser
-    // simulation grid is a bit over one cell. Below ~1 cell the mark cannot
-    // land on a cell centre and the line thins out to nothing.
-    tipRadius: 1.1,
-    tiltWiden: 2.6,               // laid over, a pencil draws with the flank
-    pressureExp: 1.1,
-    // Gamma on coverage. Graphite genuinely feathers — loose particles sit
-    // around a mark — so spread the rim slightly.
-    edgeSharpness: 0.85,
-    // Soft leads lay far more per pass. 6B ~4x an HB, 4H well under it.
-    // [UNVERIFIED] Calibrated on the bench to 09-acceptance, not measured from
-    // a source: a slow firm HB line reads ~0.25 laid, which renders as a real
-    // pencil grey rather than the faint smear the first pass produced.
-    deposition: 0.10 * Math.pow(2.2, -hardness),
+    pigmentParticleSize, binderViscosity, mediumHardness, shearRate,
+    adhesionStrength, compressiveYield, specularPotential, microReflectance, refractiveIndex,
   };
 }
 
+function graphite(name: string, slug: string, row: MediumPhysics,
+                  deposition: number, velocityCoupling: number): GranularDry {
+  return {
+    name, slug, family: 'dry', kind: 'granular', pigments: [['bone-black', 1]], physics: row,
+    k1: 0.03, k2: 0.65, kInstrument: 0.45,
+    hasBody: false, bodyShrink: 0, downRate: 1, upRate: 0, teflonMin: 1,
+    openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+    toothThreshold: 0.5, velocityCoupling, hardness: row.mediumHardness,
+    tipRadius: 1.1, contactProfile: 'round', contactAspect: 1,
+    tiltStart: 24, tiltAspect: 6, pressureExp: 1.1, deposition, edgeSharpness: 0.85,
+  };
+}
+
+/** The deliberately small pencil set requested for this dry-media pass. */
 export const GRAPHITE_GRADES: GranularDry[] = [
-  graphite('6B', 'graphite-6b', -1.0),
-  graphite('2B', 'graphite-2b', -0.5),
-  graphite('HB', 'graphite-hb', 0.0),
-  graphite('2H', 'graphite-2h', 0.5),
-  graphite('4H', 'graphite-4h', 1.0),
+  graphite('9B', 'graphite-9b', physics(0.10, 1, 0.08, 0.95, 0.80, 0.94, 0.45, 0.30, 0.62), 0.32, 0.35),
+  graphite('2B', 'graphite-2b', physics(0.08, 1, 0.32, 0.68, 0.88, 0.88, 0.52, 0.34, 0.64), 0.22, 0.50),
+  graphite('HB', 'graphite-hb', physics(0.06, 1, 0.55, 0.54, 0.92, 0.78, 0.42, 0.30, 0.66), 0.18, 0.62),
+  graphite('2H', 'graphite-2h', physics(0.04, 1, 0.80, 0.32, 0.95, 0.64, 0.34, 0.24, 0.68), 0.15, 0.78),
 ];
 
-/**
- * Ballpoint.
- *
- * `[CORRECTED on reference]` The first row here made a biro ignore the paper
- * entirely — high `reach`, near-zero `velocityCoupling` — on the reasoning that
- * a ballpoint's line is famously consistent. Bartford's reference lines say
- * otherwise, and they are right: a ballpoint **skips the low points and marks
- * solidly on the high ones**, and nearly every one has a slight stutter that
- * gives the line its organic thick-and-thin. That variation is the character of
- * the tool, not a defect in it.
- *
- * Two independent mechanisms, because that is what is actually happening:
- *
- *   `toothThreshold` — the ball is hard and rides the peaks, so it cannot reach
- *   into the valleys at all. Position-dependent: go over the same spot twice
- *   and the same specks stay blank.
- *
- *   `skipStrength` / `skipScale` / `chatter` — the paste starves and recovers
- *   as the ball rolls. Distance-dependent, so a second pass fills what the
- *   first missed, exactly as it does on paper.
- *
- * `[UNVERIFIED]` No card supplies a ball-transfer model, so the numbers below
- * are fitted to the reference lines by eye and marked accordingly.
- */
-function ballpoint(name: string, slug: string, pigment: string,
-                   deposition: number): InkMedium {
+function ballpoint(name: string, slug: string, pigment: string, deposition: number): InkMedium {
   return {
-    name, slug, family: 'dry', kind: 'ink',
-    pigments: [[pigment, 1]],
-    // Ballpoint paste dries to a slight sheen, unlike graphite's flat grey.
+    name, slug, family: 'dry', kind: 'ink', flowMode: 'ball', pigments: [[pigment, 1]],
+    physics: physics(0.02, 0.88, 0.72, 0.58, 0.98, 0.88, 0.25, 0.22, 0.70),
     k1: 0.03, k2: 0.65, kInstrument: 0.8,
-    hasBody: false, bodyShrink: 0,
-    downRate: 1.0, upRate: 0.0, teflonMin: 1.0,
-    openTime: 0, valueShift: 0,
-    reactivatable: false, oneWayDoor: true,
-
-    // The ball rides the peaks. This is what makes it skip.
-    toothThreshold: 0.42,
-    velocityCoupling: 0.16,
-    hardness: 0.0,
-    particleSize: 0.1,
-    // A ballpoint ball is 0.5-1.0 mm. At size 1 that is about half a
-    // simulation cell, and the smallest setting has to be finer still.
-    tipRadius: 0.46,
-    tiltWiden: 0.25,             // a biro does not care how you hold it
-    pressureExp: 0.25,           // near-flat pressure response — that part was right
-    deposition,
-    // Crisp. Above 1 tightens the rim: ink is a paste and stops where the ball
-    // stopped. The soft rim is what made it read as WET rather than as paste.
-    edgeSharpness: 1.45,
-
-    // Deep but rare — see the shaping in dry-tool.ts.
-    skipStrength: 0.72,
-    skipScale: 5.5,
-    chatter: 0.26,
+    hasBody: false, bodyShrink: 0, downRate: 1, upRate: 0, teflonMin: 1,
+    openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+    toothThreshold: 0.42, velocityCoupling: 0.16, hardness: 0.72,
+    tipRadius: 0.46, contactProfile: 'round', contactAspect: 1,
+    tiltStart: 55, tiltAspect: 0.15, pressureExp: 0.25, deposition, edgeSharpness: 1.45,
+    skipStrength: 0.72, skipScale: 5.5, chatter: 0.26,
   };
 }
 
-// Blue reads lighter than black at the same load — classic biro blue is a
-// green-shade phthalo, which is why it looks slightly cyan next to ink black.
 export const BALLPOINT_BLUE = ballpoint('Biro', 'ballpoint-blue', 'phthalo-blue-gs', 0.30);
 export const BALLPOINT_BLACK = ballpoint('Biro K', 'ballpoint-black', 'bone-black', 0.42);
 
-export const DRY_MEDIA: DryRow[] = [...GRAPHITE_GRADES, BALLPOINT_BLUE, BALLPOINT_BLACK];
+export const VINE_CHARCOAL: GranularDry = {
+  name: 'Vine Charcoal', slug: 'vine-charcoal', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  physics: physics(0.72, 1, 0.05, 0.95, 0.62, 0.98, 0, 0.06, 0.52),
+  k1: 0.03, k2: 0.65, kInstrument: 1, hasBody: false, bodyShrink: 0,
+  downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+  toothThreshold: 0.38, velocityCoupling: 0.26, hardness: 0.05,
+  tipRadius: 1.7, contactProfile: 'round', contactAspect: 1,
+  tiltStart: 16, tiltAspect: 3.4, pressureExp: 1.25, deposition: 0.32, edgeSharpness: 0.62,
+};
 
-/** The tool rack. Wet tools drive the brush engine; dry tools deposit direct. */
-export const DRY_TOOLS: Tool<DryRow>[] = DRY_MEDIA.map((m) => ({
-  name: m.name, slug: m.slug, medium: m,
-}));
+export const CONTE_CRAYON: GranularDry = {
+  name: 'Conte Crayon', slug: 'conte-crayon', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  physics: physics(0.48, 0.96, 0.46, 0.70, 0.86, 0.76, 0.16, 0.18, 0.60),
+  k1: 0.03, k2: 0.65, kInstrument: 0.84, hasBody: false, bodyShrink: 0,
+  downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+  toothThreshold: 0.44, velocityCoupling: 0.42, hardness: 0.46,
+  tipRadius: 1.25, contactProfile: 'round', contactAspect: 1.25,
+  tiltStart: 22, tiltAspect: 4.5, pressureExp: 1.05, deposition: 0.26, edgeSharpness: 0.72,
+};
+
+export const WAX_CRAYON: GranularDry = {
+  name: 'Wax Crayon', slug: 'wax-crayon', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  physics: physics(0.38, 0.56, 0.30, 0.42, 0.94, 0.82, 0.65, 0.44, 0.72),
+  k1: 0.03, k2: 0.65, kInstrument: 0.46, hasBody: false, bodyShrink: 0,
+  downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+  toothThreshold: 0.32, velocityCoupling: 0.22, hardness: 0.30,
+  tipRadius: 1.8, contactProfile: 'round', contactAspect: 1.3,
+  tiltStart: 14, tiltAspect: 2.8, pressureExp: 0.86, deposition: 0.28, edgeSharpness: 1.12,
+};
+
+export const FOUNTAIN_CHISEL: InkMedium = {
+  name: 'Chisel Fountain', slug: 'fountain-chisel', family: 'dry', kind: 'ink', flowMode: 'fountain',
+  pigments: [['bone-black', 1]], physics: physics(0.01, 0.14, 0, 1, 0.97, 1, 0.38, 0.30, 0.70),
+  k1: 0.03, k2: 0.65, kInstrument: 0.62, hasBody: false, bodyShrink: 0,
+  downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
+  toothThreshold: 0.08, velocityCoupling: 0.04, hardness: 0,
+  tipRadius: 0.52, contactProfile: 'chisel', contactAspect: 3.6,
+  tiltStart: 89, tiltAspect: 0, pressureExp: 0.45, deposition: 0.34, edgeSharpness: 1.8,
+  skipStrength: 0, skipScale: 1, chatter: 0,
+};
+
+export const DRY_MEDIA: DryRow[] = [
+  ...GRAPHITE_GRADES, BALLPOINT_BLUE, BALLPOINT_BLACK,
+  VINE_CHARCOAL, CONTE_CRAYON, WAX_CRAYON, FOUNTAIN_CHISEL,
+];
+
+export const DRY_TOOLS: Tool<DryRow>[] = DRY_MEDIA.map((m) => ({ name: m.name, slug: m.slug, medium: m }));

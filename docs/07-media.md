@@ -20,6 +20,29 @@ add tempera or casein by tweaking numbers already present on `WaterMedium`.
 | `reactivatable` | re-wets with water | ReWet |
 | `oneWayDoor` | drying is permanent (no re-wet) | DryTick, Bake |
 
+## Unified physical medium vector (every medium)
+
+These are normalised material quantities carried by every row, whether it is
+currently painted through the dry-contact path or the wet-film path. The cell
+stores only pigment amount; the library keeps these characteristics, so the same
+equations can be reused by future charcoal, pencils, crayons, and pens.
+
+| Property | Meaning | Current reader |
+|---|---|---|
+| `pigmentParticleSize` | fine particles seat in tooth; large particles bridge it | DryDeposit |
+| `binderViscosity` | 0 flows freely; 1 is effectively dry and immobile | material row, future wet/dry bridge |
+| `mediumHardness` | resistance to crushing; hard contact can compress fibres | DryTool contact stress |
+| `shearRate` | how readily friction releases material | DryTool contact stress |
+| `adhesionStrength` | fraction of sheared material that remains on the sheet | DryTool deposit |
+| `compressiveYield` | stress threshold before hard contact begins fibre compression | DryTool contact stress |
+| `specularPotential` | capacity for a smooth reflective deposit | material row, future retained surface layer |
+| `microReflectance` | fine-scale surface reflection | material row, future retained surface layer |
+| `refractiveIndex` | optical-density control of the material | material row, future retained surface layer |
+
+The three surface-lighting fields are deliberately defined now but are not yet
+written into a per-mark surface layer. Applying one selected tool's gloss to all
+old marks would be wrong; that upgrade needs retained material data per pixel.
+
 ## Wet-medium properties (adds)
 
 | Property | Meaning | Reads into |
@@ -42,6 +65,8 @@ add tempera or casein by tweaking numbers already present on `WaterMedium`.
 | `velocityCoupling` | how fast strokes break the line up | DryDeposit |
 | `hardness` | H..B; scales deposition + how much tooth it catches | DryDeposit |
 | `particleSize` | granulation / settling into valleys | DryDeposit |
+| `tiltStart` | upright-to-side-contact angle | DryDeposit |
+| `tiltAspect` | broadside contact length along pen lean | DryDeposit |
 
 ## The build rows
 
@@ -57,9 +82,12 @@ retention; wet-on-dry razor edges; edge darkening; backruns; granulation into pa
 valleys; drybrush skip; optical glazing with lower layers permanently visible.
 
 ### Graphite pencil (`GranularDry`)
-`toothThreshold` from paper; `hardness` sets deposition and tooth catch (a hard 4H
-lays little and catches only peaks; a soft 6B fills valleys). `velocityCoupling`
-breaks the line on fast strokes over rough paper. No fluid.
+`toothThreshold` from paper; `physics.mediumHardness` and `shearRate` set deposition
+and tooth catch (a hard 2H lays little and catches peaks; a soft 9B fills valleys).
+`velocityCoupling`
+breaks the line on fast strokes over rough paper. A laid-over lead changes from a
+round point to an oval contact patch aligned with the direction of lean; the row
+sets when that happens and how broad it becomes. No fluid.
 
 ### Ballpoint (`InkMedium`)
 Viscous paste: near-flat pressure response, consistent thin line, low

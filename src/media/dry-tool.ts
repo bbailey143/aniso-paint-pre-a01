@@ -27,7 +27,7 @@
 
 import type { DryMedium, InkMedium } from './types';
 import type { BrushInput } from '../brush/types';
-import { SEG_FLOATS } from '../engine/fluid';
+import { DRY_SEG_FLOATS } from '../engine/fluid';
 
 /**
  * Speed at which velocity break-up is at full strength, in grid cells per
@@ -73,6 +73,8 @@ export class DryTool {
 
   /** The rim falloff this medium wants, handed to the deposit pass. */
   get edgeSharpness(): number { return this.medium.edgeSharpness; }
+  /** The same generic contact pass can render round leads or a chisel nib. */
+  get contactProfile(): 'round' | 'chisel' { return this.medium.contactProfile; }
 
   begin() {
     this.speed = 0;
@@ -111,20 +113,28 @@ export class DryTool {
     // How deep the tip gets into the tooth. Hardness sets the ceiling — a 4H
     // simply cannot reach the valleys however hard you lean — and speed drags
     // it down from there.
-    const ceiling = 0.95 - 0.5 * Math.max(m.hardness, 0);
-    const floorReach = 0.18;
-    let reach = floorReach + (ceiling - floorReach) * press;
-    reach *= 1 - m.velocityCoupling * speedNorm;
+    const tiltAmount = Math.min(Math.max(
+      (Math.min(s.tiltAngle, 89) - m.tiltStart) / Math.max(1, 89 - m.tiltStart), 0), 1);
+    const baseRadius = m.tipRadius * this.size;
+    const majorFactor = m.contactAspect + m.tiltAspect * tiltAmount;
+    // P_loc normalised to the same upright tip: pressure distributed over the
+    // real oval contact area, rather than merely scaling a stamp.
+    const localStress = press / Math.max(majorFactor, 1e-4);
+    const fibreCompression = Math.max(
+      localStress * m.physics.mediumHardness - m.physics.compressiveYield, 0);
+    let reach = localStress * m.physics.shearRate / Math.max(m.toothThreshold, 1e-4);
+    reach = (reach + fibreCompression) * (1 - m.velocityCoupling * speedNorm);
     // A hard ball rides the peaks and simply cannot get into the valleys, however
     // hard it is pressed. `toothThreshold` is that ceiling, and it is why a biro
     // skips the low points while a soft pencil fills them.
-    reach = Math.min(reach, 1 - m.toothThreshold);
+    reach = Math.min(reach, 1);
     reach = Math.min(Math.max(reach, 0), 1);
 
     // How much comes off the tip. Speed thins the mark as well as breaking it,
     // but only half as strongly — a fast pencil line is lighter AND patchier,
     // and if you only model the patchiness the fast stroke reads as too dark.
-    let amount = m.deposition * press * (1 - 0.5 * m.velocityCoupling * speedNorm);
+    let amount = m.deposition * localStress * m.physics.shearRate
+      * m.physics.adhesionStrength * (1 - 0.5 * m.velocityCoupling * speedNorm);
 
     // Ink flow: the ball starves and recovers as it rolls. Two octaves — a slow
     // starve over several cells, and fine chatter on top — which together give
@@ -147,10 +157,8 @@ export class DryTool {
       amount *= flow;
     }
 
-    // Lean widens the mark: past ~45 degrees you are drawing with the flank of
-    // the lead, not its point. sin() rather than a linear ramp, because the
-    // contact ellipse grows with the sine of the lean.
-    const tilt = Math.sin((Math.min(s.tiltAngle, 89) * Math.PI) / 180);
+    // `tiltAmount` already lowered the local stress above; it also lengthens
+    // the directional contact shape below.
     // A starved ball lays a thinner line as well as a lighter one. Thick AND
     // thin together is what reads as organic; vary only the darkness and the
     // line looks like a constant-width stroke with the opacity animated.
@@ -172,7 +180,7 @@ export class DryTool {
       // without every parallel stroke repeating the exact same rhythm.
       widthGrain = 0.92 + 0.16 * vnoise(this.phase * 0.17 + this.dist / Math.max(ink.skipScale * 2.7, 1e-3));
     }
-    let radius = m.tipRadius * this.size * (1 + m.tiltWiden * tilt) * widthFlow * widthGrain;
+    let radius = baseRadius * widthFlow * widthGrain;
 
     // [REMOVED — it was doing more harm than the aliasing it hid] There used to
     // be a 0.9-cell minimum contact width here, with the ink spread thinner to
@@ -208,7 +216,7 @@ export class DryTool {
       amount = amount / Math.max(2 * radius, 0.2);
     }
 
-    const o = at * SEG_FLOATS;
+    const o = at * DRY_SEG_FLOATS;
     const ax = prev ? prev.x : s.x;
     const ay = prev ? prev.y : s.y;
     buf[o + 0] = ax;
@@ -216,9 +224,17 @@ export class DryTool {
     buf[o + 2] = s.x;
     buf[o + 3] = s.y;
     buf[o + 4] = radius;
-    buf[o + 5] = 0;             // water — a dry medium lays none, by definition
+    buf[o + 5] = m.physics.pigmentParticleSize;
     buf[o + 6] = amount * spread;
     buf[o + 7] = reach;
+    // The dry deposit shader turns this vector into the major axis of the
+    // contact ellipse. It is independent of the drawing direction, because a
+    // pencil's broadside follows the way the pencil leans, not the stroke path.
+    const major = radius * majorFactor;
+    const direction = m.contactProfile === 'chisel' && s.twist !== 0 ? s.twist : s.tiltAzimuth;
+    const azimuth = (direction * Math.PI) / 180;
+    buf[o + 8] = major * Math.cos(azimuth);
+    buf[o + 9] = major * Math.sin(azimuth);
     return at + 1;
   }
 }
