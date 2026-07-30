@@ -177,6 +177,30 @@ html, body {
 .papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .papers.six { grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .papers.six .paper { padding: 4px 0; font-size: 10px; }
+.medium-hint { color: var(--ink-dim); font-size: 10px; text-align: center; }
+.medium-info {
+  z-index: 40;
+  width: 286px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 10px;
+  background: rgba(18, 20, 24, 0.94);
+  border-color: rgba(216, 178, 106, 0.46);
+}
+.medium-info-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.medium-info-head .hud-title { display: block; }
+.medium-info-sub { display: block; color: var(--ink-dim); font-size: 10px; }
+.medium-info-close {
+  width: 22px; height: 22px; padding: 0; flex: 0 0 auto;
+  background: transparent; color: var(--ink-dim); border: 1px solid var(--panel-border);
+  border-radius: 4px; font: 20px/18px sans-serif; cursor: pointer;
+}
+.medium-info-close:hover { color: var(--ink); border-color: var(--ink-dim); background: rgba(255, 255, 255, 0.06); }
+.medium-info-note { margin: 7px 0 9px; color: var(--ink-dim); font-size: 10px; }
+.medium-info-group { border-top: 1px solid var(--panel-border); padding: 7px 0 3px; }
+.medium-info-group h3 { margin-bottom: 3px; color: var(--accent); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.medium-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 0; color: var(--ink-dim); font-size: 10px; }
+.medium-info-row b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
 /* With a dry tool in hand the wet controls do nothing — dim them rather than
    remove them, so the layout does not jump when switching tools. */
 #palette.dry-mode .mix,

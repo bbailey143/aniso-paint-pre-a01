@@ -11,7 +11,7 @@ import { PAPERS, type Paper } from '../substrate/papers';
 import { BRUSHES } from '../brush/library';
 import type { BrushDef } from '../brush/types';
 import { DRY_TOOLS } from '../media/library';
-import type { DryMedium } from '../media/types';
+import type { DryMedium, GranularDry, InkMedium } from '../media/types';
 
 export interface PaletteEvents {
   /** Fired whenever the active mix or loading changes. */
@@ -48,6 +48,7 @@ export class Palette {
   private mixHexLabel!: HTMLElement;
   private recipeRow!: HTMLElement;
   private events: PaletteEvents;
+  private mediumInfo?: HTMLElement;
 
   constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
@@ -99,12 +100,41 @@ export class Palette {
       const el = document.createElement('button');
       el.className = 'pal-btn paper';
       el.textContent = t.name;
+      let holdTimer: number | undefined;
+      let blockClickUntil = 0;
+      const cancelHold = () => {
+        if (holdTimer !== undefined) {
+          window.clearTimeout(holdTimer);
+          holdTimer = undefined;
+        }
+      };
+      el.addEventListener('pointerdown', (event) => {
+        if (!event.isPrimary || event.button !== 0) return;
+        cancelHold();
+        holdTimer = window.setTimeout(() => {
+          holdTimer = undefined;
+          // Releasing a pen or finger can still make a click. Ignore only that
+          // release, not the painter's next normal tool selection.
+          blockClickUntil = performance.now() + 700;
+          this.showMediumInfo(t.medium, el);
+        }, 550);
+      });
+      el.addEventListener('pointerup', cancelHold);
+      el.addEventListener('pointercancel', cancelHold);
+      el.addEventListener('pointerleave', cancelHold);
+      el.addEventListener('contextmenu', (event) => event.preventDefault());
       el.title = t.medium.kind === 'ink'
         ? 'Ballpoint — rides the peaks and skips the valleys; the ball starves and recovers as it rolls'
         : `Graphite ${t.name} — ${t.medium.hardness > 0
             ? 'hard: lays little, catches only the peaks of the tooth'
             : 'soft: lays heavily and fills the valleys'}`;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (event) => {
+        if (performance.now() < blockClickUntil) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        this.closeMediumInfo();
         clearAll();
         el.classList.add('on');
         this.root.classList.add('dry-mode');
@@ -210,6 +240,109 @@ export class Palette {
     });
   }
 
+  /** A temporary, read-only report for one shared dry-medium row. */
+  private showMediumInfo(medium: GranularDry | InkMedium, anchor: HTMLElement) {
+    this.closeMediumInfo();
+
+    const card = document.createElement('aside');
+    card.className = 'medium-info panel';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', `${medium.name} material settings`);
+
+    const head = document.createElement('div');
+    head.className = 'medium-info-head';
+    const title = document.createElement('div');
+    const name = document.createElement('span');
+    name.className = 'hud-title';
+    name.textContent = medium.name;
+    const subtitle = document.createElement('span');
+    subtitle.className = 'medium-info-sub';
+    subtitle.textContent = 'material settings';
+    title.append(name, subtitle);
+    const close = document.createElement('button');
+    close.className = 'medium-info-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = 'Close material settings';
+    close.setAttribute('aria-label', 'Close material settings');
+    close.addEventListener('click', () => this.closeMediumInfo());
+    head.append(title, close);
+    card.appendChild(head);
+
+    const note = document.createElement('p');
+    note.className = 'medium-info-note';
+    note.textContent = 'Shared working settings. Values without units use this engine’s 0–1 scale.';
+    card.appendChild(note);
+
+    const number = (value: number) => value.toFixed(2);
+    const addGroup = (heading: string, rows: Array<[string, string]>) => {
+      const group = document.createElement('section');
+      group.className = 'medium-info-group';
+      const label = document.createElement('h3');
+      label.textContent = heading;
+      group.appendChild(label);
+      for (const [setting, value] of rows) {
+        const row = document.createElement('div');
+        row.className = 'medium-info-row';
+        const settingLabel = document.createElement('span');
+        settingLabel.textContent = setting;
+        const settingValue = document.createElement('b');
+        settingValue.textContent = value;
+        row.append(settingLabel, settingValue);
+        group.appendChild(row);
+      }
+      card.appendChild(group);
+    };
+
+    addGroup('Contact', [
+      ['tip shape', medium.contactProfile],
+      ['tip radius', `${number(medium.tipRadius)} cells`],
+      ['base width / length', `${number(medium.contactAspect)}×`],
+      ['side contact begins', `${number(medium.tiltStart)}°`],
+      ['full side length', `${number(medium.tiltAspect)}×`],
+    ]);
+    addGroup('Mark on paper', [
+      ['paper-tooth gate', number(medium.toothThreshold)],
+      ['speed breakup', number(medium.velocityCoupling)],
+      ['pressure response', number(medium.pressureExp)],
+      ['deposit amount', number(medium.deposition)],
+      ['edge crispness', number(medium.edgeSharpness)],
+    ]);
+    addGroup('Material', [
+      ['particle size', number(medium.physics.pigmentParticleSize)],
+      ['binder body', number(medium.physics.binderViscosity)],
+      ['material hardness', number(medium.physics.mediumHardness)],
+      ['friction release', number(medium.physics.shearRate)],
+      ['paper hold', number(medium.physics.adhesionStrength)],
+      ['paper compression start', number(medium.physics.compressiveYield)],
+      ['potential sheen', number(medium.physics.specularPotential)],
+      ['fine surface reflection', number(medium.physics.microReflectance)],
+      ['optical density', number(medium.physics.refractiveIndex)],
+    ]);
+    if (medium.kind === 'ink') {
+      addGroup('Ink delivery', [
+        ['delivery', medium.flowMode === 'ball' ? 'rolling ball' : 'wetted fountain nib'],
+        ['flow starvation', number(medium.skipStrength)],
+        ['starvation length', `${number(medium.skipScale)} cells`],
+        ['fine chatter', number(medium.chatter)],
+      ]);
+    }
+
+    document.body.appendChild(card);
+    const rect = anchor.getBoundingClientRect();
+    const width = 286;
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left - width - 10));
+    const top = Math.max(12, Math.min(window.innerHeight - 120, rect.top));
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+    this.mediumInfo = card;
+  }
+
+  private closeMediumInfo() {
+    this.mediumInfo?.remove();
+    this.mediumInfo = undefined;
+  }
+
   private template(): string {
     return `
       <div class="pal-head">
@@ -244,6 +377,7 @@ export class Palette {
         <div id="brushes" class="papers"></div>
         <div class="pal-sub">dry media</div>
         <div id="dry-tools" class="papers six"></div>
+        <p class="medium-hint">press and hold a medium for settings</p>
         <label class="loading-row">
           <span>size</span>
           <input id="brush-size" type="range" min="0.15" max="2.4" step="0.025" />
