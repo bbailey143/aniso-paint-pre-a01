@@ -22,11 +22,21 @@ struct Comp {
   valueShift: f32,    // + dries lighter, - dries darker, 0 unchanged
 
   // 0 = paint. 1 = the water view: show where the water is instead of the
-  // colour. Buffer is 80 bytes; canvas.ts must agree.
+  // colour. Buffer is 112 bytes; canvas.ts must agree.
   waterView: f32,
+  /** 1 = the whole sheet fits the window. 4 = four times closer. */
+  zoom: f32,
+  /** Document-space point held at the centre of the window, in doc px. */
+  panX: f32,
+  panY: f32,
+
+  // The active sheet's grain parameters, so the paper relief can be evaluated
+  // at SCREEN resolution instead of stretched up from the 512 texture. This is
+  // what keeps a zoomed view crisp — see `grain_h`.
+  pTooth: f32,
+  pFreq: f32,
+  pSeed: f32,
   _pad0: f32,
-  _pad1: f32,
-  _pad2: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -94,6 +104,113 @@ fn biload(t: texture_2d<f32>, uv: vec2f) -> vec4f {
   return mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
 }
 
+/**
+ * Catmull-Rom, one axis. Used to magnify the paint field without the diamond
+ * creases bilinear leaves once one simulation cell covers many screen pixels.
+ *
+ * It does NOT add resolution — the paint field is 512 cells and nothing here
+ * invents detail that was never simulated. It removes an artifact of the
+ * interpolation, which is a different and smaller claim.
+ */
+fn cr_w(x: f32) -> vec4f {
+  let x2 = x * x;
+  let x3 = x2 * x;
+  return vec4f(
+    -0.5 * x3 + x2 - 0.5 * x,
+    1.5 * x3 - 2.5 * x2 + 1.0,
+    -1.5 * x3 + 2.0 * x2 + 0.5 * x,
+    0.5 * x3 - 0.5 * x2,
+  );
+}
+
+fn bicubic(t: texture_2d<f32>, uv: vec2f) -> vec4f {
+  let dim = vec2f(textureDimensions(t));
+  let hi = vec2i(dim) - vec2i(1, 1);
+  let p = uv * dim - 0.5;
+  let base = floor(p);
+  let f = p - base;
+  let wx = cr_w(f.x);
+  let wy = cr_w(f.y);
+  var acc = vec4f(0.0);
+  for (var j = 0; j < 4; j = j + 1) {
+    var row = vec4f(0.0);
+    let cy = clamp(i32(base.y) + j - 1, 0, hi.y);
+    for (var i = 0; i < 4; i = i + 1) {
+      let cx = clamp(i32(base.x) + i - 1, 0, hi.x);
+      row = row + textureLoad(t, vec2i(cx, cy), 0) * wx[i];
+    }
+    acc = acc + row * wy[j];
+  }
+  return acc;
+}
+
+/**
+ * Sample the paint field. Bilinear when the sheet is at or below fit, bicubic
+ * once magnified — the sharper filter costs 16 taps instead of 4 and there is
+ * nothing for it to do until one cell is bigger than one screen pixel.
+ */
+fn paint(t: texture_2d<f32>, uv: vec2f) -> vec4f {
+  if (C.zoom > 1.05) { return bicubic(t, uv); }
+  return biload(t, uv);
+}
+
+/**
+ * The paper's tooth height, evaluated procedurally at the requested document
+ * point rather than read from the baked 512 texture.
+ *
+ * This is the whole reason a zoomed sheet can stay crisp. The grain is noise,
+ * not a photograph, so it has a value at every real-numbered point — magnifying
+ * it costs nothing and loses nothing, while stretching the baked texture would
+ * turn the tooth into soft blobs at exactly the magnification where the artist
+ * is trying to judge a pigment.
+ *
+ * MUST stay in step with `paper.wgsl`, which bakes the same function into the
+ * texture the SOLVER reads. If the two drift, the paper you see stops being the
+ * paper the water is running over.
+ */
+fn grain_hash(p: vec2f) -> f32 {
+  let h = dot(p, vec2f(127.1, 311.7)) + C.pSeed * 57.0;
+  return fract(sin(h) * 43758.5453123);
+}
+fn grain_vnoise(p: vec2f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = grain_hash(i + vec2f(0.0, 0.0));
+  let b = grain_hash(i + vec2f(1.0, 0.0));
+  let c = grain_hash(i + vec2f(0.0, 1.0));
+  let d = grain_hash(i + vec2f(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+fn grain_h(uv: vec2f) -> f32 {
+  let p = vec2f(uv.x * C.pFreq, uv.y * C.pFreq * 1.15);
+  var v = 0.0;
+  var amp = 0.5;
+  var freq = 1.0;
+
+  // Four octaves is what paper.wgsl bakes, and four octaves magnified is soft
+  // blobs — measured: adjacent-pixel detail fell from 2.20 at fit to 0.15 at
+  // 16x, because an fBm that stops at a fixed frequency has nothing finer to
+  // show. Add octaves as the view closes in, so the sheet keeps offering fibre
+  // at whatever scale is being looked at. THAT is the "smooth scaling" claim.
+  //
+  // Honesty about what the extra octaves are: they are strictly FINER than one
+  // simulation cell, so they are paper fibre the water cannot feel and does not
+  // respond to. The first four octaves are the sheet the solver actually reads;
+  // the rest is sub-cell detail, shown because real paper has it. The dry-media
+  // band already does exactly this, evaluating the same sheet at 4x resolution
+  // so a pen nib is not a fat cell — see `setPaper` in canvas.ts.
+  let extra = clamp(i32(floor(log2(max(C.zoom, 1.0)))), 0, 3);
+  let octaves = 4 + extra;
+  for (var o = 0; o < octaves; o = o + 1) {
+    v = v + amp * grain_vnoise(p * freq);
+    freq = freq * 2.03;
+    amp = amp * 0.5;
+  }
+  var h = 0.5 + (v - 0.5) * (0.4 + C.pTooth * 1.6);
+  return clamp(h, 0.02, 0.98);
+}
+
 fn slotId(i: i32) -> i32 {
   if (i < 4) { return C.slotA[i]; }
   return C.slotB[i - 4];
@@ -143,12 +260,18 @@ fn srgb_encode(c: f32) -> f32 {
 fn fs(in: VsOut) -> @location(0) vec4f {
   let bg = vec3f(0.043, 0.047, 0.055);
 
-  // Screen px -> document uv, "contain" fit, centred.
+  // Screen px -> document px -> document uv.
+  //
+  // `fit` is the "contain" scale that puts the whole sheet in the window; zoom
+  // multiplies it, and (panX, panY) is the document point held at the centre of
+  // the window. At zoom 1 with the pan at the sheet's middle this is exactly the
+  // old centred contain fit, which is the regression path.
+  //
+  // `toGrid()` in src/main.ts INVERTS this. Change one and you must change the
+  // other, or paint stops landing under the cursor.
   let fragPx = in.uv * C.view;
-  let scale = min(C.view.x / C.doc.x, C.view.y / C.doc.y);
-  let shown = C.doc * scale;
-  let offset = (C.view - shown) * 0.5;
-  let docPx = (fragPx - offset) / scale;
+  let scale = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
+  let docPx = (fragPx - C.view * 0.5) / scale + vec2f(C.panX, C.panY);
   let uv = docPx / C.doc;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
     return vec4f(bg, 1.0);
@@ -157,10 +280,10 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // Cell contents. What the eye sees is suspended pigment (floating in the
   // film) plus settled pigment (adsorbed on the paper) — the g/d split IS
   // granulation and lifting, but optically both absorb light, so both count.
-  let g0 = biload(pigA, uv);
-  let g1 = biload(pigB, uv);
-  let d0 = biload(setA, uv);
-  let d1 = biload(setB, uv);
+  let g0 = paint(pigA, uv);
+  let g1 = paint(pigB, uv);
+  let d0 = paint(setA, uv);
+  let d1 = paint(setB, uv);
   let a0 = g0 + d0;
   let a1 = g1 + d1;
   let amt = array<f32, 8>(a0.x, a0.y, a0.z, a0.w, a1.x, a1.y, a1.z, a1.w);
@@ -170,12 +293,12 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // The dried layers below. Glazing: each is optically its own film, composited
   // over what is beneath it, so a wash laid over a dry one lets the lower colour
   // show through instead of replacing it. Layer order is floor -> dry1 -> wet.
-  let e2a = biload(dry2a, uv);
-  let e2b = biload(dry2b, uv);
-  let i0 = biload(inkA, uv);
-  let i1 = biload(inkB, uv);
-  let e1a = biload(dry1a, uv);
-  let e1b = biload(dry1b, uv);
+  let e2a = paint(dry2a, uv);
+  let e2b = paint(dry2b, uv);
+  let i0 = paint(inkA, uv);
+  let i1 = paint(inkB, uv);
+  let e1a = paint(dry1a, uv);
+  let e1b = paint(dry1b, uv);
   // Ink occupies the same permanent floor as graphite did before the finer
   // grid arrived. It stays beneath later watercolour glazes, but keeps its own
   // small-scale edge instead of being resampled into the 512-cell dry floor.
@@ -198,8 +321,8 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // k_instrument -> deep, saturated); as it dries the surface goes matte and the
   // value lifts. This is the wet->dry shift falling out of one mechanism rather
   // than a post-process. [UNVERIFIED — Card 4; bench it against real swatches.]
-  let w0v = biload(wet0, uv);
-  let w5v = biload(wet5, uv);
+  let w0v = paint(wet0, uv);
+  let w5v = paint(wet5, uv);
   let wetness = clamp(max(w0v.y * 6.0, w5v.x * 3.0), 0.0, 1.0);
   let kIns = mix(C.kInstrument, 0.0, wetness);
 
@@ -309,11 +432,22 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   rgb = rgb * max(1.0 - C.valueShift * wetness, 0.1);
 
   // Relief lighting from the paper height gradient (tooth catches the light).
-  let texel = 1.0 / vec2f(textureDimensions(paper));
-  let hL = textureSampleLevel(paper, samp, uv - vec2f(texel.x, 0.0), 0.0).x;
-  let hR = textureSampleLevel(paper, samp, uv + vec2f(texel.x, 0.0), 0.0).x;
-  let hU = textureSampleLevel(paper, samp, uv - vec2f(0.0, texel.y), 0.0).x;
-  let hD = textureSampleLevel(paper, samp, uv + vec2f(0.0, texel.y), 0.0).x;
+  //
+  // The gradient is taken one SCREEN pixel apart, not one texel of the baked
+  // paper texture, and the heights come from `grain_h` — the same noise the
+  // solver's paper was baked from, evaluated fresh at this exact point. That is
+  // what makes zooming in show finer grain instead of bigger blobs: the tooth is
+  // a function, so it has detail at every scale, and stepping by a screen pixel
+  // asks it for exactly the detail this magnification can show.
+  //
+  // At or below fit, one screen pixel is coarser than one paper texel and this
+  // reduces to what the baked texture would have given.
+  let scaleNow = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
+  let texel = vec2f(1.0 / max(scaleNow, 1.0e-4)) / C.doc;
+  let hL = grain_h(uv - vec2f(texel.x, 0.0));
+  let hR = grain_h(uv + vec2f(texel.x, 0.0));
+  let hU = grain_h(uv - vec2f(0.0, texel.y));
+  let hD = grain_h(uv + vec2f(0.0, texel.y));
   let n = normalize(vec3f(-(hR - hL) * C.relief, -(hD - hU) * C.relief, 1.0));
   let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
   let lambert = clamp(dot(n, lightDir), 0.0, 1.0);

@@ -24,6 +24,20 @@ const SIM = 512;
 // than scattering the number through the canvas setup.
 const INK = SIM * 4;
 
+/**
+ * Grain seed. Stated once here because THREE things must agree on it: the paper
+ * texture the solver reads, the finer ink-grid copy of the same sheet, and the
+ * composite's screen-resolution evaluation of the tooth. If they disagree, the
+ * paper you can see stops being the paper the water is running over.
+ */
+const PAPER_SEED = 0.137;
+
+// Zoom limits. The upper end is where one simulation cell is about 16 screen
+// pixels — past that the view is honestly showing interpolation rather than
+// paint, and saying so is better than letting the artist judge a pigment on it.
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 16;
+
 const STORAGE_TEX =
   GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST;
 
@@ -63,6 +77,56 @@ export class CanvasEngine {
    * back, so leaving it on cannot change what dries or where.
    */
   waterView = false;
+
+  /**
+   * View transform. `zoom = 1` fits the whole sheet; `(panX, panY)` is the
+   * document point held at the centre of the window. These describe how the
+   * sheet is LOOKED AT and never what the paint does — D11's separation of view
+   * from board tilt applies here too.
+   *
+   * `toGrid()` in src/main.ts inverts the same transform to place a brush. The
+   * two must move together.
+   */
+  zoom = 1;
+  panX = DOC / 2;
+  panY = DOC / 2;
+  /** Grain rows for the active sheet, so the composite can evaluate the tooth
+   * procedurally at screen resolution. Set by `setPaper`. */
+  private paperTooth = 0.45;
+  private paperFreq = 130;
+  private readonly paperSeed = PAPER_SEED;
+
+  /** Zoom about a point given in document px, so the paper stays put under the
+   * cursor rather than sliding toward the middle. */
+  zoomAt(factor: number, docX: number, docY: number) {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * factor));
+    const applied = next / this.zoom;
+    if (applied === 1) return;
+    // Keep (docX, docY) at the same screen position: the centre moves a
+    // fraction of the way toward it equal to how much closer we just got.
+    this.panX = docX + (this.panX - docX) / applied;
+    this.panY = docY + (this.panY - docY) / applied;
+    this.zoom = next;
+    this.clampPan();
+  }
+
+  /** Pan by a screen-pixel delta at the current zoom. */
+  panBy(dxScreen: number, dyScreen: number, viewW: number, viewH: number) {
+    const scale = Math.min(viewW / DOC, viewH / DOC) * this.zoom;
+    this.panX -= dxScreen / scale;
+    this.panY -= dyScreen / scale;
+    this.clampPan();
+  }
+
+  resetView() { this.zoom = 1; this.panX = DOC / 2; this.panY = DOC / 2; }
+
+  /** Keep the sheet from being dragged entirely off-screen. Generous rather
+   * than strict — half a sheet of slack in every direction. */
+  private clampPan() {
+    const m = DOC * 0.5;
+    this.panX = Math.min(DOC + m, Math.max(-m, this.panX));
+    this.panY = Math.min(DOC + m, Math.max(-m, this.panY));
+  }
   private reliefStrength = 2.2;
 
   constructor(gpu: Gpu) {
@@ -86,7 +150,7 @@ export class CanvasEngine {
       // 80, not 64: the water-view flag added a fifth 16-byte group. This size,
       // the ArrayBuffer in writeCompParams, and `struct Comp` in composite.wgsl
       // must agree — an overflowing write is rejected whole and silently.
-      size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
+      size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
     });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
@@ -162,8 +226,14 @@ export class CanvasEngine {
   /** Regenerate the paper substrate for a chosen sheet. */
   setPaper(p: Paper) {
     const buf = new ArrayBuffer(32);
-    new Float32Array(buf).set([p.toothAmp, p.featureFreq, p.sizing, p.rc, p.cMin, p.cMax, 0.137, 0]);
+    new Float32Array(buf).set([
+      p.toothAmp, p.featureFreq, p.sizing, p.rc, p.cMin, p.cMax, PAPER_SEED, 0,
+    ]);
     this.gpu.device.queue.writeBuffer(this.paperParams, 0, buf);
+    // The composite re-derives the same grain at screen resolution, so it needs
+    // the two rows that shape it. Same seed, same function, same sheet.
+    this.paperTooth = p.toothAmp;
+    this.paperFreq = p.featureFreq;
 
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -257,7 +327,10 @@ export class CanvasEngine {
   }
 
   private writeCompParams(viewW: number, viewH: number) {
-    const buf = new ArrayBuffer(80);
+    // 112 bytes = 7 groups of 16. Must match `struct Comp` in composite.wgsl and
+    // the createBuffer size above. An overflowing uniform write is rejected
+    // whole and silently; this has cost time twice already.
+    const buf = new ArrayBuffer(112);
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
@@ -270,6 +343,14 @@ export class CanvasEngine {
     dv.setFloat32(56, this.kInstrument, true);
     dv.setFloat32(60, this.valueShift, true);
     dv.setFloat32(64, this.waterView ? 1 : 0, true);
+    dv.setFloat32(68, this.zoom, true);
+    dv.setFloat32(72, this.panX, true);
+    dv.setFloat32(76, this.panY, true);
+    // Grain parameters, so the composite can evaluate the tooth at screen
+    // resolution instead of stretching the baked 512 texture.
+    dv.setFloat32(80, this.paperTooth, true);
+    dv.setFloat32(84, this.paperFreq, true);
+    dv.setFloat32(88, this.paperSeed, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

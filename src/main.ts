@@ -118,16 +118,69 @@ async function main() {
   // ---- Pointer -> stroke segments -----------------------------------------
   // Screen px -> document uv -> simulation grid. Mirrors the composite's
   // "contain" fit so the paint lands under the cursor.
-  function toGrid(s: StylusSample): { gx: number; gy: number } | null {
+  // This is the EXACT inverse of the fit block at the top of `fs` in
+  // composite.wgsl. If one changes, change the other in the same edit — a
+  // mismatch does not error, it just paints somewhere other than under the
+  // cursor, and at high zoom that is far off the screen.
+  function toDoc(px: number, py: number): { dx: number; dy: number } {
     const vw = gpu.canvas.width, vh = gpu.canvas.height;
-    const scale = Math.min(vw / engine.doc, vh / engine.doc);
-    const shown = engine.doc * scale;
-    const offX = (vw - shown) / 2, offY = (vh - shown) / 2;
-    const dx = (s.px - offX) / scale;      // document px
-    const dy = (s.py - offY) / scale;
+    const scale = Math.min(vw / engine.doc, vh / engine.doc) * engine.zoom;
+    return {
+      dx: (px - vw / 2) / scale + engine.panX,
+      dy: (py - vh / 2) / scale + engine.panY,
+    };
+  }
+
+  function toGrid(s: StylusSample): { gx: number; gy: number } | null {
+    const { dx, dy } = toDoc(s.px, s.py);
     if (dx < 0 || dy < 0 || dx > engine.doc || dy > engine.doc) return null;
     return { gx: (dx / engine.doc) * engine.sim, gy: (dy / engine.doc) * engine.sim };
   }
+
+  // ---- View: zoom and pan --------------------------------------------------
+  // Deliberately NOT on the brush's pointer path. Navigating the sheet is not
+  // painting on it, and a stray wheel notch must never leave a mark.
+  const setZoomHud = () => setText('hud-zoom', `${Math.round(engine.zoom * 100)}%`);
+  canvas.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    // Zoom about the cursor, so the bit of paper being looked at stays put.
+    const r = canvas.getBoundingClientRect();
+    const { dx, dy } = toDoc((ev.clientX - r.left) * gpu.dpr, (ev.clientY - r.top) * gpu.dpr);
+    engine.zoomAt(Math.exp(-ev.deltaY * 0.0015), dx, dy);
+    setZoomHud();
+  }, { passive: false });
+
+  // Middle-drag, or space-drag, pans. Both leave the pen free to paint.
+  let panning = false;
+  let lastPan = { x: 0, y: 0 };
+  let spaceHeld = false;
+  window.addEventListener('keydown', (ev) => {
+    if (ev.code === 'Space') { spaceHeld = true; canvas.classList.add('panning'); }
+    // A plain, findable way back when the view gets lost.
+    if (ev.key === '0' && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault(); engine.resetView(); setZoomHud();
+    }
+  });
+  window.addEventListener('keyup', (ev) => {
+    if (ev.code === 'Space') { spaceHeld = false; canvas.classList.remove('panning'); }
+  });
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 1 && !spaceHeld) return;
+    ev.preventDefault();
+    panning = true;
+    lastPan = { x: ev.clientX, y: ev.clientY };
+    canvas.setPointerCapture(ev.pointerId);
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!panning) return;
+    engine.panBy((ev.clientX - lastPan.x) * gpu.dpr, (ev.clientY - lastPan.y) * gpu.dpr,
+                 gpu.canvas.width, gpu.canvas.height);
+    lastPan = { x: ev.clientX, y: ev.clientY };
+  });
+  const endPan = () => { panning = false; };
+  canvas.addEventListener('pointerup', endPan);
+  canvas.addEventListener('pointercancel', endPan);
+  setZoomHud();
 
   let smoothV = 0;
   new PointerInput(canvas, () => gpu.dpr, {

@@ -360,7 +360,88 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## IN FLIGHT — NOTHING. Session closed clean, 2026-07-29 evening.
+## IN FLIGHT — view zoom/pan (Claude, 2026-07-30)
+
+**Rim work is PAUSED at Bartford's word** — he has not decided a direction and
+does not want one chosen for him. E12's two findings stand; nothing is being
+changed on the back of them. `edgeEvaporation` and `rimMigration` stay `0`.
+
+**Building: smooth zoom and pan.** He needs to judge pigments up close, and
+that is now the blocker. Design, with what it can and cannot honestly do:
+
+- View transform lives in `composite.wgsl`'s fit block plus the Comp uniform
+  (`zoom`, `panX`, `panY`). `zoom = 1` with pan at the document centre must
+  reproduce today's framing exactly — that is the regression path.
+- **`toGrid()` in `src/main.ts` mirrors that same fit math and MUST be changed
+  with it**, or paint lands somewhere other than under the cursor. This is the
+  one way to get zoom badly wrong.
+- Paper grain (`paper.wgsl`: `hash2`/`vnoise`/`fbm`) is **procedural**, so it can
+  be evaluated per screen pixel instead of stretched from the 512 texture. That
+  is what keeps a zoomed view crisp rather than soft, and it is the whole reason
+  this is worth doing properly.
+- Honest limit to state plainly and not paper over: **the pigment field is 512
+  cells and zoom cannot invent detail in it.** Smooth interpolation avoids
+  blockiness; it does not add resolution. What IS resolution-independent is the
+  colour — Kubelka-Munk is already evaluated per screen pixel — and the paper
+  relief once it is procedural. Dry media are already 2048.
+
+Uniform arithmetic: Comp goes 80 -> 112 bytes (view group + paper-params group).
+Three places must agree — `struct Comp` in composite.wgsl, the `ArrayBuffer` in
+`writeCompParams`, and the `createBuffer` size. This has bitten twice.
+
+**CHECKPOINT — written, `npm.cmd run build` passes, NOT yet run in the browser.**
+WGSL does not compile at build time, so nothing below is verified until the page
+loads. Changed files and what is in each:
+
+- `composite.wgsl` — Comp gains `zoom/panX/panY` and `pTooth/pFreq/pSeed`; the
+  fit block becomes `(fragPx - view*0.5)/scale + pan`; `bicubic()` +
+  `paint()` (Catmull-Rom above zoom 1.05, bilinear at or below); `grain_h()`
+  duplicates paper.wgsl's noise so relief is evaluated per screen pixel with the
+  gradient stepped one screen pixel, not one paper texel.
+- `canvas.ts` — `zoom/panX/panY`, `zoomAt/panBy/resetView/clampPan`,
+  `PAPER_SEED = 0.137` hoisted to a named constant (three things must agree on
+  it), `MIN_ZOOM 0.25 / MAX_ZOOM 16`, compParams 80 -> 112.
+- `main.ts` — `toDoc()` inverts the shader's fit; wheel zooms about the cursor,
+  middle-drag/space-drag pans, Ctrl+0 fits. View input is kept OFF the brush's
+  pointer path so a stray wheel notch cannot leave a mark.
+- `index.html` — a zoom percentage in the HUD.
+
+**If this is abandoned mid-way:** `zoom = 1` with pan at `DOC/2` is exactly the
+old framing, so the feature is inert by default and safe to leave in tree. The
+one thing that must not be half-done is the `composite.wgsl` fit block and
+`toDoc()` in main.ts — they are inverses of each other and a mismatch paints off
+under the cursor without erroring.
+
+**VERIFIED IN THE BROWSER.** Page loads on `webgpu: amd / gcn-4` with no shader
+or validation error. Zoom, pan and Ctrl+0 all work; the HUD reads the zoom
+percentage. Nothing is half-done.
+
+**One real change came out of measuring rather than assuming.** Four octaves of
+fBm magnified is soft blobs, not crisp grain: adjacent-pixel detail on bare paper
+fell `2.20` at fit to `0.15` at 16x. `grain_h` now adds one octave per doubling
+of zoom, capped at three extra. Re-measured: `0.15 -> 0.29` at 16x and
+`0.48 -> 0.57` at 8x. The extra octaves are strictly finer than one simulation
+cell, so they are fibre the water cannot feel — the same licence the ink grid
+already takes by evaluating the sheet at 4x for pen nibs.
+
+**The honest ceiling, which must not be oversold to Bartford:** the paint field
+is 512 cells. Bicubic removes blockiness; it cannot add detail that was never
+simulated. At 8x and beyond a brush mark is visibly SOFT. What IS exact at any
+zoom is the colour — Kubelka-Munk runs per screen pixel — and that is what he
+actually needs for judging pigments. If mark sharpness under magnification later
+matters more than it does now, the only real fix is raising `SIM`, which is a D7
+wetness-budget decision and costs solver time. **Not a decision to make quietly.**
+
+**Trap found, worth knowing:** `debugReadback(size)` in canvas.ts silently
+returns all-black unless `size * 4` is a multiple of 256 (so `size` a multiple of
+64). WebGPU rejects the `copyTextureToBuffer` and nothing surfaces. Two probes at
+size 16 and 32 read as "the screen is black" before this was spotted.
+
+**Also worth knowing for any future harness:** `StrokeEngine.begin/add` take
+**grid** coordinates (0..512), not document px. Panning to a "stroke at y=300"
+in doc space lands on bare paper. This cost a wrong measurement in this session.
+
+## PREVIOUS: session closed clean, 2026-07-29 evening.
 
 No half-edits, no uncommitted source, no experiment mid-flight. Build passes,
 page loads clean, working tree holds only the five long-standing untracked items.
