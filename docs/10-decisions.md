@@ -19,6 +19,7 @@ it, or because a decision here justifies it.
 | **D10** | **Brush solver in CPU TypeScript**, every frame; **two spines maximum**; stroke path **resampled** to ≤1 cell/step. | ~16 numbers of state — a pocket calculator. Two spines cover round + flat (VL); resampling stops strokes beading into dots. |
 | **D11** | **Pen input via Pointer Events**: pressure, tiltX/tiltY, twist where available; velocity derived; `getCoalescedEvents()` for high-frequency sampling. | Web-native full-tilt/pressure/velocity; coalesced events feed the resampler. No plugin, works on the Huion and on iPad. |
 | **D12** | **First build scope:** round + flat sable, watercolour + full water fluid cycle + KM mixing, graphite pencil, ballpoint, and 3 papers (hot/cold press, rough). Everything else is a documented row for later. | A vertical slice that exercises every engine once, so the rest is adding rows. |
+| **D13** | **Every material is authored in a studio, and studios share a harness.** Brushes, media, dry media, papers and pigments each get a studio; studios are a **product surface for the artist**, not a developer tool. Four clauses: **(a)** the studio edits the same typed data row the engine consumes (D3) — there is no separate authoring format; **(b)** it shows **both the artifact and what the artifact does** — the brush *and* its stroke, the sheet *and* a wash sinking into it, the pigment *and* a graded wash — so each studio embeds the engine rather than sitting beside it; **(c)** **reference material is first-class**: a photograph or scan of the real tool loads into the studio to be matched against, as backdrop or overlay; **(d)** **viewer settings never enter the data row** — drawing preferences (hair count, camera, reference opacity) live on the studio, are never exported, and are invisible to the engine. | This is the differentiator: the artist creates everything they make art with, so authoring is the product, not scaffolding. **(a)** keeps D3's "a medium is a data row" honest — a second format would drift from the first. **(b)** is the accuracy clause: **the ground truth for a tool is the mark it makes, not a picture of the tool**, so a studio that shows only the artifact is half a loop and invites a beautiful render of wrong numbers — precisely the plausible-but-wrong failure this project keeps hitting. **(c)** is how a row stops being invented and starts being matched. **(d)** protects the row as a document users save, share and load. Note the harness is an **authoring** harness, not a renderer: only the brush studio is 3D, so no 3D engine is the common foundation. |
 
 ## Open items (not blocking)
 
@@ -43,3 +44,20 @@ it, or because a decision here justifies it.
 - **Precision on iPad.** D6's wet band is f32 at 512². Re-check the memory and
   format support on target hardware before the native/iPad pass.
 - **Native iPad path.** Deferred under D1; re-scope after the browser build proves out.
+- **Extracting the studio harness (D13).** The brush studio is the only one built.
+  Build the **paper studio** second — it is the least like the brush, so a harness
+  that survives both will survive pigment — and extract the shared harness from the
+  two. Abstracting from one example would bake in brush-shaped assumptions.
+- **What the brush studio is rendered with (D13).** It is the only 3D studio. Today it
+  hand-rolls projection, depth sorting and lighting in a 2D canvas, which is where
+  four render bugs have come from. A real 3D library (three.js sized, not a game
+  engine) would delete that math. Not decided; it is a brush-studio dependency, not a
+  platform choice, and D13 (d) means the engine and the brush row are unaffected
+  either way.
+- **Per-field provenance in the studio UI (D13).** The fence marks numbers
+  `[UNVERIFIED]` in source, but a user authoring a medium cannot see it. Surfacing
+  measured-vs-reasoned per field would make "matched against a real Series 7" a
+  visible property of a row. Proposed, not ratified.
+- **Studios do not yet show the mark (D13 b).** No studio currently renders what its
+  artifact *does* — the brush studio shows a brush, and you must leave it and paint to
+  find out what you built. This is the largest gap against D13.

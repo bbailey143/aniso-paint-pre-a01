@@ -133,22 +133,73 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-31 (brush studio render verified on screen; nothing in
-flight)
+**Last updated:** 2026-07-31 (D13 ratified — studios are the product; brush
+studio reference photo + hair density landed)
 **By:** Claude (Opus)
 
-**THE NEXT ACTION IS BARTFORD'S, NOT A MODEL'S.** Two things are waiting on his
-eye and neither should be worked around:
+## READ D13 BEFORE TOUCHING A STUDIO
 
-1. **Look at the 3D brush studio** on branch `3D-brush` (`brush-studio.html`) —
-   see the entry below. Does it read as a brush?
-2. **Then decide whether `3D-brush` merges back into `webgpu-test`**, which is
-   3 commits behind it. Do not merge it unasked; it is a UI branch and the
-   painting app does not depend on it.
+**`D13` is new and it re-frames a lot of this file.** Every material — brushes,
+media, dry media, papers, pigments — is authored by the artist in a **studio**,
+and studios share an **authoring harness**. Studios are a product surface, not a
+developer tool: *the ability to create everything you make art with* is the
+thing that separates this app from every painting app built. Full text and its
+four clauses are in [`10-decisions.md`](10-decisions.md).
+
+Two consequences that will otherwise be got wrong:
+
+- **A studio must show what its artifact DOES, not just the artifact.** The
+  ground truth for a tool is the mark it makes, not a picture of it. No studio
+  does this yet; it is the largest open gap against D13.
+- **The shared piece is the harness, not a renderer.** Only the brush studio is
+  3D. Do not adopt a 3D engine as a platform foundation on the strength of it.
+
+**Nothing in this app lives in its own little box** — Bartford's words, and the
+reason D13 exists. What is learned building the brush studio carries to paper,
+media and pigment.
+
+## NEXT ACTION — build the paper studio, then extract the harness
+
+Concrete, and it is a model's job, not Bartford's:
+
+1. Build a **paper studio** against `PaperDef` (`src/substrate/papers.ts`) —
+   second instance, chosen because it is the least like the brush, so a harness
+   surviving both will survive pigment. Per D13 it must show the sheet **and a
+   wash sinking into it**, and take a scan of real paper as reference.
+2. **Then** extract the shared harness from the two. Not before — abstracting
+   from one example bakes in brush-shaped assumptions.
+3. Do not fold viewer settings into any data row (D13 d).
+
+**Still waiting on Bartford's eye, not blocking the above:**
+
+- **Look at the brush studio** (`brush-studio.html`): does it read as a brush,
+  and does the reference-photo overlay do what he needs for building one?
+- **Whether `3D-brush` merges back into `webgpu-test`** (4 commits behind).
+  Do not merge unasked.
 
 The rim/`edgeEvaporation` NEXT ACTION further down this file is **paused at
 Bartford's word** and is not the live next step. Read it for context, not as an
 instruction.
+
+## Brush studio — reference photo + hair density (`214317c`, 2026-07-31)
+
+First work under D13, drawing-only; solver, brush row and engine untouched.
+
+- **Reference photograph** loads into the viewport, **Behind** (backdrop) or
+  **Over** (silhouette match — the reason to load one), with opacity/scale/X/Y.
+  Centred on the brush's framing point. **The camera angle is not inferred from
+  the photo — orbit to match it by eye.**
+- **Drawn hairs decoupled from simulated bristles.** Was
+  `clamp(brush.bristles * 2, 48, 220)` = 68 hairs for the flat sable, which read
+  as a fringe. Now a viewer setting, default 850. **Do not conflate the two:**
+  `brush.bristles` sizes the reservoir grid (`bristles × segments`,
+  reservoir.ts) and footprint sampling (fluid.ts), so raising *it* costs work
+  every stroke; the drawn count costs paint only. Weight/alpha fall as
+  `1/√density`; strokes batch into depth × core bands (40 calls, not 850).
+- Verified: painting-app bundle unchanged at 181.44 kB; 68 vs 850 rendered and
+  compared; reference path exercised with a synthetic image in both modes.
+- `[UNVERIFIED]` The real hair count of a sable is measurable and no card
+  records it. When one does it belongs on the **row**, not the viewer.
 
 ## MERGE VERIFICATION — `0892571`, checked 2026-07-29
 

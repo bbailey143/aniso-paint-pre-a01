@@ -16,6 +16,14 @@ behaviour — watercolour, and later gouache, acrylic, oil — from physics, not
 texture stamps. Colour is Kubelka-Munk (blue + yellow = green), never RGB
 blending. Dry media (pencil, ink) share the same extensible architecture.
 
+**And the artist builds their own materials.** Brushes, media, dry media, papers
+and pigments are each authored in a **studio** (`D13`) — a product surface, not a
+developer tool. That is the differentiator: not just painting with good paint,
+but *creating everything you make art with*. It is also why nothing here lives in
+its own little box — a studio edits the same data row the engine consumes, and
+shows both the artifact and **what the artifact does**, because the ground truth
+for a tool is the mark it makes, not a picture of the tool.
+
 **This branch is a new direction.** The `main` branch holds an earlier, ratified
 evidence base (`docs/physics-reference-cards.md`, `docs/canvas-contract-spec.md`)
 and a Rust/wgpu feasibility bench. That work is **cited as a source**, not carried
