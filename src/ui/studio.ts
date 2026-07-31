@@ -82,14 +82,16 @@ export class BrushViewerStudio {
       </div>
 
       <div class="studio-body">
-        <div class="studio-viewport-container">
-          <canvas id="studio-canvas"></canvas>
-          
-          <div class="studio-hud-overlay panel">
-            <div class="stylus-row"><span>bristle count</span><b id="hud-bristles">${this.brush.bristles}</b></div>
-            <div class="stylus-row"><span>kind</span><b id="hud-kind">${this.brush.kind}</b></div>
-            <div class="stylus-row"><span>spine joints</span><b id="hud-segments">${this.brush.segments}</b></div>
-            <div class="stylus-row"><span>splay rating</span><b id="hud-splay">${(this.brush.splayFromPressure * 100).toFixed(0)}%</b></div>
+        <div class="studio-viewport-column">
+          <div class="studio-viewport-container">
+            <canvas id="studio-canvas"></canvas>
+            
+            <div class="studio-hud-overlay panel">
+              <div class="stylus-row"><span>bristle count</span><b id="hud-bristles">${this.brush.bristles}</b></div>
+              <div class="stylus-row"><span>kind</span><b id="hud-kind">${this.brush.kind}</b></div>
+              <div class="stylus-row"><span>spine joints</span><b id="hud-segments">${this.brush.segments}</b></div>
+              <div class="stylus-row"><span>splay rating</span><b id="hud-splay">${(this.brush.splayFromPressure * 100).toFixed(0)}%</b></div>
+            </div>
           </div>
 
           <div class="studio-sim-bar panel">
