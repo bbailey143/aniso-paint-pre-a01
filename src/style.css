@@ -310,6 +310,21 @@ body.studio-popout-body {
   overflow: hidden;
 }
 
+/* The shared `.panel` rule is `position: fixed`, which is right for the painting
+   app's floating chrome and wrong here — every studio panel carries that class,
+   so all of them escaped the flex layout and piled into the top-left corner on
+   top of each other. Put them back in the flow; the two that genuinely float
+   over the viewport re-declare their own positioning below. */
+.brush-studio-root .panel {
+  position: relative;
+  inset: auto;
+  box-shadow: none;
+}
+.brush-studio-root .studio-hud-overlay,
+.brush-studio-root .studio-mode-bar {
+  position: absolute;
+}
+
 .studio-header {
   display: flex;
   justify-content: space-between;
@@ -388,6 +403,15 @@ body.studio-popout-body {
   flex-direction: column;
   gap: 3px;
   pointer-events: none;
+  z-index: 10;
+}
+
+/* Mode buttons float bottom-left of the viewport, clear of the readout. */
+.studio-mode-bar {
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
   z-index: 10;
 }
 

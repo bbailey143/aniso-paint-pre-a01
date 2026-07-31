@@ -360,7 +360,35 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## IN FLIGHT — view zoom/pan (Claude, 2026-07-30)
+## IN FLIGHT — brush studio rendering, on branch `3D-brush` (Claude, 2026-07-30)
+
+**YOU MAY BE ON THE WRONG BRANCH.** Gemini opened `3D-brush` off `webgpu-test`
+and built a 3D brush viewer there. `webgpu-test` is 2 commits behind it. Check
+`git branch --show-current` before doing anything.
+
+**Review verdict on Gemini's work: the engineering is sound, the drawing is not.**
+`src/ui/studio.ts` genuinely drives the real `Spine` solver — it calls
+`spine.solve(...)` with real tilt/pressure/drag and reads `spine.joints` and
+`spine.tip`. That part is worth keeping and is not a mock-up. Three things make
+it not read as a brush:
+
+1. **The tuft is a flat fan, not a volume.** Bristle roots are placed with a
+   single parameter `u` in -1..1 driving BOTH the angle and the radius, so every
+   hair lies on one curved sheet through the axis instead of filling a disc.
+2. **The ferrule and handle are screen-aligned 2D shapes** — a bare `ctx.rect`
+   and a trapezoid — so they do not rotate when the camera orbits. The tuft
+   turns and the handle does not.
+3. **No depth sorting**, so far bristles paint over near ones and the tuft has
+   no read of solidity.
+
+Fixing 1–3 in the render only. **The solver is not being touched** — if the
+brush's behaviour looks wrong afterwards, that is a real finding about the brush
+engine and not about this viewer.
+
+There is also an uncommitted 237-line change to `src/ui/studio.ts` in the tree
+(a layout pass). Left alone.
+
+## PREVIOUS: view zoom/pan (Claude, 2026-07-30)
 
 **Rim work is PAUSED at Bartford's word** — he has not decided a direction and
 does not want one chosen for him. E12's two findings stand; nothing is being

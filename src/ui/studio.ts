@@ -28,11 +28,19 @@ export class BrushViewerStudio {
   private cameraElevation = Math.PI / 6; // 30 degrees
   private cameraDistance = 140;          // Viewport distance units
   private cameraTarget = { x: 0, y: 15, z: 0 };
-  private isDragging = false;
+  private isCamDragging = false;
   private lastMouseX = 0;
   private lastMouseY = 0;
 
-  // Interactive Test State
+  // Direct Interactive Brush Physics State
+  private interactionMode: 'brush' | 'orbit' = 'brush';
+  private showDebugSpine = false;
+  private isBrushActive = false;
+  private brushPos = { x: 0, y: 0 };
+  private brushDragVec = { x: 0, y: 0 };
+  private lastPointerTime = 0;
+
+  // Interactive Test Parameters
   private pressure = 0.4;
   private tiltAngle = 30; // degrees
   private tiltAzimuth = 45; // degrees
@@ -86,6 +94,12 @@ export class BrushViewerStudio {
           <div class="studio-viewport-container">
             <canvas id="studio-canvas"></canvas>
             
+            <div class="studio-mode-bar panel">
+              <button id="mode-drag-brush" class="pal-btn ${this.interactionMode === 'brush' ? 'on' : ''}" title="Drag mouse/stylus on canvas to press & flex the brush bristles">🖊 Interact Brush</button>
+              <button id="mode-orbit-cam" class="pal-btn ${this.interactionMode === 'orbit' ? 'on' : ''}" title="Drag canvas to rotate 3D view camera">🎥 Orbit Camera</button>
+              <button id="mode-toggle-debug" class="pal-btn ${this.showDebugSpine ? 'on' : ''}" title="Toggle joint spine skeleton display">🦴 Joint Skeleton</button>
+            </div>
+
             <div class="studio-hud-overlay panel">
               <div class="stylus-row"><span>bristle count</span><b id="hud-bristles">${this.brush.bristles}</b></div>
               <div class="stylus-row"><span>kind</span><b id="hud-kind">${this.brush.kind}</b></div>
@@ -236,9 +250,10 @@ export class BrushViewerStudio {
       valDisplay.textContent = val.toFixed(param === 'downRate' ? 3 : param.includes('Ratio') || param.includes('stiff') || param.includes('splay') || param.includes('taper') || param.includes('mu') || param.includes('cEta') || param.includes('plasticity') ? 2 : 0);
     }
 
-    // Update HUD overlay
     const hBristles = this.container.querySelector('#hud-bristles');
     if (hBristles) hBristles.textContent = String(this.brush.bristles);
+    const hKind = this.container.querySelector('#hud-kind');
+    if (hKind) hKind.textContent = String(this.brush.kind);
     const hSegments = this.container.querySelector('#hud-segments');
     if (hSegments) hSegments.textContent = String(this.brush.segments);
     const hSplay = this.container.querySelector('#hud-splay');
@@ -251,27 +266,90 @@ export class BrushViewerStudio {
 
   private initEvents() {
     const canvas = this.canvas;
+
+    // Mode Buttons
+    const btnBrushMode = this.container.querySelector('#mode-drag-brush')!;
+    const btnOrbitMode = this.container.querySelector('#mode-orbit-cam')!;
+    const btnDebugMode = this.container.querySelector('#mode-toggle-debug')!;
+
+    btnBrushMode.addEventListener('click', () => {
+      this.interactionMode = 'brush';
+      btnBrushMode.classList.add('on');
+      btnOrbitMode.classList.remove('on');
+      canvas.style.cursor = 'crosshair';
+    });
+
+    btnOrbitMode.addEventListener('click', () => {
+      this.interactionMode = 'orbit';
+      btnOrbitMode.classList.add('on');
+      btnBrushMode.classList.remove('on');
+      canvas.style.cursor = 'grab';
+    });
+
+    btnDebugMode.addEventListener('click', () => {
+      this.showDebugSpine = !this.showDebugSpine;
+      btnDebugMode.classList.toggle('on', this.showDebugSpine);
+    });
+
+    // Pointer Interaction (Mouse / Stylus / Touch)
     canvas.addEventListener('pointerdown', (e) => {
-      this.isDragging = true;
+      canvas.setPointerCapture(e.pointerId);
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
-      canvas.setPointerCapture(e.pointerId);
+      this.lastPointerTime = performance.now();
+
+      // Right click or Shift key forces orbit mode
+      if (e.button === 2 || e.shiftKey || this.interactionMode === 'orbit') {
+        this.isCamDragging = true;
+      } else {
+        this.isBrushActive = true;
+        // Set pressure from stylus or default heavy press
+        this.pressure = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.75;
+        this.syncPressureSlider();
+      }
     });
 
     canvas.addEventListener('pointermove', (e) => {
-      if (!this.isDragging) return;
       const dx = e.clientX - this.lastMouseX;
       const dy = e.clientY - this.lastMouseY;
-      this.cameraAzimuth += dx * 0.008;
-      this.cameraElevation = Math.max(-Math.PI / 3, Math.min(Math.PI / 2.2, this.cameraElevation + dy * 0.008));
+      const now = performance.now();
+      const dt = Math.max(1, now - this.lastPointerTime);
+      this.lastPointerTime = now;
+
+      if (this.isCamDragging) {
+        this.cameraAzimuth += dx * 0.008;
+        this.cameraElevation = Math.max(-Math.PI / 3, Math.min(Math.PI / 2.2, this.cameraElevation + dy * 0.008));
+      } else if (this.isBrushActive) {
+        // Drag brush on paper plane: updates position & drag vector for spine solver
+        this.brushPos.x += dx * 0.15;
+        this.brushPos.y += dy * 0.15;
+        this.brushDragVec.x = (dx / dt) * 8.0;
+        this.brushDragVec.y = (dy / dt) * 8.0;
+
+        if (e.pointerType === 'pen' && e.pressure > 0) {
+          this.pressure = e.pressure;
+          this.syncPressureSlider();
+        }
+      }
+
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
     });
 
-    canvas.addEventListener('pointerup', (e) => {
-      this.isDragging = false;
+    const releasePointer = (e: PointerEvent) => {
+      if (this.isBrushActive) {
+        this.isBrushActive = false;
+        // Snap back! Restores equilibrium springiness when released
+        this.brushDragVec.x = 0;
+        this.brushDragVec.y = 0;
+      }
+      this.isCamDragging = false;
       try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
-    });
+    };
+
+    canvas.addEventListener('pointerup', releasePointer);
+    canvas.addEventListener('pointercancel', releasePointer);
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -280,10 +358,9 @@ export class BrushViewerStudio {
 
     // Sim sliders
     const pInput = this.container.querySelector('#sim-pressure') as HTMLInputElement;
-    const pLabel = this.container.querySelector('#sim-pressure-label') as HTMLElement;
     pInput.addEventListener('input', () => {
       this.pressure = parseFloat(pInput.value);
-      pLabel.textContent = `pressure (${(this.pressure * 100).toFixed(0)}%)`;
+      this.syncPressureSlider();
     });
 
     const tInput = this.container.querySelector('#sim-tilt') as HTMLInputElement;
@@ -310,6 +387,10 @@ export class BrushViewerStudio {
       this.cameraAzimuth = Math.PI / 4;
       this.cameraElevation = Math.PI / 6;
       this.cameraDistance = 140;
+      this.brushPos.x = 0;
+      this.brushPos.y = 0;
+      this.brushDragVec.x = 0;
+      this.brushDragVec.y = 0;
     });
 
     const brushSelect = this.container.querySelector('#studio-brush-select') as HTMLSelectElement;
@@ -391,6 +472,13 @@ export class BrushViewerStudio {
     }
   }
 
+  private syncPressureSlider() {
+    const pInput = this.container.querySelector('#sim-pressure') as HTMLInputElement;
+    const pLabel = this.container.querySelector('#sim-pressure-label') as HTMLElement;
+    if (pInput) pInput.value = String(this.pressure);
+    if (pLabel) pLabel.textContent = `pressure (${(this.pressure * 100).toFixed(0)}%)`;
+  }
+
   private updateJsonView() {
     this.jsonTextArea.value = JSON.stringify(this.brush, null, 2);
   }
@@ -398,7 +486,12 @@ export class BrushViewerStudio {
   private startRenderLoop() {
     const render = () => {
       if (this.isAutoRotating) {
-        this.cameraAzimuth += 0.01;
+        this.cameraAzimuth += 0.008;
+      }
+      // Damped decay of drag vector to demonstrate springy bounceback
+      if (!this.isBrushActive) {
+        this.brushDragVec.x *= 0.82;
+        this.brushDragVec.y *= 0.82;
       }
       this.render3D();
       this.animReqId = requestAnimationFrame(render);
@@ -411,6 +504,10 @@ export class BrushViewerStudio {
     this.container.remove();
   }
 
+  // ---------------------------------------------------------------------------
+  // Realistic 3D Paintbrush Renderer
+  // ---------------------------------------------------------------------------
+
   private render3D() {
     const w = this.canvas.width;
     const h = this.canvas.height;
@@ -418,12 +515,14 @@ export class BrushViewerStudio {
 
     ctx.clearRect(0, 0, w, h);
 
+    // Deep dark laboratory background
     const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 50, w / 2, h / 2, Math.max(w, h));
-    bgGrad.addColorStop(0, '#15181e');
+    bgGrad.addColorStop(0, '#161920');
     bgGrad.addColorStop(1, '#090a0c');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
+    // Solve Kinematic Spine with brush position, pressure, & drag vector
     const tiltRad = (this.tiltAngle * Math.PI) / 180;
     const azRad = (this.tiltAzimuth * Math.PI) / 180;
 
@@ -431,22 +530,27 @@ export class BrushViewerStudio {
     const restZ = totalLen * Math.cos(tiltRad);
     const ferruleZ = Math.max(2, restZ * (1 - this.pressure * 0.7 * this.brush.splayFromPressure));
 
-    const fx = 0;
-    const fy = 0;
+    const fx = this.brushPos.x;
+    const fy = this.brushPos.y;
     const fz = ferruleZ;
 
     const dirX = Math.sin(tiltRad) * Math.cos(azRad);
     const dirY = Math.sin(tiltRad) * Math.sin(azRad);
     const dirZ = -Math.cos(tiltRad);
 
-    const dragX = dirX * this.pressure * 5;
-    const dragY = dirY * this.pressure * 5;
+    const dragX = dirX * this.pressure * 5 + this.brushDragVec.x;
+    const dragY = dirY * this.pressure * 5 + this.brushDragVec.y;
     const prefDir: [number, number] = [dirX || 1, dirY || 0];
 
     this.spine.solve(fx, fy, fz, [dirX, dirY, dirZ], [dragX, dragY], prefDir);
 
-    const cx = w / 2;
-    const cy = h / 2 + 30;
+    // Frame the brush, not the origin. The tuft sits at z=0 and the handle runs
+    // up to ~96, so aiming at the middle of the shaft keeps the whole tool in
+    // view instead of parking it in a corner. The x offset leaves room for the
+    // controls column on the left.
+    const cx = w * 0.58;
+    const cy = h * 0.56;
+    this.cameraTarget = { x: 0, y: 0, z: 34 };
 
     const cosAz = Math.cos(this.cameraAzimuth);
     const sinAz = Math.sin(this.cameraAzimuth);
@@ -462,11 +566,17 @@ export class BrushViewerStudio {
       const y1 = rx * sinAz + ry * cosAz;
       const z1 = rz;
 
+      // [FIXED] The elevation rotation had world height and view depth swapped,
+      // so +z — up off the paper — rendered DOWNWARD and the brush hung with its
+      // handle below the tuft. Screen-up must rise with z; depth must grow with
+      // distance along the view direction. At elevation 0 this reduces to
+      // "screen up = height, depth = y", which is the check to redo if it ever
+      // looks wrong again.
       const x2 = x1;
-      const y2 = y1 * cosEl - z1 * sinEl;
-      const z2 = y1 * sinEl + z1 * cosEl;
+      const y2 = z1 * cosEl - y1 * sinEl;
+      const z2 = y1 * cosEl + z1 * sinEl;
 
-      const fov = 450;
+      const fov = 460;
       const dist = z2 + this.cameraDistance;
       const scale = fov / Math.max(10, dist);
 
@@ -478,10 +588,10 @@ export class BrushViewerStudio {
       };
     };
 
-    // Paper Grid Surface (Z = 0)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    // 1. Paper Grid Surface (Z = 0)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
-    const gridSize = 60;
+    const gridSize = 80;
     const gridStep = 10;
     for (let g = -gridSize; g <= gridSize; g += gridStep) {
       const p1 = project(-gridSize, g, 0);
@@ -499,91 +609,221 @@ export class BrushViewerStudio {
       ctx.stroke();
     }
 
-    // Contact Shadow
-    const shadowOrigin = project(0, 0, 0);
-    const shadowRadius = (this.brush.length * this.brush.widthRatio * (1 + this.pressure * this.brush.splayFromPressure)) * shadowOrigin.scale * 0.35;
+    // 2. Soft Contact Shadow on Paper
+    const shadowOrigin = project(fx, fy, 0);
+    const shadowRadius = (this.brush.length * this.brush.widthRatio * (1 + this.pressure * this.brush.splayFromPressure)) * shadowOrigin.scale * 0.4;
     const shadowGrad = ctx.createRadialGradient(shadowOrigin.px, shadowOrigin.py, 0, shadowOrigin.px, shadowOrigin.py, Math.max(1, shadowRadius));
-    shadowGrad.addColorStop(0, `rgba(216, 178, 106, ${0.15 + this.pressure * 0.35})`);
+    shadowGrad.addColorStop(0, `rgba(18, 12, 8, ${0.25 + this.pressure * 0.4})`);
     shadowGrad.addColorStop(1, 'transparent');
     ctx.fillStyle = shadowGrad;
     ctx.beginPath();
     ctx.arc(shadowOrigin.px, shadowOrigin.py, Math.max(1, shadowRadius), 0, Math.PI * 2);
     ctx.fill();
 
-    // Metallic Ferrule
-    const fNode = project(fx, fy, fz);
-    const ferruleWidth = (this.brush.length * this.brush.widthRatio * 0.45) * fNode.scale;
-    const ferruleHeight = 18 * fNode.scale;
+    // ---- Brush geometry, built in 3D around the solved spine ----------------
+    //
+    // Everything below is DRAWING ONLY. The spine was solved above and is not
+    // touched here, so if the brush behaves oddly that is a finding about the
+    // brush engine, not about this viewer.
+    //
+    // Three things stopped the old version reading as a brush: the tuft was a
+    // flat fan rather than a volume of hairs, the ferrule and handle were
+    // screen-aligned 2D shapes that did not turn with the camera, and nothing
+    // was depth-sorted so far hairs painted over near ones.
 
-    ctx.fillStyle = 'rgba(216, 178, 106, 0.85)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.rect(fNode.px - ferruleWidth / 2, fNode.py - ferruleHeight, ferruleWidth, ferruleHeight);
-    ctx.fill();
-    ctx.stroke();
-
-    // 3D Bristle Strands
-    const numBristles = this.brush.bristles;
     const joints = this.spine.joints;
     const isFlat = this.brush.kind === 'flat';
+    const ferrulePos = project(fx, fy, fz);
 
-    ctx.lineWidth = Math.max(1, 1.2 * fNode.scale * 0.15);
+    // A frame that follows the spine. `axis` is the local tangent; `u` and `v`
+    // span the cross-section. Carried joint to joint by parallel transport
+    // (re-project the previous `u` perpendicular to the new tangent) so the
+    // tuft does not twist as the spine bends — a fixed world basis would spin
+    // the bristles around the shaft whenever the brush leans.
+    type Frame = { o: [number, number, number]; u: [number, number, number]; v: [number, number, number] };
+    const sub3 = (a: number[], b: number[]) =>
+      [a[0] - b[0], a[1] - b[1], a[2] - b[2]] as [number, number, number];
+    const cross3 = (a: number[], b: number[]) =>
+      [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]] as [number, number, number];
+    const dot3 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const norm3 = (a: [number, number, number]) => {
+      const m = Math.hypot(a[0], a[1], a[2]) || 1;
+      return [a[0] / m, a[1] / m, a[2] / m] as [number, number, number];
+    };
 
+    const frames: Frame[] = [];
+    let carriedU: [number, number, number] | null = null;
+    for (let j = 0; j < joints.length; j++) {
+      const nxt = joints[Math.min(j + 1, joints.length - 1)];
+      const prv = joints[Math.max(j - 1, 0)];
+      let axis = norm3(sub3([nxt.x, nxt.y, nxt.z], [prv.x, prv.y, prv.z]));
+      if (!isFinite(axis[0])) axis = [0, 0, -1];
+
+      let u: [number, number, number];
+      if (carriedU === null) {
+        // Seed from the tilt azimuth so a flat brush's chisel faces the lean.
+        const seed: [number, number, number] = [-Math.sin(azRad), Math.cos(azRad), 0];
+        u = norm3(cross3(cross3(axis, seed), axis));
+        if (!isFinite(u[0]) || Math.hypot(u[0], u[1], u[2]) < 1e-6) {
+          u = norm3(cross3(axis, [0, 0, 1]));
+        }
+      } else {
+        const p = dot3(carriedU, axis);
+        u = norm3([carriedU[0] - axis[0] * p, carriedU[1] - axis[1] * p, carriedU[2] - axis[2] * p]);
+      }
+      carriedU = u;
+      frames.push({ o: [joints[j].x, joints[j].y, joints[j].z], u, v: norm3(cross3(axis, u)) });
+    }
+
+    // Cross-section along the hair. A round brush is fat at the belly and
+    // closes to a point; a flat keeps its chisel width nearly to the edge.
+    // `taper` is the brush row, not a number invented here.
+    const tuftR = this.brush.length * this.brush.widthRatio * 0.5;
+    const profile = (t: number) => {
+      const belly = 1 + 0.28 * Math.sin(Math.PI * Math.min(1, t / 0.35)) * (isFlat ? 0.3 : 1);
+      const close = isFlat ? 1 - 0.12 * t : Math.pow(1 - t, 0.55 + this.brush.taper * 0.85);
+      return Math.max(0.02, belly * close);
+    };
+    // Splay opens the tuft outward under pressure, strongest at the tip where
+    // the hairs are free. Geometric, exactly as Card 1 says splay is.
+    const splayAt = (t: number) =>
+      1 + this.pressure * this.brush.splayFromPressure * (0.25 + 0.75 * t);
+
+    const placeBristle = (ru: number, rv: number, j: number) => {
+      const f = frames[j];
+      const t = j / Math.max(1, joints.length - 1);
+      const s = profile(t) * splayAt(t);
+      return project(
+        f.o[0] + (f.u[0] * ru + f.v[0] * rv) * s,
+        f.o[1] + (f.u[1] * ru + f.v[1] * rv) * s,
+        f.o[2] + (f.u[2] * ru + f.v[2] * rv) * s,
+      );
+    };
+
+    // Bristle roots spread over the ferrule's cross-section — a disc for a
+    // round, a flattened ellipse for a flat. The golden angle gives even
+    // coverage without clumping. THIS is what turns the tuft from a sheet into
+    // a volume: radius and angle are now independent, where before one -1..1
+    // parameter drove both and put every hair on a single curve.
+    const numBristles = Math.max(48, Math.min(220, this.brush.bristles * 2));
+    const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+    const midJoint = Math.floor(joints.length / 2);
+    const hairs: { ru: number; rv: number; core: number; depth: number }[] = [];
     for (let b = 0; b < numBristles; b++) {
-      const u = (b / Math.max(1, numBristles - 1)) * 2 - 1;
-      const bristleAngle = u * Math.PI * (isFlat ? 0.1 : 0.8);
-      const bristleOffset = u * (this.brush.length * this.brush.widthRatio * 0.35);
+      const rad = Math.sqrt((b + 0.5) / numBristles);   // even coverage by area
+      const ang = b * GOLDEN;
+      let ru = Math.cos(ang) * rad * tuftR;
+      let rv = Math.sin(ang) * rad * tuftR;
+      if (isFlat) { ru *= 1.35; rv *= 0.26; }           // chisel cross-section
+      hairs.push({ ru, rv, core: 1 - rad, depth: placeBristle(ru, rv, midJoint).depth });
+    }
+    // Far hairs first, so near ones land on top and the tuft reads solid.
+    hairs.sort((a, b) => b.depth - a.depth);
 
-      const splay = 1 + this.pressure * this.brush.splayFromPressure * Math.abs(u);
+    // ---- Handle and ferrule, swept as real tubes around the shaft -----------
+    const shaftFrame = frames[0];
+    const axisUp = norm3(sub3(
+      [joints[0].x, joints[0].y, joints[0].z],
+      [joints[1].x, joints[1].y, joints[1].z],
+    ));
+    const tube = (
+      from: number, to: number, rFrom: number, rTo: number,
+      shade: (facing: number) => string, outline: string | null,
+    ) => {
+      const SIDES = 20;
+      for (let i = 0; i < SIDES; i++) {
+        const a0 = (i / SIDES) * Math.PI * 2;
+        const a1 = ((i + 1) / SIDES) * Math.PI * 2;
+        const quad: [number, number, number][] = [
+          [a0, from, rFrom], [a1, from, rFrom], [a1, to, rTo], [a0, to, rTo],
+        ];
+        const pts = quad.map(([a, along, r]) => {
+          const c = Math.cos(a), s = Math.sin(a);
+          return project(
+            fx + axisUp[0] * along + (shaftFrame.u[0] * c + shaftFrame.v[0] * s) * r,
+            fy + axisUp[1] * along + (shaftFrame.u[1] * c + shaftFrame.v[1] * s) * r,
+            fz + axisUp[2] * along + (shaftFrame.u[2] * c + shaftFrame.v[2] * s) * r,
+          );
+        });
+        // Screen-space winding tells whether this strip faces the camera —
+        // enough shading for a lathe-turned shape, and it costs nothing.
+        const e1x = pts[1].px - pts[0].px, e1y = pts[1].py - pts[0].py;
+        const e2x = pts[3].px - pts[0].px, e2y = pts[3].py - pts[0].py;
+        const facing = Math.max(0, Math.min(1, (e1x * e2y - e1y * e2x) / 240 + 0.5));
+        ctx.fillStyle = shade(facing);
+        ctx.beginPath();
+        ctx.moveTo(pts[0].px, pts[0].py);
+        for (let k = 1; k < 4; k++) ctx.lineTo(pts[k].px, pts[k].py);
+        ctx.closePath();
+        ctx.fill();
+        if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = 0.5; ctx.stroke(); }
+      }
+    };
 
-      ctx.strokeStyle = u === 0 ? '#d8b26a' : `rgba(215, 200, 170, ${0.4 + (1 - Math.abs(u)) * 0.4})`;
+    const shaftR = tuftR * 0.92;
+    tube(18, 96, shaftR * 0.98, shaftR * 0.66, (f) => {          // wooden handle
+      const l = 0.22 + 0.78 * f;
+      return `rgb(${Math.round(96 * l + 18)}, ${Math.round(56 * l + 12)}, ${Math.round(30 * l + 8)})`;
+    }, null);
+    tube(0, 18, shaftR, shaftR * 0.99, (f) => {                  // metal ferrule
+      const l = 0.16 + 0.84 * Math.pow(f, 0.7);
+      return `rgb(${Math.round(226 * l + 24)}, ${Math.round(208 * l + 22)}, ${Math.round(160 * l + 18)})`;
+    }, 'rgba(0,0,0,0.18)');
+    tube(5, 6.4, shaftR * 1.02, shaftR * 1.02, () => 'rgba(0,0,0,0.30)', null);   // crimp
+    tube(12, 13.4, shaftR * 1.02, shaftR * 1.02, () => 'rgba(0,0,0,0.30)', null);
+
+    // ---- The tuft -----------------------------------------------------------
+    for (const hair of hairs) {
+      // Depth shading: hairs at the back go darker so the tuft has body rather
+      // than reading as a flat scribble.
+      const near = Math.max(0, Math.min(1, (this.cameraDistance + 30 - hair.depth) / 60));
+      const warm = 0.45 + 0.55 * near;
+      const core = hair.core;
+      ctx.strokeStyle = `rgba(${Math.round((120 + 115 * core) * warm)}, `
+        + `${Math.round((74 + 86 * core) * warm)}, `
+        + `${Math.round((36 + 52 * core) * warm)}, ${(0.38 + 0.42 * near).toFixed(3)})`;
+      ctx.lineWidth = Math.max(0.5, (0.7 + 1.5 * core) * ferrulePos.scale * 0.16);
       ctx.beginPath();
-
       for (let j = 0; j < joints.length; j++) {
-        const joint = joints[j];
-        const t = j / (joints.length - 1);
-
-        const offsetX = isFlat ? bristleOffset * splay : Math.cos(bristleAngle) * bristleOffset * t * splay;
-        const offsetY = isFlat ? 0 : Math.sin(bristleAngle) * bristleOffset * t * splay;
-
-        const p = project(joint.x + offsetX, joint.y + offsetY, joint.z);
+        const p = placeBristle(hair.ru, hair.rv, j);
         if (j === 0) ctx.moveTo(p.px, p.py);
         else ctx.lineTo(p.px, p.py);
       }
       ctx.stroke();
     }
 
-    // Kinematic Spine Chain
-    ctx.strokeStyle = 'rgba(82, 169, 221, 0.9)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let j = 0; j < joints.length; j++) {
-      const p = project(joints[j].x, joints[j].y, joints[j].z);
-      if (j === 0) ctx.moveTo(p.px, p.py);
-      else ctx.lineTo(p.px, p.py);
-    }
-    ctx.stroke();
-
-    joints.forEach((j) => {
-      const p = project(j.x, j.y, j.z);
+    // 6. Optional Joint Skeleton Debug Overlay
+    if (this.showDebugSpine) {
+      ctx.strokeStyle = 'rgba(82, 169, 221, 0.9)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(p.px, p.py, j.contact ? 4 : 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = j.contact ? '#d8b26a' : '#52a9dd';
-      ctx.fill();
-    });
+      for (let j = 0; j < joints.length; j++) {
+        const p = project(joints[j].x, joints[j].y, joints[j].z);
+        if (j === 0) ctx.moveTo(p.px, p.py);
+        else ctx.lineTo(p.px, p.py);
+      }
+      ctx.stroke();
 
-    // Friction Lobe Indicator
-    const tipNode = project(this.spine.tip.x, this.spine.tip.y, this.spine.tip.z);
-    const arrowLen = 22 * tipNode.scale * 0.2;
-    const arrowX = tipNode.px + dirX * arrowLen;
-    const arrowY = tipNode.py - dirY * arrowLen;
+      joints.forEach((j) => {
+        const p = project(j.x, j.y, j.z);
+        ctx.beginPath();
+        ctx.arc(p.px, p.py, j.contact ? 4.5 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = j.contact ? '#d8b26a' : '#52a9dd';
+        ctx.fill();
+      });
 
-    ctx.strokeStyle = '#52a9dd';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(tipNode.px, tipNode.py);
-    ctx.lineTo(arrowX, arrowY);
-    ctx.stroke();
+      // Anisotropic Friction Lobe Vector Arrow
+      const tipNode = project(this.spine.tip.x, this.spine.tip.y, this.spine.tip.z);
+      const arrowLen = 25 * tipNode.scale * 0.2;
+      const arrowX = tipNode.px + dirX * arrowLen;
+      const arrowY = tipNode.py - dirY * arrowLen;
+
+      ctx.strokeStyle = '#52a9dd';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tipNode.px, tipNode.py);
+      ctx.lineTo(arrowX, arrowY);
+      ctx.stroke();
+    }
   }
 }
