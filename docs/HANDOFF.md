@@ -158,17 +158,65 @@ Two consequences that will otherwise be got wrong:
 reason D13 exists. What is learned building the brush studio carries to paper,
 media and pigment.
 
-## NEXT ACTION — build the paper studio, then extract the harness
+## NEXT ACTION — the stroke preview in the brush studio (D13 b)
 
-Concrete, and it is a model's job, not Bartford's:
+**A previous version of this file said "build the paper studio next." That was
+wrong and is retracted.** It confused *when to abstract* with *what to build*:
+the reason to hold off on a harness is that one example bakes in brush-shaped
+assumptions, and you avoid that by **not extracting yet**, not by starting a
+second studio. Two half-finished studios teach you nothing about a harness.
 
-1. Build a **paper studio** against `PaperDef` (`src/substrate/papers.ts`) —
-   second instance, chosen because it is the least like the brush, so a harness
-   surviving both will survive pigment. Per D13 it must show the sheet **and a
-   wash sinking into it**, and take a scan of real paper as reference.
-2. **Then** extract the shared harness from the two. Not before — abstracting
-   from one example bakes in brush-shaped assumptions.
-3. Do not fold viewer settings into any data row (D13 d).
+Finish the brush studio first. The live job:
+
+1. **Make the brush studio lay down a real mark.** Per D13 (b) a studio must
+   show what its artifact *does*, and no studio does. This is the largest gap
+   against D13 and it is in the brush studio, on the hardest case — 3D viewer,
+   live CPU solver, and a real WebGPU engine that has to be embedded rather
+   than sat beside.
+2. **Compare that mark against a scan of a real stroke**, the D13 (c) mechanic
+   that already exists for the brush's silhouette.
+3. **Extract nothing.** No harness until there is a genuine second instance.
+4. Do not fold viewer settings into any data row (D13 d).
+
+### STEP 0, AND IT BLOCKS THE REST — a scripted stroke that actually lands
+
+**Do not start on preview UI until this works.** The whole preview rests on
+driving the engine with a synthetic stroke, and as of 2026-07-31 nobody has
+demonstrated that from outside `main.ts`. It also has to be *repeatable*, or two
+brush rows can never be compared honestly.
+
+Three attempts this session, each giving a different plausible answer, none
+trusted:
+
+- `st.begin/add/end` + own `e.step(drain())` → water moved (1113) but pigment
+  stayed `0`.
+- rAF frozen so stepping is deterministic → `water 0` with `6256` wet cells.
+  Freezing the loop means `render()` never runs, and the gauges evidently need
+  the whole frame, not just `step()`.
+- Fresh page, letting the app's own loop drain → the stroke did not land at all
+  (`wet 0`).
+
+**No number from that harness is quoted anywhere, and none should be.** This is
+the documented failure mode — a broken instrument returning plausible readings
+rather than errors — and it has now cost five diagnoses on this repo.
+
+What to establish first, in order:
+
+1. The real calling convention for `StrokeEngine.begin/add/end` from outside
+   `main.ts`: what grid space the coordinates are in, what a `StylusSample`
+   must actually carry (the harness passed `px/py = 0`, which the resampler may
+   reject), and whether `end()` must precede the drain.
+2. Why `charge(e.mixWeights, 1.0, 0.4)` loads water but no pigment. The palette
+   also starts with an **empty recipe** — `mixWeights` was `0|0|0|0|0|0|0|0` on
+   load until `setMix` was called by hand — so check whether that is the cause
+   or a second bug.
+3. Only then: whether gauges can be read with the loop frozen, or whether a
+   deterministic harness must call `step()` **and** `render()` per tick.
+
+When it works, write it down here as *the* harness. Every studio will need it.
+
+**Then** the paper studio is the real second instance, and *that* is when the
+harness gets extracted.
 
 **Still waiting on Bartford's eye, not blocking the above:**
 
@@ -180,6 +228,28 @@ Concrete, and it is a model's job, not Bartford's:
 The rim/`edgeEvaporation` NEXT ACTION further down this file is **paused at
 Bartford's word** and is not the live next step. Read it for context, not as an
 instruction.
+
+## Canvas grid size is now a constructor option (`63f1e3f`, 2026-07-31)
+
+Groundwork for the preview: `CanvasEngine(gpu, { doc, sim })`. `DOC`/`SIM`/`INK`
+were module constants; they are instance fields now, defaulting to exactly the
+old values, and `ink` is derived as `sim * INK_SCALE`.
+
+Safe because nothing downstream bakes the grid in — checked, not assumed:
+`FluidEngine` already took its size as a parameter, the WGSL names 512 only in
+comments, and both reduction stages derive their group count from
+`arrayLength(&partials)`.
+
+- **Verified:** tsc proves the conversion is exhaustive (the leftover `INK`
+  constant became an unused-variable error — that error *is* the proof none were
+  missed); defaults are `doc 1024 / sim 512` at runtime; build passes; app loads
+  with no console, shader or WebGPU validation error.
+- **NOT verified:** behavioural equivalence by measurement. Inert by
+  construction, not by measurement — see Step 0 above. Do not claim otherwise.
+
+**Pre-existing, not caused by this change:** the water gauge reading `0`
+alongside a non-zero wet-cell count. That is the open finding already in
+`docs/11` — pigment conservation is established, water conservation is not.
 
 ## Brush studio — reference photo + hair density (`214317c`, 2026-07-31)
 
