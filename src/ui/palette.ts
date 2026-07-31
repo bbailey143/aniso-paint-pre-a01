@@ -53,6 +53,7 @@ export class Palette {
   private recipeRow!: HTMLElement;
   private events: PaletteEvents;
   private mediumInfo?: HTMLElement;
+  private sizeInput!: HTMLInputElement;
 
   constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
@@ -153,6 +154,7 @@ export class Palette {
       dries.appendChild(el);
     });
     const sizeEl = this.root.querySelector('#brush-size') as HTMLInputElement;
+    this.sizeInput = sizeEl;
     sizeEl.value = String(this.brushSize);
     sizeEl.addEventListener('input', () => {
       this.brushSize = parseFloat(sizeEl.value);
@@ -593,6 +595,38 @@ export class Palette {
       el.addEventListener('click', () => this.add(p.slug));
       wells.appendChild(el);
     }
+  }
+
+  /**
+   * Step the tool size one notch, as `[` and `]` do in every other painting
+   * app. `dir` is -1 to shrink, +1 to grow.
+   *
+   * Deliberately drives the slider and re-fires its `input` event rather than
+   * setting `brushSize` directly: that handler already routes the new size to
+   * whichever tool is in hand — resizing a pencil must not silently put the
+   * brush back — and duplicating that branch here is how the two would drift.
+   *
+   * The step is multiplicative, because size reads perceptually rather than
+   * linearly: +12% is one notch whether you are at 0.2 or at 2.0. It is then
+   * snapped to the slider's own `step` so the control and the value never
+   * disagree, and forced to move at least one notch in case rounding eats it.
+   */
+  nudgeSize(dir: -1 | 1) {
+    const el = this.sizeInput;
+    if (!el) return;
+    const min = parseFloat(el.min), max = parseFloat(el.max), step = parseFloat(el.step);
+    const cur = parseFloat(el.value);
+
+    const snap = (v: number) => Math.round(v / step) * step;
+    let next = snap(cur * (dir > 0 ? 1.12 : 1 / 1.12));
+    if (next === cur) next = snap(cur + dir * step);
+    next = Math.min(max, Math.max(min, next));
+    // Rounding can leave 0.30000000000000004; the slider shows the raw string.
+    next = parseFloat(next.toFixed(4));
+    if (next === cur) return;
+
+    el.value = String(next);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   add(slug: string, parts = 1) {

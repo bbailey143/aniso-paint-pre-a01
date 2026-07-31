@@ -20,6 +20,17 @@ function setText(id: string, text: string) {
   if (el) el.textContent = text;
 }
 
+/** True while focus is somewhere a keystroke means a character, not a command. */
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  // A range slider is not typing — [ and ] should still resize with the size
+  // control focused, which is exactly where a hand lands after dragging it.
+  if (tag === 'input') return (el as HTMLInputElement).type !== 'range';
+  return tag === 'textarea' || tag === 'select' || el.isContentEditable;
+}
+
 async function main() {
   let gpu: Gpu;
   try {
@@ -186,6 +197,16 @@ async function main() {
     // A plain, findable way back when the view gets lost.
     if (ev.key === '0' && (ev.ctrlKey || ev.metaKey)) {
       ev.preventDefault(); engine.resetView(); setZoomHud();
+    }
+
+    // [ and ] step the tool size, as they do in every other painting app.
+    // Guarded so they stay ordinary characters while a field has focus — the
+    // JSON drawer in the studio is a textarea, and a bracket typed there must
+    // be a bracket.
+    if ((ev.key === '[' || ev.key === ']') && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      if (isTyping(ev.target)) return;
+      ev.preventDefault();
+      palette.nudgeSize(ev.key === ']' ? 1 : -1);
     }
   });
   window.addEventListener('keyup', (ev) => {
