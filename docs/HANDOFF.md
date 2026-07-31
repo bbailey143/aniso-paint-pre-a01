@@ -441,6 +441,31 @@ size 16 and 32 read as "the screen is black" before this was spotted.
 **grid** coordinates (0..512), not document px. Panning to a "stroke at y=300"
 in doc space lands on bare paper. This cost a wrong measurement in this session.
 
+### Hand panning (space-drag), added after the zoom
+
+The first cut had a real bug: `PointerInput.onDown` started a stroke on **any**
+press, so space-drag would have panned *and painted*. Fixed properly rather than
+by hoping two handlers stay out of each other's way — `PointerCallbacks` gained
+`shouldIgnorePress(e)`, asked before a stroke may begin, and main.ts answers
+`spaceHeld || panning`. `onDown` also now ignores any button but the primary, so
+a middle-drag and a right-click cannot paint either.
+
+Checked on the way DOWN only, deliberately: a stroke already in progress is never
+interrupted, so a mistimed space cannot tear a line in half. Space is likewise
+ignored while `painting` is true.
+
+Cursor: `grab` while space is held, `grabbing` while dragging, back to
+`crosshair` on release (`#stage.hand` / `#stage.grabbing` in style.css).
+`window.blur` clears both flags so alt-tabbing away with space down does not
+leave the hand stuck on. `auxclick` is suppressed or Windows opens its
+middle-click scroll widget over the sheet.
+
+**Verified with synthetic pointer events, run twice:** space-drag pans and leaves
+pigment at exactly `0`; middle-drag the same; an identical drag with space up
+paints (`55.33`, then `46.80` on the repeat — different because the sheet was
+cleared and re-charged between runs, not a discrepancy). Both runs agree on the
+part that matters, which is `0` versus not-zero.
+
 ## PREVIOUS: session closed clean, 2026-07-29 evening.
 
 No half-edits, no uncommitted source, no experiment mid-flight. Build passes,

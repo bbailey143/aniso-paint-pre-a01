@@ -34,6 +34,11 @@ html, body {
   cursor: crosshair;
 }
 
+/* Classic hand pan. Open hand the moment space goes down so the mode is visible
+   before committing to a drag, closed while actually dragging the sheet. */
+#stage.hand { cursor: grab; }
+#stage.grabbing { cursor: grabbing; }
+
 /* Tablet pens often suppress the operating-system cursor while hovering or
    drawing. This locator follows pen PointerEvents and remains visible through
    contact; mouse users keep the native crosshair they already had. */

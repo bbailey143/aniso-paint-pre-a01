@@ -150,45 +150,85 @@ async function main() {
     setZoomHud();
   }, { passive: false });
 
-  // Middle-drag, or space-drag, pans. Both leave the pen free to paint.
+  // Classic hand pan: hold space and drag. Middle-drag does the same for anyone
+  // who prefers it. Both are navigation, so both are kept strictly out of the
+  // brush's path — `shouldIgnorePress` below is what guarantees a pan can never
+  // leave a mark, rather than hoping the two handlers stay out of each other's
+  // way.
   let panning = false;
   let lastPan = { x: 0, y: 0 };
   let spaceHeld = false;
+  let painting = false;
+
+  const setHand = () => {
+    // Open hand while space is held, closed while actually dragging. Suppress
+    // both mid-stroke: space during a stroke must not change anything.
+    canvas.classList.toggle('hand', spaceHeld && !panning && !painting);
+    canvas.classList.toggle('grabbing', panning);
+  };
+
   window.addEventListener('keydown', (ev) => {
-    if (ev.code === 'Space') { spaceHeld = true; canvas.classList.add('panning'); }
+    if (ev.code === 'Space' && !ev.repeat && !painting) {
+      // Stop the page scrolling, and stop a focused palette button firing.
+      ev.preventDefault();
+      spaceHeld = true;
+      hidePenCursor();
+      setHand();
+    }
     // A plain, findable way back when the view gets lost.
     if (ev.key === '0' && (ev.ctrlKey || ev.metaKey)) {
       ev.preventDefault(); engine.resetView(); setZoomHud();
     }
   });
   window.addEventListener('keyup', (ev) => {
-    if (ev.code === 'Space') { spaceHeld = false; canvas.classList.remove('panning'); }
+    if (ev.code === 'Space') { spaceHeld = false; setHand(); }
   });
+  // Alt-tabbing away with space down would otherwise leave the hand stuck on.
+  window.addEventListener('blur', () => {
+    spaceHeld = false; panning = false; setHand();
+  });
+
   canvas.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 1 && !spaceHeld) return;
+    const wantsPan = ev.button === 1 || (spaceHeld && ev.button === 0);
+    if (!wantsPan || painting) return;
     ev.preventDefault();
     panning = true;
     lastPan = { x: ev.clientX, y: ev.clientY };
     canvas.setPointerCapture(ev.pointerId);
-  });
+    setHand();
+  }, { capture: true });
+
   canvas.addEventListener('pointermove', (ev) => {
     if (!panning) return;
     engine.panBy((ev.clientX - lastPan.x) * gpu.dpr, (ev.clientY - lastPan.y) * gpu.dpr,
                  gpu.canvas.width, gpu.canvas.height);
     lastPan = { x: ev.clientX, y: ev.clientY };
-  });
-  const endPan = () => { panning = false; };
-  canvas.addEventListener('pointerup', endPan);
-  canvas.addEventListener('pointercancel', endPan);
+  }, { capture: true });
+
+  const endPan = (ev: PointerEvent) => {
+    if (!panning) return;
+    panning = false;
+    if (canvas.hasPointerCapture(ev.pointerId)) canvas.releasePointerCapture(ev.pointerId);
+    setHand();
+  };
+  canvas.addEventListener('pointerup', endPan, { capture: true });
+  canvas.addEventListener('pointercancel', endPan, { capture: true });
+  // Middle-click otherwise opens the browser's scroll widget on Windows.
+  canvas.addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
   setZoomHud();
 
   let smoothV = 0;
   new PointerInput(canvas, () => gpu.dpr, {
+    // The gate that makes hand-panning safe: while space is held or a pan is
+    // under way, a press on the canvas never becomes a stroke.
+    shouldIgnorePress() { return spaceHeld || panning; },
     onStrokeStart(s: StylusSample) {
+      painting = true;
+      setHand();
       const g = toGrid(s);
       if (g) stroke.begin(g.gx, g.gy, s);
     },
-    onStrokeEnd() { stroke.end(); },
+    onStrokeEnd() { painting = false; setHand(); stroke.end(); },
     onSample(s: StylusSample) {
       smoothV = smoothV * 0.8 + s.velocity * 0.2;
       setText('s-type', s.pointerType);

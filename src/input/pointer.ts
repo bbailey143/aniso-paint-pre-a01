@@ -43,6 +43,17 @@ export interface PointerCallbacks {
   onSample?(s: StylusSample): void;
   /** Pointer left the painting surface while not captured in a stroke. */
   onPointerLeave?(pointerType: string): void;
+  /**
+   * Asked before a stroke is allowed to begin. Return true and the press is
+   * ignored entirely — no stroke starts, so nothing can be laid down.
+   *
+   * This exists so navigating the sheet cannot paint on it: space-drag panning
+   * and a middle-button drag both put a press on the canvas that must not
+   * become a mark. Checked only on the way DOWN. A stroke already in progress
+   * is never interrupted, which is how every drawing app behaves and stops a
+   * mistimed keypress from tearing a line in half.
+   */
+  shouldIgnorePress?(e: PointerEvent): boolean;
 }
 
 export class PointerInput {
@@ -112,6 +123,10 @@ export class PointerInput {
 
   private onDown = (e: PointerEvent) => {
     if (this.activeId !== null) return;
+    // Only the primary button paints. A middle-drag is panning and a right-click
+    // is a menu; neither should leave paint on the sheet.
+    if (e.button !== 0) return;
+    if (this.cb.shouldIgnorePress?.(e)) return;
     e.preventDefault();
     this.activeId = e.pointerId;
     this.canvas.setPointerCapture(e.pointerId);
