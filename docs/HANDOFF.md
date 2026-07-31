@@ -481,11 +481,20 @@ and do not proceed as though they came back positive:**
 2. `edgeEvaporation` `10` vs `0` on a flooded wash — is there a soft darker band,
    and crucially **no** dot field, spikes or contour bands?
 
-**PUSH IS NOT AUTHORIZED.** 18 commits sit ahead of `origin/webgpu-test`. Bartford
-was told the push is independent of those two tests (everything new ships at `0`,
-so pushing changes no paint) and recommended he push as a backup. **He did not
-answer.** Treat it as unauthorized until he says so in his own words. E6, E7 and
-the E8 rollback were already under that same hold.
+**PUSH AUTHORIZED AND DONE — 2026-07-30.** Bartford said "Let's push and commit
+this sucker", which lifts the hold that had been sitting on E6, E7, the E8
+rollback and everything after them. 22 commits went to `origin/webgpu-test`,
+covering the whole water/paper behaviour pass, the rim work, Codex's dry-media
+foundation and its merge, the water view, zoom/pan and hand panning.
+
+The rejected E8 commit `9f5d1e8` went up **together with its revert** `0fe23f0`.
+That is deliberate: the record of a pass the artist rejected, and why, is worth
+more than a tidy history. See log 13 E8.
+
+**The old default is back in force:** commit and push whenever a milestone lands
+(protocol A7). The blanket hold is over; do not re-invent it. Ask again only for
+something genuinely new in kind — rewriting history, force-pushing, or pushing to
+a branch other than `webgpu-test`.
 
 **Offered and unanswered:** putting the taste dials (`drag`, `gravityResponse`,
 `wetLayerDrag`, `evapRate`, `valueShift`) on live sliders beside the drying one,
