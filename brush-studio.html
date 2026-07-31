@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>aniso-paint — 3D Brush Viewer Studio</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="studio-popout-body">
+    <div id="studio-mount"></div>
+
+    <script type="module">
+      import { BrushViewerStudio } from '/src/ui/studio.ts';
+      import { BRUSHES } from '/src/brush/library.ts';
+
+      const mount = document.getElementById('studio-mount');
+      
+      // Load initial brush from URL params or localStorage
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get('brush');
+      let initialBrush = BRUSHES.find((b) => b.slug === slug);
+      
+      if (!initialBrush) {
+        try {
+          const stored = localStorage.getItem('aniso_active_brush');
+          if (stored) initialBrush = JSON.parse(stored);
+        } catch (_) {}
+      }
+      if (!initialBrush) initialBrush = BRUSHES[0];
+
+      const studio = new BrushViewerStudio(mount, {
+        brush: initialBrush,
+        onBrushUpdate: (updated) => {
+          try {
+            localStorage.setItem('aniso_active_brush', JSON.stringify(updated));
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({ type: 'ANISO_BRUSH_UPDATE', brush: updated }, '*');
+            }
+          } catch (_) {}
+        },
+        onClose: () => {
+          window.close();
+        }
+      });
+    </script>
+  </body>
+</html>

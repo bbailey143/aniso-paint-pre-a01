@@ -115,6 +115,14 @@ async function main() {
   }
   stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
 
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'ANISO_BRUSH_UPDATE' && event.data.brush) {
+      palette.brush = event.data.brush;
+      stroke.setBrush(event.data.brush, palette.brushSize);
+      stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
+    }
+  });
+
   // ---- Pointer -> stroke segments -----------------------------------------
   // Screen px -> document uv -> simulation grid. Mirrors the composite's
   // "contain" fit so the paint lands under the cursor.

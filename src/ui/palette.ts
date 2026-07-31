@@ -102,6 +102,11 @@ export class Palette {
       brushes.appendChild(el);
     });
 
+    const openStudioBtn = this.root.querySelector('#open-brush-studio');
+    if (openStudioBtn) {
+      openStudioBtn.addEventListener('click', () => this.openBrushStudio());
+    }
+
     DRY_TOOLS.forEach((t) => {
       const el = document.createElement('button');
       el.className = 'pal-btn paper';
@@ -537,6 +542,7 @@ export class Palette {
       <div class="surface">
         <div class="pal-sub">brush</div>
         <div id="brushes" class="papers"></div>
+        <button id="open-brush-studio" class="pal-btn paper brush-studio-link" title="Open 3D Brush Viewer Studio in its own window">3D BRUSH VIEWER STUDIO ↗</button>
         <div class="pal-sub">dry media</div>
         <div id="dry-tools" class="papers six"></div>
         <p class="medium-hint">press and hold a tool or paper for settings</p>
@@ -599,6 +605,47 @@ export class Palette {
     if (n <= 0) this.recipe.delete(slug);
     else this.recipe.set(slug, n);
     this.refresh();
+  }
+
+  public openBrushStudio() {
+    try {
+      localStorage.setItem('aniso_active_brush', JSON.stringify(this.brush));
+    } catch (_) {}
+
+    const popoutUrl = `brush-studio.html?brush=${encodeURIComponent(this.brush.slug)}`;
+    const popoutWin = window.open(popoutUrl, 'BrushStudio', 'width=1280,height=820,menubar=no,toolbar=no,location=no');
+
+    if (!popoutWin || popoutWin.closed || typeof popoutWin.closed === 'undefined') {
+      this.openFloatingStudioModal();
+    } else {
+      popoutWin.focus();
+    }
+  }
+
+  private openFloatingStudioModal() {
+    const existing = document.querySelector('.studio-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'studio-modal-overlay';
+    const content = document.createElement('div');
+    content.className = 'studio-modal-content';
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+
+    import('./studio').then(({ BrushViewerStudio }) => {
+      const studio = new BrushViewerStudio(content, {
+        brush: this.brush,
+        onBrushUpdate: (updated) => {
+          this.brush = updated;
+          this.events.onBrushChange?.(updated, this.brushSize);
+        },
+        onClose: () => {
+          studio.destroy();
+          overlay.remove();
+        },
+      });
+    });
   }
 
   clear() {
