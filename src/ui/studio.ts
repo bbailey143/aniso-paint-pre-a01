@@ -47,6 +47,43 @@ export class BrushViewerStudio {
   private isAutoRotating = false;
   private animReqId: number | null = null;
 
+  // ---- Viewer-only settings. NOT part of the brush row. --------------------
+  //
+  // These never touch `this.brush`, are never exported in the JSON, and the
+  // engine never sees them. They change how the brush is DRAWN, not what it is.
+
+  /**
+   * How many hairs get drawn. Deliberately *not* `BrushDef.bristles`.
+   *
+   * `bristles` is a simulation quantity: it sizes the reservoir grid
+   * (`bristles × segments`, reservoir.ts) and the per-step footprint sampling
+   * (`bristles × contacts × substeps`, fluid.ts), so raising it costs real
+   * work every stroke. This one costs paint and nothing else. Keeping them
+   * separate is what lets a 34-bristle row read as a packed tuft instead of
+   * the fringe of 68 hairs it used to draw.
+   *
+   * `[UNVERIFIED]` The default was chosen by eye to read as a packed tuft. The
+   * true hair count of a real sable is a measurable quantity and no card
+   * records it — when one does, that number belongs on the brush row, and this
+   * setting goes back to being a performance dial.
+   */
+  private hairDensity = 850;
+
+  /**
+   * A photograph of a real brush, to build against. `over` at partial opacity
+   * is the silhouette match — the reason to load one at all. Note the camera
+   * still has to be orbited to the photo's angle by eye; nothing here infers it.
+   */
+  private ref: {
+    img: HTMLImageElement | null;
+    name: string;
+    opacity: number;
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+    over: boolean;
+  } = { img: null, name: '', opacity: 0.55, scale: 1, offsetX: 0, offsetY: 0, over: false };
+
   // UI Elements
   private jsonDrawer!: HTMLElement;
   private jsonTextArea!: HTMLTextAreaElement;
@@ -173,6 +210,24 @@ export class BrushViewerStudio {
   private rebuildControlSliders() {
     this.controlsPanel.innerHTML = `
       <section class="studio-group">
+        <h3>Reference &amp; Viewer <span class="studio-note">drawing only</span></h3>
+        <div class="studio-ref-row">
+          <button id="ref-load" class="pal-btn">Load Photo…</button>
+          <button id="ref-clear" class="pal-btn"${this.ref.img ? '' : ' disabled'}>Clear</button>
+          <input type="file" id="ref-file" accept="image/*" style="display:none" />
+        </div>
+        <div class="studio-ref-name" id="ref-name">${this.ref.img ? this.ref.name : 'no reference loaded'}</div>
+        <div class="studio-ref-row">
+          <button id="ref-mode" class="pal-btn ${this.ref.over ? 'on' : ''}">${this.ref.over ? 'Over — silhouette' : 'Behind — backdrop'}</button>
+        </div>
+        ${this.viewerSliderRow('refOpacity', 'Reference Opacity', this.ref.opacity, 0, 1, 0.01)}
+        ${this.viewerSliderRow('refScale', 'Reference Scale', this.ref.scale, 0.1, 4, 0.01)}
+        ${this.viewerSliderRow('refX', 'Reference X', this.ref.offsetX, -800, 800, 1)}
+        ${this.viewerSliderRow('refY', 'Reference Y', this.ref.offsetY, -800, 800, 1)}
+        ${this.viewerSliderRow('hairDensity', 'Drawn Hairs', this.hairDensity, 60, 2000, 10)}
+      </section>
+
+      <section class="studio-group">
         <h3>Tuft Geometry</h3>
         ${this.sliderRow('bristles', 'Bristle Count', this.brush.bristles, 10, 100, 1)}
         ${this.sliderRow('length', 'Tuft Length (cells)', this.brush.length, 10, 50, 0.5)}
@@ -205,7 +260,10 @@ export class BrushViewerStudio {
       </section>
     `;
 
-    this.controlsPanel.querySelectorAll('input[type="range"]').forEach((input) => {
+    // Scoped to `data-param` so the viewer sliders below never reach
+    // updateParam — they are not brush parameters and must not mark the row
+    // dirty or fire onBrushUpdate.
+    this.controlsPanel.querySelectorAll('input[type="range"][data-param]').forEach((input) => {
       input.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
         const param = target.dataset.param!;
@@ -213,6 +271,107 @@ export class BrushViewerStudio {
         this.updateParam(param, val);
       });
     });
+
+    this.wireViewerControls();
+  }
+
+  /** A slider that changes only how the brush is drawn. Separate from
+   *  `sliderRow` on purpose: different data attribute, different handler,
+   *  never reaches the brush row. */
+  private viewerSliderRow(param: string, label: string, val: number, min: number, max: number, step: number): string {
+    return `
+      <div class="studio-slider-row">
+        <div class="studio-slider-head">
+          <span>${label}</span>
+          <b id="vval-${param}">${val.toFixed(step < 1 ? 2 : 0)}</b>
+        </div>
+        <input type="range" data-vparam="${param}" min="${min}" max="${max}" step="${step}" value="${val}" />
+      </div>
+    `;
+  }
+
+  /** Re-attached after every `rebuildControlSliders`, which replaces the whole
+   *  panel's innerHTML and takes the listeners with it. The loaded image itself
+   *  lives on `this.ref` and survives the rebuild. */
+  private wireViewerControls() {
+    this.controlsPanel.querySelectorAll('input[type="range"][data-vparam]').forEach((input) => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const p = target.dataset.vparam!;
+        const v = parseFloat(target.value);
+
+        if (p === 'refOpacity') this.ref.opacity = v;
+        else if (p === 'refScale') this.ref.scale = v;
+        else if (p === 'refX') this.ref.offsetX = v;
+        else if (p === 'refY') this.ref.offsetY = v;
+        else if (p === 'hairDensity') this.hairDensity = Math.round(v);
+
+        const out = this.controlsPanel.querySelector(`#vval-${p}`);
+        if (out) out.textContent = p === 'hairDensity' ? String(Math.round(v)) : v.toFixed(2);
+      });
+    });
+
+    const fileInput = this.controlsPanel.querySelector('#ref-file') as HTMLInputElement | null;
+    const loadBtn = this.controlsPanel.querySelector('#ref-load');
+    const clearBtn = this.controlsPanel.querySelector('#ref-clear') as HTMLButtonElement | null;
+    const modeBtn = this.controlsPanel.querySelector('#ref-mode');
+    const nameOut = this.controlsPanel.querySelector('#ref-name');
+
+    loadBtn?.addEventListener('click', () => fileInput?.click());
+
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          this.ref.img = img;
+          this.ref.name = file.name;
+          if (nameOut) nameOut.textContent = file.name;
+          if (clearBtn) clearBtn.disabled = false;
+        };
+        img.src = String(reader.result);
+      };
+      // Read as a data URL rather than an object URL so the photo survives for
+      // the life of the studio without a revoke to remember.
+      reader.readAsDataURL(file);
+    });
+
+    clearBtn?.addEventListener('click', () => {
+      this.ref.img = null;
+      this.ref.name = '';
+      if (nameOut) nameOut.textContent = 'no reference loaded';
+      if (clearBtn) clearBtn.disabled = true;
+      if (fileInput) fileInput.value = '';
+    });
+
+    modeBtn?.addEventListener('click', () => {
+      this.ref.over = !this.ref.over;
+      modeBtn.classList.toggle('on', this.ref.over);
+      modeBtn.textContent = this.ref.over ? 'Over — silhouette' : 'Behind — backdrop';
+    });
+  }
+
+  /**
+   * Draw the reference photograph. Centred on the same point the brush is
+   * framed around, so the two start roughly aligned and the offsets are a
+   * nudge rather than a hunt. Fitted to 80% of viewport height at scale 1.
+   *
+   * The camera angle is NOT inferred from the photo — orbit to match it by eye.
+   */
+  private drawReference(cx: number, cy: number, h: number) {
+    const r = this.ref;
+    if (!r.img || r.opacity <= 0) return;
+    const ctx = this.ctx;
+    const fit = (h * 0.8) / Math.max(1, r.img.naturalHeight);
+    const s = fit * r.scale;
+    const dw = r.img.naturalWidth * s;
+    const dh = r.img.naturalHeight * s;
+    ctx.save();
+    ctx.globalAlpha = r.opacity;
+    ctx.drawImage(r.img, cx - dw / 2 + r.offsetX, cy - dh / 2 + r.offsetY, dw, dh);
+    ctx.restore();
   }
 
   private sliderRow(param: string, label: string, val: number, min: number, max: number, step: number): string {
@@ -588,6 +747,10 @@ export class BrushViewerStudio {
       };
     };
 
+    // 0. Reference photograph, backdrop mode — behind everything, so the brush
+    //    and grid draw on top of it.
+    if (!this.ref.over) this.drawReference(cx, cy, h);
+
     // 1. Paper Grid Surface (Z = 0)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
@@ -705,7 +868,10 @@ export class BrushViewerStudio {
     // coverage without clumping. THIS is what turns the tuft from a sheet into
     // a volume: radius and angle are now independent, where before one -1..1
     // parameter drove both and put every hair on a single curve.
-    const numBristles = Math.max(48, Math.min(220, this.brush.bristles * 2));
+    // Hair count is a VIEWER setting, not `brush.bristles` — see `hairDensity`.
+    // The old line was `clamp(brush.bristles * 2, 48, 220)`, which drew 68
+    // hairs for the flat sable and read as a fringe rather than a tuft.
+    const numBristles = Math.max(12, Math.round(this.hairDensity));
     const GOLDEN = Math.PI * (3 - Math.sqrt(5));
     const midJoint = Math.floor(joints.length / 2);
     const hairs: { ru: number; rv: number; core: number; depth: number }[] = [];
@@ -773,23 +939,60 @@ export class BrushViewerStudio {
     tube(12, 13.4, shaftR * 1.02, shaftR * 1.02, () => 'rgba(0,0,0,0.30)', null);
 
     // ---- The tuft -----------------------------------------------------------
-    for (const hair of hairs) {
+    //
+    // Hair weight has to fall as the count rises or a dense tuft turns into a
+    // solid brown slab. Width goes as 1/sqrt(density) to hold the total covered
+    // area roughly constant; alpha falls more gently, because a real packed
+    // tuft IS opaque through the middle and only wispy at its edges. `240` is
+    // the reference count these two curves are normalised against, not a
+    // physical quantity.
+    const DENSITY_REF = 240;
+    const density = Math.max(0.05, numBristles / DENSITY_REF);
+    const widthScale = 1 / Math.sqrt(density);
+    const alphaScale = Math.pow(density, -0.35);
+
+    // One stroke() per hair would be ~850 canvas calls a frame. Hairs are
+    // already sorted far-to-near, so slicing that order into depth bands and
+    // sub-grouping each band by core position collapses it to
+    // DEPTH_BANDS × CORE_BANDS strokes while keeping both the painter's order
+    // and the two shading cues. Reordering within a band is invisible: every
+    // hair in it is at nearly the same depth.
+    const DEPTH_BANDS = 10;
+    const CORE_BANDS = 4;
+    for (let db = 0; db < DEPTH_BANDS; db++) {
+      const lo = Math.floor((db * hairs.length) / DEPTH_BANDS);
+      const hi = Math.floor(((db + 1) * hairs.length) / DEPTH_BANDS);
+      if (hi <= lo) continue;
+
       // Depth shading: hairs at the back go darker so the tuft has body rather
-      // than reading as a flat scribble.
-      const near = Math.max(0, Math.min(1, (this.cameraDistance + 30 - hair.depth) / 60));
+      // than reading as a flat scribble. Sampled at the middle of the band.
+      const bandDepth = hairs[(lo + hi) >> 1].depth;
+      const near = Math.max(0, Math.min(1, (this.cameraDistance + 30 - bandDepth) / 60));
       const warm = 0.45 + 0.55 * near;
-      const core = hair.core;
-      ctx.strokeStyle = `rgba(${Math.round((120 + 115 * core) * warm)}, `
-        + `${Math.round((74 + 86 * core) * warm)}, `
-        + `${Math.round((36 + 52 * core) * warm)}, ${(0.38 + 0.42 * near).toFixed(3)})`;
-      ctx.lineWidth = Math.max(0.5, (0.7 + 1.5 * core) * ferrulePos.scale * 0.16);
-      ctx.beginPath();
-      for (let j = 0; j < joints.length; j++) {
-        const p = placeBristle(hair.ru, hair.rv, j);
-        if (j === 0) ctx.moveTo(p.px, p.py);
-        else ctx.lineTo(p.px, p.py);
+      const alpha = Math.min(1, (0.38 + 0.42 * near) * alphaScale);
+
+      for (let cb = 0; cb < CORE_BANDS; cb++) {
+        const core = (cb + 0.5) / CORE_BANDS;
+        ctx.strokeStyle = `rgba(${Math.round((120 + 115 * core) * warm)}, `
+          + `${Math.round((74 + 86 * core) * warm)}, `
+          + `${Math.round((36 + 52 * core) * warm)}, ${alpha.toFixed(3)})`;
+        ctx.lineWidth = Math.max(0.3, (0.7 + 1.5 * core) * ferrulePos.scale * 0.16 * widthScale);
+
+        let drew = false;
+        ctx.beginPath();
+        for (let i = lo; i < hi; i++) {
+          const hair = hairs[i];
+          const band = Math.min(CORE_BANDS - 1, Math.floor(hair.core * CORE_BANDS));
+          if (band !== cb) continue;
+          drew = true;
+          for (let j = 0; j < joints.length; j++) {
+            const p = placeBristle(hair.ru, hair.rv, j);
+            if (j === 0) ctx.moveTo(p.px, p.py);
+            else ctx.lineTo(p.px, p.py);
+          }
+        }
+        if (drew) ctx.stroke();
       }
-      ctx.stroke();
     }
 
     // 6. Optional Joint Skeleton Debug Overlay
@@ -825,5 +1028,9 @@ export class BrushViewerStudio {
       ctx.lineTo(arrowX, arrowY);
       ctx.stroke();
     }
+
+    // 7. Reference photograph, silhouette mode — over the top, so you can see
+    //    where your outline leaves the real brush's.
+    if (this.ref.over) this.drawReference(cx, cy, h);
   }
 }

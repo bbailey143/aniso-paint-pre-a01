@@ -483,6 +483,34 @@ body.studio-popout-body {
   margin-bottom: 6px;
 }
 
+.studio-note {
+  color: var(--ink-dim);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.studio-ref-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.studio-ref-row .pal-btn {
+  flex: 1;
+}
+.studio-ref-row .pal-btn[disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.studio-ref-name {
+  color: var(--ink-dim);
+  font-size: 10px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .studio-slider-row {
   display: flex;
   flex-direction: column;
