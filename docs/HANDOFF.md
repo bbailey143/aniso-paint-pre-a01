@@ -133,9 +133,22 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (Codex's dry-media merge landed and was verified
-against the pre-merge build; wet paint is bit-for-bit unchanged)
-**By:** Claude (Opus), continuing from Codex
+**Last updated:** 2026-07-31 (brush studio render verified on screen; nothing in
+flight)
+**By:** Claude (Opus)
+
+**THE NEXT ACTION IS BARTFORD'S, NOT A MODEL'S.** Two things are waiting on his
+eye and neither should be worked around:
+
+1. **Look at the 3D brush studio** on branch `3D-brush` (`brush-studio.html`) —
+   see the entry below. Does it read as a brush?
+2. **Then decide whether `3D-brush` merges back into `webgpu-test`**, which is
+   3 commits behind it. Do not merge it unasked; it is a UI branch and the
+   painting app does not depend on it.
+
+The rim/`edgeEvaporation` NEXT ACTION further down this file is **paused at
+Bartford's word** and is not the live next step. Read it for context, not as an
+instruction.
 
 ## MERGE VERIFICATION — `0892571`, checked 2026-07-29
 
@@ -360,11 +373,13 @@ temporary GPU-resident post-capillary alarm instead, then test the standard reci
 3. Append E11 with raw outcomes and what the added observer may itself perturb. Do
    not call either outcome a root cause, and do not start P8.
 
-## IN FLIGHT — brush studio rendering, on branch `3D-brush` (Claude, 2026-07-30)
+## DONE, NOT YET SEEN BY BARTFORD — brush studio rendering, branch `3D-brush`
+## (Claude, landed `653a756` 2026-07-30, verified on screen 2026-07-31)
 
 **YOU MAY BE ON THE WRONG BRANCH.** Gemini opened `3D-brush` off `webgpu-test`
-and built a 3D brush viewer there. `webgpu-test` is 2 commits behind it. Check
-`git branch --show-current` before doing anything.
+and built a 3D brush viewer there. `webgpu-test` is 3 commits behind it. Check
+`git branch --show-current` before doing anything. **Nothing is in flight; the
+tree is clean apart from the five long-standing untracked items.**
 
 **Review verdict on Gemini's work: the engineering is sound, the drawing is not.**
 `src/ui/studio.ts` genuinely drives the real `Spine` solver — it calls
@@ -381,12 +396,37 @@ it not read as a brush:
 3. **No depth sorting**, so far bristles paint over near ones and the tuft has
    no read of solidity.
 
-Fixing 1–3 in the render only. **The solver is not being touched** — if the
-brush's behaviour looks wrong afterwards, that is a real finding about the brush
-engine and not about this viewer.
+All three were fixed in the render only, plus a fourth found on the way: the
+projection had world height and view depth swapped in the elevation rotation, so
+the brush hung upside down with its handle below the tuft. **The solver was not
+touched** — if the brush's behaviour looks wrong now, that is a real finding
+about the brush engine and not about this viewer. The uncommitted 237-line
+layout pass that was in the tree was absorbed into the same commit.
 
-There is also an uncommitted 237-line change to `src/ui/studio.ts` in the tree
-(a layout pass). Left alone.
+**Verified on screen 2026-07-31, not assumed.** `npm.cmd run build` passes
+(`tsc --noEmit` clean, 47 modules). `brush-studio.html` served and rendered; no
+console error, no page error. Four frames captured off `studio-canvas` and
+looked at:
+
+- Default view: handle above, banded ferrule below it, tuft tapering to a point
+  at the bottom. Right way up — fix 4 holds.
+- Tuft reads as a solid tapered volume with front-to-back shading, not a
+  scribble — fixes 1 and 3 hold.
+- Camera orbited 90°: handle, ferrule and tuft turn together as one object —
+  fix 2 holds.
+- Under `pressure 0.85` with a drag vector, the tuft visibly curves and trails
+  against the shaft, so the viewer is being driven by a live `Spine` solve
+  rather than drawing a fixed shape.
+
+**Instrument note for whoever repeats this.** The studio draws from
+`requestAnimationFrame`, so a headless or hidden browser pane leaves
+`studio-canvas` fully transparent and the viewer looks broken when it is not.
+Call `render3D()` directly to force a frame, or look at it in a visible window.
+
+**What is still owed: Bartford's eye.** Nobody who paints has looked at it. Open
+`brush-studio.html`, orbit the view, and push the pressure slider up and down.
+The question is not whether the geometry is correct — it is whether it reads as
+a brush he recognises.
 
 ## PREVIOUS: view zoom/pan (Claude, 2026-07-30)
 
