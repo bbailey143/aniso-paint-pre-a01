@@ -22,7 +22,28 @@ const SIM = 512;
 // Dry media can be much finer than the fluid. A ballpoint hairline needs this
 // extra resolution; water movement does not. Keep the relationship here rather
 // than scattering the number through the canvas setup.
-const INK = SIM * 4;
+const INK_SCALE = 4;
+
+/**
+ * Size options for a NON-DEFAULT engine. The painting surface always uses the
+ * constants above; this exists so a studio (D13) can embed a small engine to
+ * show what a material *does* without paying for a full sheet.
+ *
+ * Safe to vary because nothing downstream hardcodes the grid: `FluidEngine`
+ * already takes its size as a parameter, the WGSL mentions 512 only in
+ * comments, and both reduction stages derive the group count from
+ * `arrayLength(&partials)` rather than a baked constant — the `[TRAP]` in
+ * `reduce_final.wgsl` and `reduce_ink_final.wgsl` is about exactly this.
+ *
+ * `sim` should stay a multiple of 8 (the compute dispatch tiles by 8) and of 16
+ * (the reduction workgroup), or the last partial tile is wasted work.
+ */
+export interface CanvasSize {
+  /** Document resolution, square. Default 1024. */
+  doc?: number;
+  /** Simulation grid, square. Default 512. */
+  sim?: number;
+}
 
 /**
  * Grain seed. Stated once here because THREE things must agree on it: the paper
@@ -44,8 +65,10 @@ const STORAGE_TEX =
 const SLUG_TO_ID = new Map(PIGMENTS.map((p, i) => [p.slug, i]));
 
 export class CanvasEngine {
-  readonly sim = SIM;
-  readonly doc = DOC;
+  readonly sim: number;
+  readonly doc: number;
+  /** Dry-media grid — always `INK_SCALE ×` the fluid grid, never set directly. */
+  private readonly ink: number;
 
   private gpu: Gpu;
   private paperTex: GPUTexture;
@@ -88,8 +111,10 @@ export class CanvasEngine {
    * two must move together.
    */
   zoom = 1;
-  panX = DOC / 2;
-  panY = DOC / 2;
+  // Set in the constructor, not here: a field initialiser runs before the
+  // constructor body, so `this.doc` is not known yet.
+  panX: number;
+  panY: number;
   /** Grain rows for the active sheet, so the composite can evaluate the tooth
    * procedurally at screen resolution. Set by `setPaper`. */
   private paperTooth = 0.45;
@@ -112,36 +137,42 @@ export class CanvasEngine {
 
   /** Pan by a screen-pixel delta at the current zoom. */
   panBy(dxScreen: number, dyScreen: number, viewW: number, viewH: number) {
-    const scale = Math.min(viewW / DOC, viewH / DOC) * this.zoom;
+    const scale = Math.min(viewW / this.doc, viewH / this.doc) * this.zoom;
     this.panX -= dxScreen / scale;
     this.panY -= dyScreen / scale;
     this.clampPan();
   }
 
-  resetView() { this.zoom = 1; this.panX = DOC / 2; this.panY = DOC / 2; }
+  resetView() { this.zoom = 1; this.panX = this.doc / 2; this.panY = this.doc / 2; }
 
   /** Keep the sheet from being dragged entirely off-screen. Generous rather
    * than strict — half a sheet of slack in every direction. */
   private clampPan() {
-    const m = DOC * 0.5;
-    this.panX = Math.min(DOC + m, Math.max(-m, this.panX));
-    this.panY = Math.min(DOC + m, Math.max(-m, this.panY));
+    const m = this.doc * 0.5;
+    this.panX = Math.min(this.doc + m, Math.max(-m, this.panX));
+    this.panY = Math.min(this.doc + m, Math.max(-m, this.panY));
   }
   private reliefStrength = 2.2;
 
-  constructor(gpu: Gpu) {
+  constructor(gpu: Gpu, size: CanvasSize = {}) {
     this.gpu = gpu;
     const { device, format } = gpu;
 
+    this.doc = size.doc ?? DOC;
+    this.sim = size.sim ?? SIM;
+    this.ink = this.sim * INK_SCALE;
+    this.panX = this.doc / 2;
+    this.panY = this.doc / 2;
+
     this.paperTex = device.createTexture({
-      size: [SIM, SIM], format: 'rgba16float', usage: STORAGE_TEX, label: 'paper',
+      size: [this.sim, this.sim], format: 'rgba16float', usage: STORAGE_TEX, label: 'paper',
     });
     this.inkPaperTex = device.createTexture({
-      size: [INK, INK], format: 'rgba16float', usage: STORAGE_TEX, label: 'ink-paper',
+      size: [this.ink, this.ink], format: 'rgba16float', usage: STORAGE_TEX, label: 'ink-paper',
     });
 
     this.lib = createColorLibrary(device);
-    this.fluid = new FluidEngine(gpu, SIM, this.paperTex.createView(), this.inkPaperTex.createView());
+    this.fluid = new FluidEngine(gpu, this.sim, this.paperTex.createView(), this.inkPaperTex.createView());
 
     this.paperParams = device.createBuffer({
       size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
@@ -239,12 +270,12 @@ export class CanvasEngine {
     const pass = enc.beginComputePass();
     pass.setPipeline(this.paperPipe);
     pass.setBindGroup(0, this.paperBind);
-    pass.dispatchWorkgroups(Math.ceil(SIM / 8), Math.ceil(SIM / 8));
+    pass.dispatchWorkgroups(Math.ceil(this.sim / 8), Math.ceil(this.sim / 8));
     // Same procedural sheet, evaluated at the ink grid. This preserves the
     // paper's continuous grain under a fine pen rather than magnifying a
     // coarse simulation-cell pattern.
     pass.setBindGroup(0, this.inkPaperBind);
-    pass.dispatchWorkgroups(Math.ceil(INK / 8), Math.ceil(INK / 8));
+    pass.dispatchWorkgroups(Math.ceil(this.ink / 8), Math.ceil(this.ink / 8));
     pass.end();
     this.gpu.device.queue.submit([enc.finish()]);
 
@@ -334,8 +365,8 @@ export class CanvasEngine {
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
-    dv.setFloat32(8, DOC, true);
-    dv.setFloat32(12, DOC, true);
+    dv.setFloat32(8, this.doc, true);
+    dv.setFloat32(12, this.doc, true);
     for (let i = 0; i < 4; i++) dv.setInt32(16 + i * 4, this.slotIds[i], true);
     for (let i = 0; i < 4; i++) dv.setInt32(32 + i * 4, this.slotIds[i + 4], true);
     dv.setFloat32(48, this.thickScale, true);
