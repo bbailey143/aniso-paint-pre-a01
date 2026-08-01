@@ -137,7 +137,62 @@ say why.
 studio reference photo + hair density landed)
 **By:** Claude (Opus)
 
-## THIS BRANCH IS PARKED — 2026-07-31
+## YOU ARE PROBABLY ON `dry-media` — start here
+
+Branched off `3D-brush` on 2026-07-31, so it carries D13, D14, the `[`/`]` size
+keys and the engine grid-size option. **`3D-brush` itself is parked** — that is
+the section below, and it is history on this branch, not work in flight.
+
+**Read [`14-dry-media-route.md`](14-dry-media-route.md) (the four phases) and
+[`15-loose-grain.md`](15-loose-grain.md) (D14's design) before touching
+anything.**
+
+### Where D14 has got to
+
+**Landed (`66f4470`): the row parameters only.** `shedRate`, `grainCoarseness`,
+`crushRate`, `grainCling` on `DryMedium`. **Nothing reads them yet** — this is
+plumbing before mechanism, on purpose. Conté is the only row set, all
+`[UNVERIFIED]`; charcoal and wax crayon are marked `[DELIBERATELY UNSET]`
+because zeroing them is itself a wrong claim.
+
+### NEXT ACTION — the grain state and the shed pass
+
+Three things must be settled before code, and two of them are traps:
+
+1. **Resolution, and it does not fit at full size.** The ink band is already
+   ~134 MB (2 × `rgba16float` at 2048², ping-ponged). Loose grain at the same
+   resolution with the same 8 slots is **another ~134 MB**, which is not
+   affordable. Half the ink grid (1024²) is ~33.5 MB and is the obvious first
+   cut. **Card 15 says "on the ink grid"; deviating from that is a real
+   decision** — record it, and judge the result by eye, because whether 1024²
+   crumbs read as grit rather than as chunky pixels is the open question Card 15
+   already flags and nobody has looked at.
+
+2. **Grit needs spatial structure, and it must not come from a sprite.** Loose
+   grain spread evenly over the contact area is just more ink. Crumbs are
+   discrete, so shedding is a **deterministic hash-scatter** at the grain grid —
+   density from `shedRate`, crumb size from `grainCoarseness`, seeded from cell
+   position so a redraw is identical. Procedural, authorable as a row, no
+   assets. D14 rejects stamps and this is where that bites.
+
+3. **Loose grain must BYPASS the tooth gate.** The whole reason D14 exists is
+   that conté is gritty on smooth paper. If shed material is gated by
+   `smoothstep(need - 0.18, need + 0.18, ride)` like bound pigment, the entire
+   mechanism is pointless. Grain sits ON the surface; it does not seat until it
+   is crushed.
+
+Still homeless: **the `coarse` channel** (Card 15, open). Shed-without-crush
+does not need it, so the first slice can defer it honestly — but do not let that
+turn into never deciding.
+
+### Blocker that is independent of all of the above
+
+**Conté cannot be sepia.** D5's twelve pigments are all modern synthetics with
+no earth among them, and an iron oxide's spectral curve is not reachable by
+mixing from that set. Today's row is `bone-black`. Needs measured K/S data and a
+D5 amendment. Bartford was offered this and chose to build grain first.
+
+## `3D-brush` IS PARKED — 2026-07-31
 
 Bartford moved to **dry media on a new branch**. `3D-brush` is finished, clean
 and pushed; nothing is half-done. Do not resume the stroke preview here without
