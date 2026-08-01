@@ -188,6 +188,41 @@ export interface DryMedium extends Medium {
    * off the ball.
    */
   edgeSharpness: number;
+
+  // ---- loose grain (D14) ---------------------------------------------------
+  //
+  // Material that has left the tool but is NOT yet bound to the paper. It sits
+  // on the surface, so it is gritty independently of the sheet's tooth — which
+  // is the whole point: conté is gritty on smooth sketch paper, and no amount
+  // of tooth-gating can produce that. Contact crushes it into ordinary bound
+  // pigment, which is what makes conté blend without a separate smudge tool.
+  //
+  // A pencil and a biro shed nothing: `shedRate = 0` turns the mechanism off
+  // and costs those rows nothing. See docs/15-loose-grain.md.
+
+  /**
+   * `[UNVERIFIED]` Fraction of what leaves the tool that lands as loose grain
+   * rather than bound pigment. 0 = nothing sheds (graphite, ballpoint). A
+   * softer clay body sheds more.
+   */
+  shedRate: number;
+  /**
+   * `[UNVERIFIED]` How coarse freshly shed grain is, 0..1. 1 = discrete crumbs
+   * sitting proud of the paper; 0 = powder that seats straight into the tooth.
+   * This is Bartford's *bake time* axis — longer bake, finer medium — and it
+   * belongs in the shared physical vector eventually, not in one row.
+   */
+  grainCoarseness: number;
+  /**
+   * `[UNVERIFIED]` How readily contact converts loose grain into bound pigment.
+   * Kaolin is soft, so conté crushes easily and blends with very little work.
+   */
+  crushRate: number;
+  /**
+   * `[UNVERIFIED]` How much grain resists being carried along by the crush.
+   * The binder: wax and oil cling, cellulose ether much less.
+   */
+  grainCling: number;
 }
 
 /** Pencils, charcoals, pastels — particles scraped off onto the tooth. */

@@ -49,6 +49,8 @@ function graphite(name: string, slug: string, row: MediumPhysics,
     toothThreshold: 0.5, velocityCoupling, hardness: row.mediumHardness,
     tipRadius: 1.1, contactProfile: 'round', contactAspect: 1,
     tiltStart: 24, tiltAspect: 6, pressureExp: 1.1, deposition, edgeSharpness: 0.85,
+    // Sheds nothing: D14's mechanism is off and costs this row nothing.
+    shedRate: 0, grainCoarseness: 0, crushRate: 0, grainCling: 0,
   };
 }
 
@@ -71,6 +73,8 @@ function ballpoint(name: string, slug: string, pigment: string, deposition: numb
     tipRadius: 0.46, contactProfile: 'round', contactAspect: 1,
     tiltStart: 55, tiltAspect: 0.15, pressureExp: 0.25, deposition, edgeSharpness: 1.45,
     skipStrength: 0.72, skipScale: 5.5, chatter: 0.26,
+    // Sheds nothing: D14's mechanism is off and costs this row nothing.
+    shedRate: 0, grainCoarseness: 0, crushRate: 0, grainCling: 0,
   };
 }
 
@@ -85,6 +89,10 @@ export const VINE_CHARCOAL: GranularDry = {
   toothThreshold: 0.38, velocityCoupling: 0.26, hardness: 0.05,
   tipRadius: 1.7, contactProfile: 'round', contactAspect: 1,
   tiltStart: 16, tiltAspect: 3.4, pressureExp: 1.25, deposition: 0.32, edgeSharpness: 0.62,
+  // [DELIBERATELY UNSET] Charcoal sheds more than conte, not less -- it is the
+  // dustiest thing on the shelf. Left at 0 because no one has reasoned about
+  // its numbers yet, and inventing them would be exactly what the fence forbids.
+  shedRate: 0, grainCoarseness: 0, crushRate: 0, grainCling: 0,
 };
 
 export const CONTE_CRAYON: GranularDry = {
@@ -95,6 +103,11 @@ export const CONTE_CRAYON: GranularDry = {
   toothThreshold: 0.44, velocityCoupling: 0.42, hardness: 0.46,
   tipRadius: 1.25, contactProfile: 'round', contactAspect: 1.25,
   tiltStart: 22, tiltAspect: 4.5, pressureExp: 1.05, deposition: 0.26, edgeSharpness: 0.72,
+  // [UNVERIFIED] D14 loose grain. Reasoned from the ingredients, not measured.
+  // Kaolin is a soft clay, so conte sheds freely and what it sheds crushes
+  // easily -- which together are why it blends with so little effort. The
+  // cellulose-ether binder clings far less than a wax one would.
+  shedRate: 0.45, grainCoarseness: 0.70, crushRate: 0.60, grainCling: 0.25,
 };
 
 export const WAX_CRAYON: GranularDry = {
@@ -105,6 +118,10 @@ export const WAX_CRAYON: GranularDry = {
   toothThreshold: 0.32, velocityCoupling: 0.22, hardness: 0.30,
   tipRadius: 1.8, contactProfile: 'round', contactAspect: 1.3,
   tiltStart: 14, tiltAspect: 2.8, pressureExp: 0.86, deposition: 0.28, edgeSharpness: 1.12,
+  // [DELIBERATELY UNSET] A wax crayon does crumble, but a waxy binder smears
+  // where a clay one powders, so its grain would want high cling and a low
+  // crush rate. Not reasoned through yet; left off rather than guessed.
+  shedRate: 0, grainCoarseness: 0, crushRate: 0, grainCling: 0,
 };
 
 export const FOUNTAIN_CHISEL: InkMedium = {
@@ -116,6 +133,8 @@ export const FOUNTAIN_CHISEL: InkMedium = {
   tipRadius: 0.52, contactProfile: 'chisel', contactAspect: 3.6,
   tiltStart: 89, tiltAspect: 0, pressureExp: 0.45, deposition: 0.34, edgeSharpness: 1.8,
   skipStrength: 0, skipScale: 1, chatter: 0,
+  // A liquid ink genuinely sheds nothing: there is no crumb to shed.
+  shedRate: 0, grainCoarseness: 0, crushRate: 0, grainCling: 0,
 };
 
 export const DRY_MEDIA: DryRow[] = [
