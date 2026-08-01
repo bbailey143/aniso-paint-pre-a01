@@ -200,7 +200,16 @@ const FLUID_FORMAT: GPUTextureFormat = 'rgba32float';
  * genuinely do lift into water, will need that bridge — and a conservation test
  * around it — when their rows arrive.
  */
-const INK_RES = 2048;
+/**
+ * Derived, not written out. It used to be the literal `2048`, which is
+ * `512 * 4` and agreed with the fluid grid only by coincidence of the default.
+ * `CanvasEngine` sizes its ink *paper* texture as `sim * INK_SCALE`, so once the
+ * canvas grid became a constructor option the two could disagree — a small
+ * engine would have built a 768² ink paper under a 2048² ink band. Exactly the
+ * stride-stated-in-two-places trap the reduction shaders carry `[TRAP]` notes
+ * about. Stated once, here, next to the reason it must match.
+ */
+const INK_SCALE = 4;
 const INK_Q = 8;
 /**
  * Half-float is enough HERE, unlike the wet band (D6). The wet band accumulates
@@ -249,10 +258,10 @@ export class FluidEngine {
   private dry1b: PingPong;
   private dry2a: PingPong;
   private dry2b: PingPong;
-  /** Dry media, at INK_RES. Slots 0-3 and 4-7. */
+  /** Dry media, at this.inkRes. Slots 0-3 and 4-7. */
   private ink0: PingPong;
   private ink1: PingPong;
-  readonly inkRes = INK_RES;
+  readonly inkRes: number;
   private inkPaper: GPUTextureView;
 
   private paramsBuf: GPUBuffer;
@@ -330,8 +339,9 @@ export class FluidEngine {
     this.dry1b = new PingPong(device, n, 'dry1b');
     this.dry2a = new PingPong(device, n, 'dry2a');
     this.dry2b = new PingPong(device, n, 'dry2b');
-    this.ink0 = new PingPong(device, INK_RES, 'ink0', INK_FORMAT);
-    this.ink1 = new PingPong(device, INK_RES, 'ink1', INK_FORMAT);
+    this.inkRes = n * INK_SCALE;
+    this.ink0 = new PingPong(device, this.inkRes, 'ink0', INK_FORMAT);
+    this.ink1 = new PingPong(device, this.inkRes, 'ink1', INK_FORMAT);
 
     // Params: 24 scalars (6 vec4 worth) + 8 vec4 pigment rows = 224 bytes.
     // MUST match the ArrayBuffer in writeParams and the struct in common.wgsl.
@@ -382,7 +392,7 @@ export class FluidEngine {
       size: totalBytes,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'sample-totals',
     });
-    const inkGroups = Math.ceil(INK_RES / 16);
+    const inkGroups = Math.ceil(this.inkRes / 16);
     const inkPartialBytes = inkGroups * inkGroups * INK_Q * 4;
     this.inkPartials = device.createBuffer({
       size: inkPartialBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, label: 'ink-partials',
@@ -565,7 +575,7 @@ export class FluidEngine {
     if (this.inkBandTrafficEnabled) {
       for (const pp of [this.ink0, this.ink1]) {
         for (const v of pp.view) {
-          this.dispatchAt(pass, this.pipes.zeroInk, INK_RES, [v]);
+          this.dispatchAt(pass, this.pipes.zeroInk, this.inkRes, [v]);
         }
       }
     }
@@ -616,7 +626,7 @@ export class FluidEngine {
       // Stroke input is expressed in the 512-cell simulation grid. Scale the
       // footprint itself—not its pigment amount—into the 2048-cell dry grid.
       // That keeps a 0.5 mm pen narrow while preserving its ink-per-distance.
-      const scale = INK_RES / this.n;
+      const scale = this.inkRes / this.n;
       for (let i = 0; i < n; i++) {
         const src = (done + i) * DRY_SEG_FLOATS;
         const dst = i * DRY_SEG_FLOATS;
@@ -640,7 +650,7 @@ export class FluidEngine {
 
       const enc = device.createCommandEncoder({ label: 'dry-deposit' });
       const pass = enc.beginComputePass();
-      this.dispatchAt(pass, this.pipes.dryDepositInk, INK_RES, [
+      this.dispatchAt(pass, this.pipes.dryDepositInk, this.inkRes, [
         { buffer: this.paramsBuf }, { buffer: this.inkSegBuf },
         { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.ink0.src, this.ink1.src, this.inkPaper,
@@ -886,7 +896,7 @@ export class FluidEngine {
   /** Reduce the fine ink band separately, then merge it into the live ledger on
    * the CPU. It is a display-resolution band, so it must not inherit `P.grid`. */
   private recordInkGauge(pass: GPUComputePassEncoder, partials: GPUBuffer, totals: GPUBuffer) {
-    const g = Math.ceil(INK_RES / 16);
+    const g = Math.ceil(this.inkRes / 16);
     pass.setPipeline(this.pipes.reduceInk);
     pass.setBindGroup(0, this.bind(this.pipes.reduceInk, [
       this.ink0.src, this.ink1.src, { buffer: partials },
