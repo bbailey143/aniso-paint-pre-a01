@@ -137,6 +137,81 @@ say why.
 studio reference photo + hair density landed)
 **By:** Claude (Opus)
 
+## THIS BRANCH IS PARKED — 2026-07-31
+
+Bartford moved to **dry media on a new branch**. `3D-brush` is finished, clean
+and pushed; nothing is half-done. Do not resume the stroke preview here without
+him asking.
+
+**Before anyone resumes it, read the next section — the approach was challenged
+and the challenge was right.**
+
+### The reference-photo approach was RECONSIDERED, and it is demoted
+
+The photo overlay (`214317c`) was built as though it were how *users* would
+build brushes. Bartford's objection, and it stands:
+
+> *"The real brush is used for nothing, and if a user wants to make new brushes
+> they shouldn't be required to have a stack of their own brushes that can be
+> photographed and then digitized."*
+
+Two audiences were conflated:
+
+- **Authoring the library** — needs reference and measurement. Bartford's job,
+  done once per brush. The photo overlay belongs *here*, and is kept for it.
+- **A user making a brush** — must start from a named preset (`#3 synthetic
+  round`) already close, and adjust. Must never need to own or photograph
+  anything.
+
+**The photo overlay is therefore a library-authoring tool, not the user path.**
+Keep it, demote it, do not build the user experience around it.
+
+### What Bartford wants instead — a sourced brush catalogue
+
+A database good enough that picking `#3 synthetic round` prefills accurate
+settings the user then adjusts. Two notes recorded from that conversation,
+neither ratified:
+
+1. **Compose, do not enumerate.** A row per real brush means thousands of rows
+   and still nothing for a brush nobody catalogued. Structure it as
+   **shape × material × size** — material (kolinsky, synthetic, squirrel, hog)
+   carries stiffness/snap/water-holding, shape (round, flat, filbert, rigger,
+   mop, fan) carries spine setup and cross-section, size carries geometry off a
+   per-series table. `#3 synthetic round` is then *composed*, and so is a brush
+   never measured.
+2. **Geometry is published; behaviour is not.** Manufacturers give head length,
+   belly width and hair type per series and size — citable, no photograph
+   needed, and better than a photo. But stiffness, the friction lobe, reservoir
+   capacity and snap-back are published nowhere and are not visible in a photo.
+   They must come from material/construction rules and be validated against
+   **marks**, not against pictures. This is the real work in the catalogue.
+
+**Caution on the phrase "learning database":** a curated catalogue with cited
+sources is the fence working as intended. Anything that *infers* parameters is
+the fence failing — plausible-but-wrong is this project's documented failure
+mode. If inference is ever wanted, it needs its own D-number and its own
+argument.
+
+### Also found and NOT fixed — the studio does not fit the brush
+
+Measured, not reasoned (`brush-studio.html`, flat sable):
+
+- **No auto-fit.** `cameraTarget` is hardcoded `{0,0,34}`, `fov` 460, distance
+  140. Nothing reads the brush's size. The **default** brush is already clipped
+  — the handle runs off the top. Wheel-zoom (40–300) is the only framing.
+- **The handle ignores the brush.** It is fixed at world units 18→96, ferrule
+  0→18, whatever `length` says. Sweeping length across its whole slider range
+  (10→50, five-fold) moved the drawn height only 389→419 px — **8 %**.
+- **Handle thickness is tied to tuft width** (`shaftR = tuftR * 0.92`), so a
+  wide flat gets a club and a rigger gets a needle. Backwards from a real brush,
+  where the handle is roughly constant and the ferrule is what varies.
+
+`BrushDef` has no ferrule or handle fields and no card gives handle
+proportions, so fixing it properly needs sourced numbers or an `[UNVERIFIED]`
+mark. Note this weakens silhouette-matching regardless of the photo debate: if
+the handle corresponds to nothing real, the outline can never match, and the
+tuft gets mis-tuned compensating for it.
+
 ## READ D13 BEFORE TOUCHING A STUDIO
 
 **`D13` is new and it re-frames a lot of this file.** Every material — brushes,
