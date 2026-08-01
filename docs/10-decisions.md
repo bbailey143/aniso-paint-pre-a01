@@ -20,6 +20,7 @@ it, or because a decision here justifies it.
 | **D11** | **Pen input via Pointer Events**: pressure, tiltX/tiltY, twist where available; velocity derived; `getCoalescedEvents()` for high-frequency sampling. | Web-native full-tilt/pressure/velocity; coalesced events feed the resampler. No plugin, works on the Huion and on iPad. |
 | **D12** | **First build scope:** round + flat sable, watercolour + full water fluid cycle + KM mixing, graphite pencil, ballpoint, and 3 papers (hot/cold press, rough). Everything else is a documented row for later. | A vertical slice that exercises every engine once, so the rest is adding rows. |
 | **D13** | **Every material is authored in a studio, and studios share a harness.** Brushes, media, dry media, papers and pigments each get a studio; studios are a **product surface for the artist**, not a developer tool. Four clauses: **(a)** the studio edits the same typed data row the engine consumes (D3) — there is no separate authoring format; **(b)** it shows **both the artifact and what the artifact does** — the brush *and* its stroke, the sheet *and* a wash sinking into it, the pigment *and* a graded wash — so each studio embeds the engine rather than sitting beside it; **(c)** **reference material is first-class**: a photograph or scan of the real tool loads into the studio to be matched against, as backdrop or overlay; **(d)** **viewer settings never enter the data row** — drawing preferences (hair count, camera, reference opacity) live on the studio, are never exported, and are invisible to the engine. | This is the differentiator: the artist creates everything they make art with, so authoring is the product, not scaffolding. **(a)** keeps D3's "a medium is a data row" honest — a second format would drift from the first. **(b)** is the accuracy clause: **the ground truth for a tool is the mark it makes, not a picture of the tool**, so a studio that shows only the artifact is half a loop and invites a beautiful render of wrong numbers — precisely the plausible-but-wrong failure this project keeps hitting. **(c)** is how a row stops being invented and starts being matched. **(d)** protects the row as a document users save, share and load. Note the harness is an **authoring** harness, not a renderer: only the brush studio is 3D, so no 3D engine is the common foundation. |
+| **D14** | **Dry media shed LOOSE GRAIN, and it is not stamp-based.** Material that has left the tool but is not yet bound to the paper: it sits on the surface, is visible as grit **independently of the paper's tooth**, and **contact crushes it into ordinary bound pigment**. It lives on the ink grid in the same 8-slot space as bound ink, is **budgeted like wet cells (D7)** rather than allocated sheet-wide, and is transient — shed, briefly gritty, then crushed. Smudging is this same crush-and-move pass run without shedding, not a separate mechanic. Water crossing into the wet band is **explicitly out of scope** until the cross-grid bridge has a conservation test. Full design, costs and open sub-questions: [`15-loose-grain.md`](15-loose-grain.md). | Conté is **gritty even on smooth sketch paper**, and that single observation kills the current model: all dry grit today comes from gating against the paper height field, so on hot press the gate opens almost everywhere and the mark comes out clean *no matter how it is tuned*. The grit being described is not the paper catching pigment — it is the crayon crumbling, which is a different mechanism and belongs in a different place. Modelling the crumb rather than its appearance is also what gives blending-without-a-smudge-tool for free, which is exactly what the artist describes. **Explicitly not texture stamps:** grain from a sprite atlas repeats, ignores pressure and paper, and — fatally for D13 — cannot be authored as a row, so a user "making a conté" would be editing artwork instead of a material. A *measured* asset (a scanned paper height field) is evidence and remains fine; a hand-drawn grain sprite is decoration and is not. |
 
 ## Open items (not blocking)
 
@@ -44,6 +45,22 @@ it, or because a decision here justifies it.
 - **Precision on iPad.** D6's wet band is f32 at 512². Re-check the memory and
   format support on target hardware before the native/iPad pass.
 - **Native iPad path.** Deferred under D1; re-scope after the browser build proves out.
+- **No earth pigment in the library (D5 amendment).** Conté's defining colour is a
+  natural iron oxide sepia, and D5's twelve are all modern synthetics — an earth's
+  spectral curve is not reachable by mixing from that set. Needs measured K/S data
+  for at least one iron oxide. Today's conté row is `bone-black`, which is why it is
+  not sepia. Blocks a faithful conté regardless of D14.
+- **The `coarse` channel has no home (D14).** Loose grain's per-cell coarseness is
+  one scalar and a whole RGBA16F texture for it is wasteful. Options: pack against a
+  future dry scalar, or derive from a per-medium constant plus a crush counter.
+  Deliberately left open rather than guessed — see [`15-loose-grain.md`](15-loose-grain.md).
+- **Cross-grid bridge for dry media into water (D14, deferred).** Charcoal, pastel
+  and conté genuinely do lift into a wash, but nothing currently moves material
+  between the ink grid and the wet band, and `fluid.ts` warns that this bridge needs
+  its own conservation test. Until then water crushes grain in place.
+- **Angular contact profiles.** `contactProfile` is `'round' | 'chisel'`; conté is
+  square, triangular or worn, and always angular to some degree. Independent of D14
+  and cheaper.
 - **Extracting the studio harness (D13).** The brush studio is the only one built.
   Build the **paper studio** second — it is the least like the brush, so a harness
   that survives both will survive pigment — and extract the shared harness from the

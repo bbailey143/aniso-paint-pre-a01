@@ -24,6 +24,7 @@ card(s) for the engine you are on, and nothing else.
 | [`10-decisions.md`](10-decisions.md) | Ratified decisions (D-numbers) for this direction. |
 | [`11-open-fault-conservation.md`](11-open-fault-conservation.md) | **Open fault.** The sheet gains water and pigment, and the gauge that should have caught it lagged. Read before trusting any conservation number here. |
 | [`14-dry-media-route.md`](14-dry-media-route.md) | The four-phase route for dry media. Phase 1 (make the ten existing tools feel right) is live. |
+| [`15-loose-grain.md`](15-loose-grain.md) | The design behind D14 — dry media shed loose grain that contact crushes. Where it lives, what it costs, what it does not decide. |
 
 ## Provenance
 
