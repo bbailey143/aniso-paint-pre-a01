@@ -20,7 +20,7 @@
 // The physics does not need display resolution; the visual layer does.
 
 import type { Gpu } from './gpu';
-import { PIGMENTS } from '../color/pigments';
+import { PIGMENTS } from '../color/pigment-palette';
 
 import commonWgsl from './shaders/fluid/common.wgsl?raw';
 import depositWgsl from './shaders/fluid/deposit.wgsl?raw';
@@ -365,7 +365,9 @@ export class FluidEngine {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'dry-segments',
     });
     this.ctlBuf = device.createBuffer({
-      size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
+      // Three aligned vec4 groups. Wet deposit reads the first two; dry deposit
+      // also reads surface mobility and compaction from the third.
+      size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
     });
     this.mixBuf = device.createBuffer({
       size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
@@ -602,7 +604,7 @@ export class FluidEngine {
       minY = Math.min(minY, segments[o + 1] - r - ey, segments[o + 3] - r - ey);
       maxY = Math.max(maxY, segments[o + 1] + r + ey, segments[o + 3] + r + ey);
     }
-    return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0]);
+    return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0, 0, 0, 0, 0]);
   }
 
   /**
@@ -615,7 +617,8 @@ export class FluidEngine {
    */
   depositDry(segments: Float32Array<ArrayBuffer>, segCount: number,
              mixWeights: Float32Array<ArrayBuffer>, edge = 1,
-             profile: 'round' | 'chisel' = 'round') {
+             profile: 'round' | 'chisel' = 'round', surfaceMobility = 0,
+             compactionAmount = 1) {
     if (segCount <= 0) return;
     const { device } = this.gpu;
     device.queue.writeBuffer(this.mixBuf, 0, mixWeights);
@@ -648,6 +651,8 @@ export class FluidEngine {
       const ctl = this.segBounds(this.inkSegs, 0, n, DRY_SEG_FLOATS, true);
       ctl[5] = edge;                    // rim falloff, per medium
       ctl[6] = profile === 'chisel' ? 1 : 0;
+      ctl[8] = Math.min(0.24, Math.max(0, surfaceMobility));
+      ctl[9] = Math.max(1e-4, compactionAmount);
       device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const enc = device.createCommandEncoder({ label: 'dry-deposit' });

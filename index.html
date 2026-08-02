@@ -42,6 +42,36 @@
       <div class="stylus-row"><span>relax</span><b id="g-relax">—</b></div>
     </div>
 
+    <!-- Conte contact instrument. It is shown only while that rectangular stick
+         is in hand; its pose comes from the same stylus sample as the mark. -->
+    <aside id="conte-viewer" class="panel" aria-hidden="true">
+      <div class="conte-head">
+        <span class="hud-title">Conte contact</span>
+        <span id="conte-contact" class="conte-contact">square end</span>
+      </div>
+      <div class="conte-scene" aria-hidden="true">
+        <div class="conte-paper"></div>
+        <div id="conte-shadow" class="conte-shadow"></div>
+        <div id="conte-stick" class="conte-stick">
+          <i class="conte-face conte-front"></i>
+          <i class="conte-face conte-back"></i>
+          <i class="conte-face conte-left"></i>
+          <i class="conte-face conte-right"></i>
+          <i class="conte-face conte-top"></i>
+          <i class="conte-face conte-bottom"></i>
+        </div>
+      </div>
+      <div class="conte-readout">
+        <span>tilt <b id="conte-tilt">0 deg</b></span>
+        <span>azimuth <b id="conte-azimuth">0 deg</b></span>
+        <span>twist <b id="conte-twist">0 deg</b></span>
+      </div>
+      <label class="conte-flat" title="Lay Flat - use the crayon's full rectangular side for broad fields and rubbing">
+        <input id="conte-lay-flat" type="checkbox" />
+        <span>Lay Flat</span>
+      </label>
+    </aside>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

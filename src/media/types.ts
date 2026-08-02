@@ -193,6 +193,15 @@ export interface DryMedium extends Medium {
 /** Pencils, charcoals, pastels — particles scraped off onto the tooth. */
 export interface GranularDry extends DryMedium {
   kind: 'granular';
+  /**
+   * Symmetric neighbour exchange per contact, 0..0.24. Zero means particles
+   * remain where they first catch; higher values let a later pass rub loose
+   * surface material into a smoother gradation. The 0.24 ceiling is the stable
+   * limit for the four-neighbour exchange used by the shared dry pass.
+   */
+  surfaceMobility: number;
+  /** Deposited amount at which surfaceMobility is halved by compaction. */
+  compactionAmount: number;
 }
 
 /**

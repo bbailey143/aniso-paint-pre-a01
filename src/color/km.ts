@@ -7,7 +7,8 @@
 //
 // The GPU composite pass (P3) mirrors this exact math in WGSL. Keep them in step.
 
-import { PIGMENTS, CIE_BANDS, SAUNDERSON, N_BANDS, type Pigment } from './pigments';
+import { CIE_BANDS, SAUNDERSON, N_BANDS, type Pigment } from './pigments';
+import { PIGMENTS } from './pigment-palette';
 
 export const PIGMENT_BY_SLUG: Map<string, Pigment> = new Map(
   PIGMENTS.map((p) => [p.slug, p]),

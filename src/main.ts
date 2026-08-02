@@ -34,6 +34,53 @@ async function main() {
   setText('hud-gpu', `webgpu: ${describeAdapter(gpu)}`);
   const engine = new CanvasEngine(gpu);
   const stroke = new StrokeEngine(BRUSHES[0], 1.0);
+  const conteViewer = document.getElementById('conte-viewer')!;
+  const conteStick = document.getElementById('conte-stick')!;
+  const conteShadow = document.getElementById('conte-shadow')!;
+  const conteContact = document.getElementById('conte-contact')!;
+  const conteTilt = document.getElementById('conte-tilt')!;
+  const conteAzimuth = document.getElementById('conte-azimuth')!;
+  const conteTwist = document.getElementById('conte-twist')!;
+  const conteLayFlat = document.getElementById('conte-lay-flat') as HTMLInputElement;
+  let conteSelected = false;
+  let layFlat = false;
+  let lastContePose = { tiltAngle: 0, tiltAzimuth: 0, twist: 0 };
+
+  const updateConteViewer = (pose = lastContePose) => {
+    lastContePose = pose;
+    const rawTilt = Math.min(89, Math.max(0, pose.tiltAngle));
+    const shownTilt = layFlat ? 82 : rawTilt;
+    const azimuth = ((pose.tiltAzimuth % 360) + 360) % 360;
+    const twist = ((pose.twist % 360) + 360) % 360;
+    // Azimuth aims the lean around the page; tilt lowers the long axis; twist
+    // rolls the rectangular faces. This is the same sample used by DryTool.
+    conteStick.style.transform =
+      `translateX(-50%) rotateZ(${azimuth}deg) rotateX(${shownTilt}deg) rotateZ(${twist}deg)`;
+    const contactLength = layFlat ? 78 : 22 + (rawTilt / 89) * 56;
+    conteShadow.style.width = `${contactLength}px`;
+    conteShadow.style.transform = `translateX(-50%) rotate(${azimuth}deg)`;
+    conteTilt.textContent = `${rawTilt.toFixed(0)} deg`;
+    conteAzimuth.textContent = `${azimuth.toFixed(0)} deg`;
+    conteTwist.textContent = `${twist.toFixed(0)} deg`;
+    const contact = layFlat ? 'full side'
+      : rawTilt < 16 ? 'square end'
+      : rawTilt < 58 ? 'edge / corner' : 'broad side';
+    conteContact.textContent = contact;
+    conteViewer.classList.toggle('lay-flat', layFlat);
+  };
+
+  const setConteSelected = (on: boolean) => {
+    conteSelected = on;
+    conteViewer.classList.toggle('on', on);
+    conteViewer.setAttribute('aria-hidden', String(!on));
+    if (on) updateConteViewer();
+  };
+
+  conteLayFlat.addEventListener('change', () => {
+    layFlat = conteLayFlat.checked;
+    stroke.setLayFlat(layFlat);
+    updateConteViewer();
+  });
   // Windows commonly hides the system cursor while a tablet pen is in range or
   // touching down. Keep a canvas-drawn locator driven by the same PointerEvent
   // samples as the brush so pen hover and painting never become blind.
@@ -96,6 +143,7 @@ async function main() {
     onClear() { engine.clear(); requestFrame(); },
     onWaterView(on) { engine.waterView = on; requestFrame(); },
     onBrushChange(def, size) {
+      setConteSelected(false);
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
     },
@@ -104,6 +152,7 @@ async function main() {
     onDryMedium(medium, size) {
       stroke.setDryMedium(medium, size);
       engine.setDryMix(new Map(medium.pigments));
+      setConteSelected(medium.slug === 'conte-crayon');
     },
     // Rinse: pigment out, clean water in. The brush stays loaded — it is now a
     // water brush, which is what you wet paper with. The sheet is untouched.
@@ -248,6 +297,7 @@ async function main() {
       setText('s-tilt', `${s.tiltAngle.toFixed(0)}° @ ${s.tiltAzimuth.toFixed(0)}°`);
       setText('s-velocity', `${smoothV.toFixed(2)} px/ms`);
       setText('s-twist', s.twist ? `${s.twist.toFixed(0)}°` : '—');
+      if (conteSelected) updateConteViewer(s);
 
       if (!s.down) return;
       const g = toGrid(s);
@@ -264,7 +314,12 @@ async function main() {
     // fluid band, so a pencil line laid this frame is already under any wash
     // the same frame moves.
     const dry = stroke.drainDry();
-    if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile);
+    if (dry.count > 0) {
+      engine.depositDry(
+        dry.data, dry.count, dry.edge, dry.profile,
+        dry.surfaceMobility, dry.compactionAmount,
+      );
+    }
     const { data, count } = stroke.drain();
     engine.step(data, count);
     const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive;

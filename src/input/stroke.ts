@@ -38,6 +38,7 @@ export class StrokeEngine {
   private loading = 0.6;
   /** Extra clean water added to the colour charge, 0..1. */
   private waterCharge = 0;
+  private layFlat = false;
 
   /** Cells per solve step — never let the tuft jump more than this. */
   private maxStep = 0.9;
@@ -61,6 +62,12 @@ export class StrokeEngine {
   setDryMedium(m: DryMedium, size = this.size) {
     this.size = size;
     this.dry = new DryTool(m, size);
+    this.dry.setLayFlat(this.layFlat);
+  }
+
+  setLayFlat(on: boolean) {
+    this.layFlat = on;
+    this.dry?.setLayFlat(on);
   }
 
   get isDry(): boolean { return this.dry !== null; }
@@ -169,13 +176,22 @@ export class StrokeEngine {
 
   /** Same, for the dry-media channel (P7). `edge` is the rim falloff the
    * active medium wants — soft for graphite, crisp for a ballpoint. */
-  drainDry(): { data: Float32Array<ArrayBuffer>; count: number; edge: number; profile: 'round' | 'chisel' } {
+  drainDry(): {
+    data: Float32Array<ArrayBuffer>;
+    count: number;
+    edge: number;
+    profile: 'round' | 'chisel';
+    surfaceMobility: number;
+    compactionAmount: number;
+  } {
     const count = this.dryCount;
     this.dryCount = 0;
     return {
       data: this.dryBuf, count,
       edge: this.dry ? this.dry.edgeSharpness : 1,
       profile: this.dry ? this.dry.contactProfile : 'round',
+      surfaceMobility: this.dry?.surfaceMobility ?? 0,
+      compactionAmount: this.dry?.compactionAmount ?? 1,
     };
   }
 }

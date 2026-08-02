@@ -5,7 +5,8 @@
 // pigment amounts into colour. Layout mirrors src/color/km.ts exactly so the CPU
 // tray and the GPU canvas agree.
 
-import { PIGMENTS, CIE_BANDS, SAUNDERSON, N_BANDS } from './pigments';
+import { CIE_BANDS, SAUNDERSON, N_BANDS } from './pigments';
+import { PIGMENTS } from './pigment-palette';
 
 export const PIGMENT_COUNT = PIGMENTS.length;
 

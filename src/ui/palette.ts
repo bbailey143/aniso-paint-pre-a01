@@ -5,7 +5,7 @@
 // "naive RGB average" so the difference is visible — blue + yellow makes green
 // under KM and grey/brown under RGB. That contrast is the product thesis.
 
-import { PIGMENTS } from '../color/pigments';
+import { PIGMENTS } from '../color/pigment-palette';
 import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color/km';
 import { PAPERS, type Paper } from '../substrate/papers';
 import { BRUSHES } from '../brush/library';
@@ -131,7 +131,9 @@ export class Palette {
       el.addEventListener('contextmenu', (event) => event.preventDefault());
       el.title = t.medium.kind === 'ink'
         ? 'Ballpoint — rides the peaks and skips the valleys; the ball starves and recovers as it rolls'
-        : `Graphite ${t.name} — ${t.medium.hardness > 0
+        : t.medium.slug === 'conte-crayon'
+          ? 'Conte crayon — use a square end, an edge, or Lay Flat for the broad rectangular side; repeated passes rub loose sanguine particles together'
+          : `Graphite ${t.name} — ${t.medium.hardness > 0
             ? 'hard: lays little, catches only the peaks of the tooth'
             : 'soft: lays heavily and fills the valleys'}`;
       el.addEventListener('click', (event) => {
@@ -481,6 +483,12 @@ export class Palette {
       ['fine surface reflection', number(medium.physics.microReflectance)],
       ['optical density', number(medium.physics.refractiveIndex)],
     ]);
+    if (medium.kind === 'granular') {
+      addGroup('Surface handling', [
+        ['surface movement', number(medium.surfaceMobility)],
+        ['half-locked at', `${number(medium.compactionAmount)} amount`],
+      ]);
+    }
     if (medium.kind === 'ink') {
       addGroup('Ink delivery', [
         ['delivery', medium.flowMode === 'ball' ? 'rolling ball' : 'wetted fountain nib'],

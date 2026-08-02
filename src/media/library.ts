@@ -49,6 +49,7 @@ function graphite(name: string, slug: string, row: MediumPhysics,
     toothThreshold: 0.5, velocityCoupling, hardness: row.mediumHardness,
     tipRadius: 1.1, contactProfile: 'round', contactAspect: 1,
     tiltStart: 24, tiltAspect: 6, pressureExp: 1.1, deposition, edgeSharpness: 0.85,
+    surfaceMobility: 0, compactionAmount: 1,
   };
 }
 
@@ -85,16 +86,22 @@ export const VINE_CHARCOAL: GranularDry = {
   toothThreshold: 0.38, velocityCoupling: 0.26, hardness: 0.05,
   tipRadius: 1.7, contactProfile: 'round', contactAspect: 1,
   tiltStart: 16, tiltAspect: 3.4, pressureExp: 1.25, deposition: 0.32, edgeSharpness: 0.62,
+  surfaceMobility: 0, compactionAmount: 1,
 };
 
 export const CONTE_CRAYON: GranularDry = {
-  name: 'Conte Crayon', slug: 'conte-crayon', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  name: 'Conte Crayon', slug: 'conte-crayon', family: 'dry', kind: 'granular', pigments: [['sanguine-sepia', 1]],
   physics: physics(0.48, 0.96, 0.46, 0.70, 0.86, 0.76, 0.16, 0.18, 0.60),
   k1: 0.03, k2: 0.65, kInstrument: 0.84, hasBody: false, bodyShrink: 0,
   downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
   toothThreshold: 0.44, velocityCoupling: 0.42, hardness: 0.46,
-  tipRadius: 1.25, contactProfile: 'round', contactAspect: 1.25,
-  tiltStart: 22, tiltAspect: 4.5, pressureExp: 1.05, deposition: 0.26, edgeSharpness: 0.72,
+  // Square end upright; the long rectangular side arrives with tilt or Lay Flat.
+  tipRadius: 1.15, contactProfile: 'chisel', contactAspect: 1,
+  tiltStart: 16, tiltAspect: 7, pressureExp: 1.05, deposition: 0.26, edgeSharpness: 0.86,
+  // [UNVERIFIED] Tuned first against the artist's supplied reference range.
+  // A low first pass stays gritty; later contact exchanges loose particles,
+  // while a dense passage progressively locks itself down.
+  surfaceMobility: 0.18, compactionAmount: 0.32,
 };
 
 export const WAX_CRAYON: GranularDry = {
@@ -105,6 +112,7 @@ export const WAX_CRAYON: GranularDry = {
   toothThreshold: 0.32, velocityCoupling: 0.22, hardness: 0.30,
   tipRadius: 1.8, contactProfile: 'round', contactAspect: 1.3,
   tiltStart: 14, tiltAspect: 2.8, pressureExp: 0.86, deposition: 0.28, edgeSharpness: 1.12,
+  surfaceMobility: 0, compactionAmount: 1,
 };
 
 export const FOUNTAIN_CHISEL: InkMedium = {

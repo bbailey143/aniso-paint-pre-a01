@@ -25,7 +25,7 @@
 // surface, not measured. Card 7 says as much and says the numbers are tuned on
 // the bench. They are marked here and in the library row.
 
-import type { DryMedium, InkMedium } from './types';
+import type { DryMedium, GranularDry, InkMedium } from './types';
 import type { BrushInput } from '../brush/types';
 import { DRY_SEG_FLOATS } from '../engine/fluid';
 
@@ -63,6 +63,7 @@ export class DryTool {
   private dist = 0;
   /** Per-stroke phase, so two strokes do not skip in the same places. */
   private phase = 0;
+  private layFlat = false;
 
   constructor(medium: DryMedium, size = 1) {
     this.medium = medium;
@@ -70,11 +71,21 @@ export class DryTool {
   }
 
   setSize(size: number) { this.size = size; }
+  setLayFlat(on: boolean) { this.layFlat = on; }
 
   /** The rim falloff this medium wants, handed to the deposit pass. */
   get edgeSharpness(): number { return this.medium.edgeSharpness; }
   /** The same generic contact pass can render round leads or a chisel nib. */
   get contactProfile(): 'round' | 'chisel' { return this.medium.contactProfile; }
+  /** Surface handling is shared by granular rows; ink never moves after landing. */
+  get surfaceMobility(): number {
+    return 'surfaceMobility' in this.medium
+      ? (this.medium as GranularDry).surfaceMobility : 0;
+  }
+  get compactionAmount(): number {
+    return 'compactionAmount' in this.medium
+      ? (this.medium as GranularDry).compactionAmount : 1;
+  }
 
   begin() {
     this.speed = 0;
@@ -113,8 +124,11 @@ export class DryTool {
     // How deep the tip gets into the tooth. Hardness sets the ceiling — a 4H
     // simply cannot reach the valleys however hard you lean — and speed drags
     // it down from there.
-    const tiltAmount = Math.min(Math.max(
+    const naturalTilt = Math.min(Math.max(
       (Math.min(s.tiltAngle, 89) - m.tiltStart) / Math.max(1, 89 - m.tiltStart), 0), 1);
+    // Lay Flat belongs to the rectangular Conte stick. Keep that choice from
+    // changing graphite or ink when the painter switches tools.
+    const tiltAmount = this.layFlat && m.slug === 'conte-crayon' ? 1 : naturalTilt;
     const baseRadius = m.tipRadius * this.size;
     const majorFactor = m.contactAspect + m.tiltAspect * tiltAmount;
     // P_loc normalised to the same upright tip: pressure distributed over the

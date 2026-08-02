@@ -233,6 +233,57 @@ minutes and compare CPU temperature/usage with the old run; then make one wet
 stroke and confirm it visibly keeps moving before settling. If the blank sheet
 still heats the machine, profile the browser before changing any more paint code.
 
+## IN FLIGHT — Conté mobility, sanguine color, rectangular contact, and viewer (Codex, 2026-08-01)
+
+**Artist target.** The attached reference drawings and video request two Conté
+states from the same tool: a fast first pass broken by the paper tooth, and a
+velvety built passage where later crayon contact pushes loose surface particles
+together while adding darker material. Conté must be reddish-brown Sanguine/
+sepia, not Bone Black. The physical tool is a long rectangular stick with square
+ends; its edge and full broad side are both drawing contacts. A bottom-right live
+3D viewer must show the actual stylus tilt/azimuth/twist and offer `Lay Flat` for
+forced broad-side contact.
+
+**Architecture.** Keep the existing 2048 dry band and shared contact path. Add
+reusable granular-medium rows for surface mobility and compaction. On a second or
+later contact, move only the active medium's existing pigment through symmetric
+neighbour exchange inside the contact patch, then add the new deposit; this
+preserves the first-pass grit and keeps movement amount-conserving without a new
+64 MB loose-particle texture. Heavy local deposits reduce mobility continuously.
+Graphite, ink, charcoal, and wax ship with mobility zero until artist-tuned.
+
+**Color.** Do not reduce or invent wavelength bands. Add one derived spectral
+`Sanguine Sepia` pigment row from the existing measured K/S curves: 20% Pyrrole
+Red + 68% Cadmium Orange + 12% Bone Black. The full KM chain gives `#994f37`
+against the reference target; this consumes one of the eight per-cell pigment
+slots, not three. Preserve the generated measured file and construct the derived
+row in a separate source file.
+
+**Contact/UI.** Conté changes to square/chisel contact. Natural tilt still drives
+the long-axis contact. `Lay Flat` forces the Conté side length but leaves the raw
+stylus readout untouched. The compact viewer is a CSS 3D instrument in the app's
+existing dark/gold language, visible only while Conté is selected and wired to
+the same sample that drives the stroke.
+
+**Verification.** `npm.cmd run build`, live page/shader load, then two repeated
+tests: one fast single pass must retain tooth grit; a second and third pass over
+it must become smoother, denser, and graded without changing the dry-pigment
+ledger except for newly deposited pigment. Check natural edge contact and forced
+Lay Flat visually on desktop/iPad. Do not call the material tuning accepted
+until Bartford judges ordinary strokes at display scale.
+
+**Implemented checkpoint (2026-08-01).** The reusable mobility/compaction rows,
+Sanguine Sepia pigment, Conté square/chisel contact, Conté-only Lay Flat state,
+and live rectangular-stick viewer are wired. `npm.cmd run build` passes. The
+live AMD / GCN-4 WebGPU page loads the new shader with no browser warnings; the
+viewer appears only for Conté, reports square end/full side correctly, and its
+Lay Flat pose was visually corrected to lower the stick onto the paper. Three
+short overlapping automated strokes rendered without a GPU error and retained
+fast-stroke grit. This does **not** accept the artistic tuning: a real slower
+stylus pass is still required to judge whether passes two and three rub into the
+velvety controlled blend in the references, and a brief iPad heat/performance
+check is still required.
+
 ## Current objective
 
 Correct and hand-check the shared water/paper foundation before feature work. The

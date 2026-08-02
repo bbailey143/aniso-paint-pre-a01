@@ -36,6 +36,12 @@ struct Ctl {
   edge: f32,
   profile: f32,     // 0 = round/oval, 1 = chisel
   _p2: f32,
+  /** Stable four-neighbour exchange coefficient, 0..0.24. */
+  surfaceMobility: f32,
+  /** Existing amount at which mobility is halved by compaction. */
+  compactionAmount: f32,
+  _p4: f32,
+  _p5: f32,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -79,6 +85,22 @@ fn tiltedContact(p: vec2<f32>, s: Seg) -> f32 {
   return along * along + across * across;
 }
 
+// Contact-only mask for rubbing material already on the surface. Tooth changes
+// what a fresh particle catches on; it does not stop a crayon side from pushing
+// loose grains that are already sitting above that tooth.
+fn contactMask(p: vec2<f32>) -> f32 {
+  let count = i32(C.count);
+  var mask = 0.0;
+  for (var i = 0; i < count; i = i + 1) {
+    if (tiltedContact(p, segs[i]) <= 1.0) { mask = 1.0; }
+  }
+  return mask;
+}
+
+fn activeAmount(a: vec4<f32>, b: vec4<f32>, activeA: vec4<f32>, activeB: vec4<f32>) -> f32 {
+  return dot(a, activeA) + dot(b, activeB);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let n = i32(P.grid);
@@ -98,6 +120,41 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pos = vec2<f32>(f32(c.x) + 0.5, f32(c.y) + 0.5);
     let toothH = textureLoad(paper, c, 0).x;
     var lay = 0.0;
+
+    // A later granular pass rubs only the pigment carried by the active medium.
+    // Each cell pair uses the same contact and compaction coefficient in both
+    // directions, so what one cell loses its neighbour gains. Fresh, sparse
+    // grains move most; a dense worked passage locks progressively in place.
+    if (C.surfaceMobility > 0.0) {
+      let selfContact = contactMask(pos);
+      if (selfContact > 0.0) {
+        let activeA = select(vec4<f32>(0.0), vec4<f32>(1.0), mix[0] > vec4<f32>(0.0));
+        let activeB = select(vec4<f32>(0.0), vec4<f32>(1.0), mix[1] > vec4<f32>(0.0));
+        let selfAmount = activeAmount(a2, b2, activeA, activeB);
+        let directions = array<vec2<i32>, 4>(
+          vec2<i32>(-1, 0), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(0, 1));
+        var moveA = vec4<f32>(0.0);
+        var moveB = vec4<f32>(0.0);
+        for (var side = 0; side < 4; side = side + 1) {
+          let q = c + directions[side];
+          if (!oob(q, n)) {
+            let qContact = contactMask(vec2<f32>(f32(q.x) + 0.5, f32(q.y) + 0.5));
+            let pairContact = min(selfContact, qContact);
+            if (pairContact > 0.0) {
+              let qa = textureLoad(dry2a_in, q, 0);
+              let qb = textureLoad(dry2b_in, q, 0);
+              let pairAmount = max(selfAmount, activeAmount(qa, qb, activeA, activeB));
+              let loose = C.compactionAmount / max(C.compactionAmount + pairAmount, 1e-4);
+              let exchange = C.surfaceMobility * pairContact * loose;
+              moveA = moveA + (qa - a2) * activeA * exchange;
+              moveB = moveB + (qb - b2) * activeB * exchange;
+            }
+          }
+        }
+        a2 = a2 + moveA;
+        b2 = b2 + moveB;
+      }
+    }
 
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];

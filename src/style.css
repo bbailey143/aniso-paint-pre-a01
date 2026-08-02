@@ -119,6 +119,105 @@ html, body {
 .stylus-row span { color: var(--ink-dim); }
 .stylus-row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* Live Conte contact instrument. The model is deliberately geometric rather
+   than photoreal: it explains which face is touching without competing with
+   the painting. */
+#conte-viewer {
+  display: none;
+  right: 260px;
+  bottom: 12px;
+  width: 218px;
+  padding: 10px;
+  overflow: hidden;
+  border-color: rgba(153, 79, 55, 0.46);
+  background: linear-gradient(145deg, rgba(25, 22, 22, 0.88), rgba(15, 17, 20, 0.78));
+}
+#conte-viewer.on { display: block; }
+.conte-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.conte-contact { color: #c8866f; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; }
+.conte-scene {
+  position: relative;
+  height: 128px;
+  margin: 5px 0 3px;
+  perspective: 420px;
+  perspective-origin: 50% 34%;
+}
+.conte-paper {
+  position: absolute;
+  left: 12px; right: 12px; bottom: 8px;
+  height: 70px;
+  border: 1px solid rgba(226, 218, 199, 0.18);
+  background:
+    repeating-linear-gradient(16deg, rgba(110, 93, 79, 0.035) 0 1px, transparent 1px 4px),
+    linear-gradient(150deg, #d8d1bf, #bfb6a1);
+  transform: rotateX(66deg);
+  transform-origin: 50% 100%;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+}
+.conte-shadow {
+  position: absolute;
+  z-index: 1;
+  left: 50%; bottom: 25px;
+  width: 22px; height: 9px;
+  border-radius: 50%;
+  background: rgba(91, 37, 27, 0.42);
+  filter: blur(3px);
+  transform: translateX(-50%);
+  transition: width 80ms linear, transform 80ms linear;
+}
+.conte-stick {
+  position: absolute;
+  z-index: 2;
+  left: 50%; bottom: 28px;
+  width: 22px; height: 92px;
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+  transform: translateX(-50%) rotateZ(0deg) rotateY(0deg);
+  transition: transform 70ms linear;
+}
+.conte-face { position: absolute; display: block; backface-visibility: visible; }
+.conte-front, .conte-back {
+  inset: 0;
+  background: linear-gradient(90deg, #713621, #a95d40 48%, #7c3d27);
+  border: 1px solid rgba(242, 182, 146, 0.20);
+}
+.conte-front { transform: translateZ(7px); }
+.conte-back { transform: rotateY(180deg) translateZ(7px); }
+.conte-left, .conte-right {
+  top: 0; width: 14px; height: 92px;
+  background: linear-gradient(#8f492f, #5e2a1b);
+  border: 1px solid rgba(43, 14, 9, 0.34);
+}
+.conte-left { left: 4px; transform: rotateY(-90deg) translateZ(11px); }
+.conte-right { right: 4px; transform: rotateY(90deg) translateZ(11px); }
+.conte-top, .conte-bottom {
+  left: 0; width: 22px; height: 14px;
+  background: #b96849;
+  border: 1px solid rgba(43, 14, 9, 0.34);
+}
+.conte-top { top: -7px; transform: rotateX(90deg); }
+.conte-bottom { bottom: -7px; transform: rotateX(90deg); background: #773421; }
+.conte-readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; color: var(--ink-dim); font-size: 9px; }
+.conte-readout span { display: flex; flex-direction: column; gap: 1px; }
+.conte-readout b { color: var(--ink); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.conte-flat {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin-top: 8px; padding: 5px 8px;
+  border: 1px solid rgba(200, 134, 111, 0.38); border-radius: 5px;
+  color: #dfaa94; cursor: pointer;
+  background: rgba(153, 79, 55, 0.10);
+}
+.conte-flat:hover { background: rgba(153, 79, 55, 0.19); }
+.conte-flat input { accent-color: #a95d40; }
+#conte-viewer.lay-flat .conte-flat { border-color: #c8866f; background: rgba(153, 79, 55, 0.24); color: #f0c4b2; }
+
+@media (max-width: 820px) {
+  #conte-viewer { right: 248px; width: 188px; }
+  .conte-scene { height: 112px; }
+  .conte-stick, .conte-left, .conte-right { height: 78px; }
+  .conte-stick { bottom: 26px; }
+}
+
 /* Pigment tray + mixing area */
 #palette {
   top: 12px;
