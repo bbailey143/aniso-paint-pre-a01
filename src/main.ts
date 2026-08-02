@@ -66,6 +66,16 @@ async function main() {
   // startup value outside the palette object so that first announcement can
   // charge the brush before `palette` itself has been assigned.
   let waterCharge = 0;
+  // A blank sheet should be still. Request a frame only when there is something
+  // new to show, or while the wet solver says paint is still moving.
+  let framePending = false;
+  let renderRequested = true;
+  const requestFrame = () => {
+    renderRequested = true;
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(frame);
+  };
 
   // ---- Pigment tray + surface ---------------------------------------------
   const palette = new Palette(document.body, {
@@ -74,7 +84,7 @@ async function main() {
       // Dip the brush: the mix and how heavily it is charged.
       stroke.charge(engine.mixWeights, loading, waterCharge);
     },
-    onPaperChange(paper) { engine.setPaper(paper); },
+    onPaperChange(paper) { engine.setPaper(paper); requestFrame(); },
     onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
     onWaterChange(nextWaterCharge) {
       waterCharge = nextWaterCharge;
@@ -83,8 +93,8 @@ async function main() {
     onTiltChange(gravityX, gravityY, cosAlpha) {
       engine.setFluid({ gravityX, gravityY, cosAlpha });
     },
-    onClear() { engine.clear(); },
-    onWaterView(on) { engine.waterView = on; },
+    onClear() { engine.clear(); requestFrame(); },
+    onWaterView(on) { engine.waterView = on; requestFrame(); },
     onBrushChange(def, size) {
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
@@ -148,6 +158,7 @@ async function main() {
     const { dx, dy } = toDoc((ev.clientX - r.left) * gpu.dpr, (ev.clientY - r.top) * gpu.dpr);
     engine.zoomAt(Math.exp(-ev.deltaY * 0.0015), dx, dy);
     setZoomHud();
+    requestFrame();
   }, { passive: false });
 
   // Classic hand pan: hold space and drag. Middle-drag does the same for anyone
@@ -177,7 +188,7 @@ async function main() {
     }
     // A plain, findable way back when the view gets lost.
     if (ev.key === '0' && (ev.ctrlKey || ev.metaKey)) {
-      ev.preventDefault(); engine.resetView(); setZoomHud();
+      ev.preventDefault(); engine.resetView(); setZoomHud(); requestFrame();
     }
   });
   window.addEventListener('keyup', (ev) => {
@@ -203,6 +214,7 @@ async function main() {
     engine.panBy((ev.clientX - lastPan.x) * gpu.dpr, (ev.clientY - lastPan.y) * gpu.dpr,
                  gpu.canvas.width, gpu.canvas.height);
     lastPan = { x: ev.clientX, y: ev.clientY };
+    requestFrame();
   }, { capture: true });
 
   const endPan = (ev: PointerEvent) => {
@@ -226,7 +238,7 @@ async function main() {
       painting = true;
       setHand();
       const g = toGrid(s);
-      if (g) stroke.begin(g.gx, g.gy, s);
+      if (g) { stroke.begin(g.gx, g.gy, s); requestFrame(); }
     },
     onStrokeEnd() { painting = false; setHand(); stroke.end(); },
     onSample(s: StylusSample) {
@@ -239,14 +251,15 @@ async function main() {
 
       if (!s.down) return;
       const g = toGrid(s);
-      if (g) stroke.add(g.gx, g.gy, s);
+      if (g) { stroke.add(g.gx, g.gy, s); requestFrame(); }
     },
   });
 
   // ---- Frame loop ----------------------------------------------------------
   let gaugeTick = 0;
   function frame() {
-    resizeToDisplay(gpu);
+    framePending = false;
+    const resized = resizeToDisplay(gpu);
     // Dry media first: they deposit straight onto the floor and never enter the
     // fluid band, so a pencil line laid this frame is already under any wash
     // the same frame moves.
@@ -254,7 +267,9 @@ async function main() {
     if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile);
     const { data, count } = stroke.drain();
     engine.step(data, count);
-    engine.render();
+    const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive;
+    renderRequested = false;
+    if (shouldRender) engine.render();
 
     // Conservation readout (invariant 1): paint, lift, watch it hold.
     if (++gaugeTick % 10 === 0) {
@@ -266,11 +281,11 @@ async function main() {
       setText('g-div', r.meanDivergence.toFixed(5));
       setText('g-relax', String(r.relaxIters));
     }
-    requestAnimationFrame(frame);
+    if (engine.isFluidActive) requestFrame();
   }
-  requestAnimationFrame(frame);
+  requestFrame();
 
-  window.addEventListener('resize', () => resizeToDisplay(gpu));
+  window.addEventListener('resize', requestFrame);
 
   // Dev aid: expose for headless verification.
   (window as unknown as Record<string, unknown>).__engine = engine;

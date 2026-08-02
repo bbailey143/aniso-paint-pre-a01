@@ -311,6 +311,15 @@ export class FluidEngine {
   };
   private readbackBusy = false;
   private frame = 0;
+  /**
+   * A blank or settled sheet has no reason to run the whole wet-paint pipeline.
+   * This latch wakes on a wet brush deposit and sleeps only after the existing
+   * full-sheet gauge reports no wet cells. It is intentionally not a new paint
+   * threshold: the shaders remain the authority on when a wash is finished.
+   */
+  private active = false;
+  /** Bumps for every fresh wet input so an older gauge may not stop newer paint. */
+  private activityEpoch = 0;
 
   constructor(gpu: Gpu, n: number, paper: GPUTextureView, inkPaper: GPUTextureView) {
     this.gpu = gpu;
@@ -471,6 +480,7 @@ export class FluidEngine {
   }
 
   get readings(): Gauges { return this.gauges; }
+  get isActive(): boolean { return this.active; }
 
   setParams(p: Partial<FluidParams>) {
     Object.assign(this.params, p);
@@ -553,6 +563,8 @@ export class FluidEngine {
 
   /** Zero every wet field explicitly — never trust lazy init. */
   clear() {
+    this.active = false;
+    this.activityEpoch++;
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass({ label: 'zero' });
     const all = [this.wet0, this.wet1, this.wet2, this.wet3, this.wet4, this.wet5, this.press,
@@ -658,6 +670,14 @@ export class FluidEngine {
    * the host must space them <= 1 cell apart (Card 6; otherwise strokes bead).
    */
   step(segments: Float32Array<ArrayBuffer>, segCount: number, mixWeights: Float32Array<ArrayBuffer>) {
+    // Do not continually simulate an untouched sheet. The first wet footprint
+    // wakes the solver; after that the normal gauge decides when it may rest.
+    if (segCount > 0) {
+      this.active = true;
+      this.activityEpoch++;
+    }
+    if (!this.active) return false;
+    const activityEpoch = this.activityEpoch;
     const { device } = this.gpu;
     this.frame++;
     this.writeParams();
@@ -852,9 +872,11 @@ export class FluidEngine {
         this.readbackBuf.unmap();
         this.inkReadback.unmap();
         this.accumulate(data);
+        if (this.activityEpoch === activityEpoch && this.gauges.wetCells === 0) this.active = false;
         this.readbackBusy = false;
       }).catch(() => { this.readbackBusy = false; });
     }
+    return this.active;
   }
 
   /**

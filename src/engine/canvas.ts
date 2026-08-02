@@ -183,6 +183,8 @@ export class CanvasEngine {
   }
 
   get readings(): Gauges { return this.fluid.readings; }
+  /** True while the wet layer still needs animation; dry media do not use it. */
+  get isFluidActive(): boolean { return this.fluid.isActive; }
   /** Fresh gauge read. Use this for measurement; `readings` lags (see fluid.ts). */
   sampleGauges(): Promise<Gauges> { return this.fluid.sampleGauges(); }
   set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
@@ -322,8 +324,8 @@ export class CanvasEngine {
   get slotsUsed(): number { return this.slotIds.filter((s) => s >= 0).length; }
 
   /** Advance the physics one frame with this frame's stroke segments. */
-  step(segments: Float32Array<ArrayBuffer>, segCount: number) {
-    this.fluid.step(segments, segCount, this.mixWeights_);
+  step(segments: Float32Array<ArrayBuffer>, segCount: number): boolean {
+    return this.fluid.step(segments, segCount, this.mixWeights_);
   }
 
   private writeCompParams(viewW: number, viewH: number) {

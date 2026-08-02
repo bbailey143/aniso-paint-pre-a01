@@ -200,6 +200,39 @@ passes, `npm.cmd run ipad -- -Help` prints its instructions, and the current
 Cloudflare link returns HTTP 200 after a clean local-server restart. iPad drawing
 remains the artist validation.
 
+## IN FLIGHT — thermal / idle-frame investigation (Codex, 2026-08-01)
+
+**Artist report.** On the Windows AMD/Polaris machine the app initially paints
+well, but CPU temperature reaches `99.7 C`; once the machine is that hot, the
+random water/pigment artifacts begin. The same app is clean on iPad. This does
+not prove a driver fault or a memory leak, but it makes the app's idle work an
+immediate, testable trigger.
+
+**Confirmed code path.** `src/main.ts` currently requests a new animation frame
+forever and, even on an untouched sheet, calls `CanvasEngine.step()` and
+`render()` every frame. `FluidEngine.step()` then records the complete wet-paint
+pipeline over the whole 512 by 512 sheet and requests a GPU-to-CPU status copy.
+That is unnecessary work on an empty or settled sheet.
+
+**First correction.** Make the frame loop demand-driven: render once, then sleep
+when there is no new mark and no live wet paint; wake it for painting, clear,
+paper/view changes, resizing, zooming, or panning. Keep the full normal wet
+simulation awake until its existing gauge says there are no wet cells. Do not
+change paint equations or the Conté path. Build must pass; browser validation is
+manual: leave a blank sheet open several minutes, then make a wet stroke and
+confirm it continues to move/dry before the app rests again. A cooler run would
+support this as a trigger reduction, but would not alone prove the ultimate
+artifact cause.
+
+**Checkpoint.** The focused idle-frame change is written in `src/main.ts`,
+`src/engine/canvas.ts`, and `src/engine/fluid.ts`; `npm.cmd run build` passes.
+The local browser-automation helper could not attach (`CDP response channel
+closed`), so it is not evidence about the real AMD machine. Bartford's next
+hand test is the authority: after reloading, leave a blank sheet open for three
+minutes and compare CPU temperature/usage with the old run; then make one wet
+stroke and confirm it visibly keeps moving before settling. If the blank sheet
+still heats the machine, profile the browser before changing any more paint code.
+
 ## Current objective
 
 Correct and hand-check the shared water/paper foundation before feature work. The
