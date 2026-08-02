@@ -189,6 +189,17 @@ history and also must not be pushed without fresh authorization. E8 commit
 The rollback and this record must not be pushed without fresh authorization.
 The listed untracked files remain unrelated and must not be touched.
 
+**iPad route (2026-08-01, Codex):** The same local app
+painted cleanly on Bartford's iPad through a temporary Cloudflare link, while the
+Windows AMD/Polaris path showed the longstanding paint fault. Add a small
+artist-runnable `npm.cmd run ipad` helper that starts the local server when needed
+and opens a temporary tunnel in the same terminal, plus a short plain-language
+instruction page. Vite must permit the `trycloudflare.com` tunnel host without
+requiring a code edit for each newly generated link. **Done:** `npm.cmd run build`
+passes, `npm.cmd run ipad -- -Help` prints its instructions, and the current
+Cloudflare link returns HTTP 200 after a clean local-server restart. iPad drawing
+remains the artist validation.
+
 ## Current objective
 
 Correct and hand-check the shared water/paper foundation before feature work. The

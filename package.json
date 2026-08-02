@@ -6,6 +6,7 @@
   "description": "Browser-first WebGPU natural-media painting engine",
   "scripts": {
     "dev": "vite",
+    "ipad": "powershell.exe -ExecutionPolicy Bypass -File .\\tools\\start-ipad.ps1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
