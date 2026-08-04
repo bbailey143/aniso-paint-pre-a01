@@ -87,7 +87,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   // documented absorptiveness dial, and the wet-medium row supplies viscosity
   // and coupling. r_c=0 therefore gives exactly zero uptake for a future canvas.
   let depth = select(0.0, clamp(s_in / cap, 0.0, 1.0), cap > WET_EPS);
-  let pore = clamp(paperCell.w / RC_MAX, 0.0, 1.0);
+  // `paper.w` is the radius after the sheet's water appetite has been applied.
+  // Keep a broad but finite ceiling: it lets an unsized pastel sheet drink much
+  // faster than rough watercolour while leaving every baseline watercolour row
+  // exactly as it was at appetite 1.
+  let pore = clamp(paperCell.w / RC_MAX, 0.0, 8.0);
   let sizingTransmission = clamp(1.0 - paperCell.z, 0.0, 1.0);
   let viscosityResponse = MU_REF / max(P.viscosity, WET_EPS);
   let depthRate = P.absorptionCoupling * sizingTransmission * pore * viscosityResponse;

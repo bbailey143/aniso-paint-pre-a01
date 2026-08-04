@@ -37,6 +37,15 @@ import { DRY_SEG_FLOATS } from '../engine/fluid';
  */
 const REF_SPEED = 0.75;
 
+/** The actual paper-facing outline of a dry tool, in simulation-grid cells. */
+export type DryContact = {
+  profile: 'round' | 'chisel';
+  minorRadius: number;
+  majorRadius: number;
+  /** Direction of the long axis in the paper plane, clockwise from +x. */
+  angle: number;
+};
+
 /** Cheap deterministic value noise. Deterministic matters: the same stroke must
  * come out the same on a redraw, and a per-frame random would crawl. */
 function hash1(n: number): number {
@@ -87,6 +96,24 @@ export class DryTool {
       ? (this.medium as GranularDry).compactionAmount : 1;
   }
 
+  /**
+   * One shared contact description for both the mark and the on-paper cursor.
+   * Keeping this here stops the cursor from becoming a second, approximate
+   * interpretation of tilt, twist, or Conté's Lay Flat state.
+   */
+  contact(s: Pick<BrushInput, 'tiltAngle' | 'tiltAzimuth' | 'twist'>): DryContact {
+    const m = this.medium;
+    const naturalTilt = Math.min(Math.max(
+      (Math.min(s.tiltAngle, 89) - m.tiltStart) / Math.max(1, 89 - m.tiltStart), 0), 1);
+    // Lay Flat belongs to the rectangular Conté stick. Keep that choice from
+    // changing graphite or ink when the painter switches tools.
+    const tiltAmount = this.layFlat && m.slug === 'conte-crayon' ? 1 : naturalTilt;
+    const minorRadius = m.tipRadius * this.size;
+    const majorRadius = minorRadius * (m.contactAspect + m.tiltAspect * tiltAmount);
+    const angle = m.contactProfile === 'chisel' && s.twist !== 0 ? s.twist : s.tiltAzimuth;
+    return { profile: m.contactProfile, minorRadius, majorRadius, angle };
+  }
+
   begin() {
     this.speed = 0;
     this.dist = 0;
@@ -124,13 +151,9 @@ export class DryTool {
     // How deep the tip gets into the tooth. Hardness sets the ceiling — a 4H
     // simply cannot reach the valleys however hard you lean — and speed drags
     // it down from there.
-    const naturalTilt = Math.min(Math.max(
-      (Math.min(s.tiltAngle, 89) - m.tiltStart) / Math.max(1, 89 - m.tiltStart), 0), 1);
-    // Lay Flat belongs to the rectangular Conte stick. Keep that choice from
-    // changing graphite or ink when the painter switches tools.
-    const tiltAmount = this.layFlat && m.slug === 'conte-crayon' ? 1 : naturalTilt;
-    const baseRadius = m.tipRadius * this.size;
-    const majorFactor = m.contactAspect + m.tiltAspect * tiltAmount;
+    const contact = this.contact(s);
+    const baseRadius = contact.minorRadius;
+    const majorFactor = contact.majorRadius / Math.max(baseRadius, 1e-4);
     // P_loc normalised to the same upright tip: pressure distributed over the
     // real oval contact area, rather than merely scaling a stamp.
     const localStress = press / Math.max(majorFactor, 1e-4);
@@ -245,8 +268,7 @@ export class DryTool {
     // contact ellipse. It is independent of the drawing direction, because a
     // pencil's broadside follows the way the pencil leans, not the stroke path.
     const major = radius * majorFactor;
-    const direction = m.contactProfile === 'chisel' && s.twist !== 0 ? s.twist : s.tiltAzimuth;
-    const azimuth = (direction * Math.PI) / 180;
+    const azimuth = (contact.angle * Math.PI) / 180;
     buf[o + 8] = major * Math.cos(azimuth);
     buf[o + 9] = major * Math.sin(azimuth);
     return at + 1;

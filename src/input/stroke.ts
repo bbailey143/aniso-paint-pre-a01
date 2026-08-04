@@ -17,6 +17,14 @@ import type { BrushDef, BrushInput } from '../brush/types';
 import { DryTool } from '../media/dry-tool';
 import type { DryMedium } from '../media/types';
 
+/** The live outline of the selected tool where it meets the paper. */
+export type PaperContact = {
+  profile: 'round' | 'chisel';
+  minorRadius: number;
+  majorRadius: number;
+  angle: number;
+};
+
 /** Frame footprint capacity. Larger than one GPU chunk — the fluid engine
  * dispatches it in chunks, so a fast flick is not truncated. */
 const FRAME_SEGS = MAX_SEGS * 6;
@@ -71,6 +79,31 @@ export class StrokeEngine {
   }
 
   get isDry(): boolean { return this.dry !== null; }
+
+  /**
+   * Describe the selected tool at the paper without starting a stroke.
+   * Dry tools use their exact deposit geometry. Wet brushes use their selected
+   * round or flat tuft silhouette; their individual hairs remain a live solver
+   * result only once the brush is pressed into the sheet.
+   */
+  paperContact(s: Pick<StylusSample, 'pressure' | 'tiltAngle' | 'tiltAzimuth' | 'twist'>): PaperContact {
+    if (this.dry) return this.dry.contact(s);
+
+    const def = this.brush.def;
+    const halfWidth = Math.max(0.75, 0.5 * def.widthRatio * this.brush.tuftLength);
+    if (def.kind === 'round') {
+      return { profile: 'round', minorRadius: halfWidth, majorRadius: halfWidth, angle: 0 };
+    }
+
+    // The flat brush's two spines are separated across the blade. Its short
+    // axis is a restrained slice of the tuft length, so the cursor reads as a
+    // brush contact instead of an unrealistically long handle.
+    const minorRadius = Math.max(0.75, this.brush.tuftLength * 0.12);
+    return {
+      profile: 'chisel', minorRadius, majorRadius: halfWidth,
+      angle: s.tiltAzimuth + s.twist + 90,
+    };
+  }
 
   /** Dip the brush. Called when the mix or load changes, and at stroke start. */
   charge(mix: Float32Array, loading: number, waterCharge = this.waterCharge) {

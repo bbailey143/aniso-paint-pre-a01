@@ -38,40 +38,30 @@ html, body {
    before committing to a drag, closed while actually dragging the sheet. */
 #stage.hand { cursor: grab; }
 #stage.grabbing { cursor: grabbing; }
+#stage.contact-cursor:not(.hand):not(.grabbing) { cursor: none; }
 
-/* Tablet pens often suppress the operating-system cursor while hovering or
-   drawing. This locator follows pen PointerEvents and remains visible through
-   contact; mouse users keep the native crosshair they already had. */
+/* A real paper-contact outline for tablet pens and mouse drawing. Tablet pens
+   often suppress the operating-system cursor; mouse users get this same tool
+   outline while it is over the paper. */
 #pen-cursor {
   position: fixed;
   left: 0;
   top: 0;
   z-index: 30;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: var(--pen-width, 22px);
+  height: var(--pen-height, 22px);
   border: 1px solid rgba(24, 31, 38, 0.92);
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(245, 247, 250, 0.92);
   pointer-events: none;
   opacity: 0;
-  transform: scale(1);
+  transform: translate(-50%, -50%) rotate(var(--pen-angle, 0deg)) scale(1);
+  transform-origin: center;
   transition: opacity 0.06s linear, transform 0.06s linear;
 }
-#pen-cursor::before,
-#pen-cursor::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  background: rgba(24, 31, 38, 0.92);
-  box-shadow: 0 0 0 0.5px rgba(245, 247, 250, 0.92);
-  transform: translate(-50%, -50%);
-}
-#pen-cursor::before { width: 8px; height: 1px; }
-#pen-cursor::after { width: 1px; height: 8px; }
+#pen-cursor.chisel { border-radius: 1px; }
 #pen-cursor.on { opacity: 1; }
-#pen-cursor.down { transform: scale(0.82); }
+#pen-cursor.down { transform: translate(-50%, -50%) rotate(var(--pen-angle, 0deg)) scale(0.82); }
 
 .panel {
   position: fixed;
@@ -223,6 +213,9 @@ html, body {
   top: 12px;
   right: 12px;
   width: 236px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -278,6 +271,19 @@ html, body {
 
 .surface { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
 .pal-sub { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+.linked-picker { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.linked-picker select {
+  width: 100%; min-width: 0; appearance: auto;
+  padding: 4px 6px; border: 1px solid var(--panel-border); border-radius: 4px;
+  background: rgba(6, 8, 10, 0.72); color: var(--ink); font: inherit; cursor: pointer;
+}
+.linked-picker select:hover, .linked-picker select:focus-visible { border-color: var(--accent); outline: none; }
+.linked-picker option { background: #16181c; color: var(--ink); }
+.linked-picker .inspect-btn { justify-self: end; padding: 3px 7px; font-size: 10px; }
+.paper-summary { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px; min-width: 0; color: var(--ink-dim); font-size: 10px; }
+.paper-summary i { width: 18px; height: 18px; display: block; border: 1px solid rgba(255,255,255,0.28); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18); }
+.paper-summary span { min-width: 0; line-height: 1.25; }
+#legacy-tools, #legacy-papers { display: none; }
 .papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .papers.six { grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .papers.six .paper { padding: 4px 0; font-size: 10px; }
@@ -330,4 +336,5 @@ html, body {
 .tilt-pad::before { width: 1px; height: 12px; left: 50%; top: -6px; }
 .tilt-pad::after { height: 1px; width: 12px; top: 50%; left: -6px; }
 .tilt-puck { position: absolute; width: 18px; height: 18px; left: calc(50% - 9px); top: calc(50% - 9px); border-radius: 50%; background: var(--tilt-blue); border: 2px solid rgba(231, 233, 238, 0.8); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55); pointer-events: none; transition: transform 0.05s linear; }
+.tilt-angle { margin: 0; color: var(--tilt-blue); text-align: center; font-size: 10px; letter-spacing: 0.04em; }
 .tilt-hint { color: var(--ink-dim); text-align: center; font-size: 10px; }

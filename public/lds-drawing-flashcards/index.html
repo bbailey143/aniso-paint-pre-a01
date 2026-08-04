@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#bce7f5" />
+    <title>LDS Drawing Flash Cards</title>
+    <style>
+      :root {
+        --sky: #bce7f5;
+        --sky-deep: #91d5eb;
+        --card: #fffbed;
+        --navy: #163454;
+        --gold: #f4bd36;
+        --pencil: #ed8e42;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: var(--navy);
+        background:
+          radial-gradient(circle at 10% 13%, rgba(255, 255, 255, .72) 0 3px, transparent 4px),
+          radial-gradient(circle at 88% 18%, rgba(255, 255, 255, .58) 0 4px, transparent 5px),
+          radial-gradient(circle at 74% 83%, rgba(255, 255, 255, .52) 0 2px, transparent 3px),
+          linear-gradient(145deg, var(--sky) 0%, #d9f3f6 52%, var(--sky-deep) 100%);
+        font-family: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", system-ui, sans-serif;
+      }
+
+      main {
+        width: min(92vw, 750px);
+        padding: 24px 0;
+        text-align: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 13px;
+        font-size: clamp(.77rem, 2vw, .94rem);
+        font-weight: 800;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+      }
+
+      .title {
+        margin: 0 0 clamp(22px, 5vh, 44px);
+        font-size: clamp(1.65rem, 5vw, 2.6rem);
+        line-height: 1;
+        letter-spacing: -.04em;
+      }
+
+      .flashcard {
+        position: relative;
+        width: 100%;
+        min-height: min(59vh, 455px);
+        padding: clamp(48px, 9vw, 82px) clamp(26px, 8vw, 74px);
+        display: grid;
+        place-items: center;
+        isolation: isolate;
+        cursor: pointer;
+        appearance: none;
+        border: 3px solid rgba(22, 52, 84, .12);
+        border-radius: 8px 12px 9px 15px;
+        color: var(--navy);
+        background:
+          repeating-linear-gradient(0deg, transparent 0 37px, rgba(22, 52, 84, .055) 38px 39px),
+          var(--card);
+        box-shadow: 11px 14px 0 rgba(22, 52, 84, .12), 0 16px 32px rgba(22, 52, 84, .14);
+        transition: transform .18s ease, box-shadow .18s ease;
+      }
+
+      .flashcard::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 12px;
+        border: 2px dashed rgba(244, 189, 54, .68);
+        border-radius: 5px 10px 7px 11px;
+        pointer-events: none;
+      }
+
+      .flashcard:hover { transform: translate(-3px, -4px) rotate(-.35deg); box-shadow: 15px 18px 0 rgba(22, 52, 84, .12), 0 20px 35px rgba(22, 52, 84, .16); }
+      .flashcard:active { transform: translate(3px, 4px); box-shadow: 6px 7px 0 rgba(22, 52, 84, .1), 0 9px 18px rgba(22, 52, 84, .12); }
+      .flashcard:focus-visible { outline: 4px solid var(--navy); outline-offset: 7px; }
+
+      .prompt {
+        max-width: 100%;
+        font-size: clamp(3.1rem, 12vw, 7.25rem);
+        font-weight: 900;
+        line-height: .92;
+        letter-spacing: -.07em;
+        text-wrap: balance;
+      }
+
+      .tap-note {
+        position: absolute;
+        right: clamp(20px, 5vw, 44px);
+        bottom: clamp(20px, 5vw, 35px);
+        font-size: clamp(.75rem, 2vw, .93rem);
+        font-weight: 800;
+        letter-spacing: .04em;
+        opacity: .76;
+      }
+
+      .flourish {
+        position: absolute;
+        top: 23px;
+        left: 27px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 1.65rem;
+        line-height: 1;
+        transform: rotate(-7deg);
+      }
+
+      .pencil { color: var(--pencil); }
+      .star { color: var(--gold); font-size: 1.05rem; }
+
+      .bounce { animation: reveal .32s cubic-bezier(.2, .8, .2, 1); }
+      @keyframes reveal { from { opacity: .3; transform: scale(.89) rotate(-1deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+
+      @media (max-height: 630px) and (min-width: 650px) {
+        main { padding: 12px 0; }
+        .title { margin-bottom: 18px; }
+        .flashcard { min-height: 360px; }
+      }
+
+      @media (max-width: 460px) {
+        main { width: min(90vw, 750px); }
+        .flashcard { min-height: 56vh; min-height: 56dvh; }
+      }
+
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">LDS drawing flash cards</p>
+      <h1 class="title">Draw the word!</h1>
+      <button class="flashcard" id="flashcard" type="button" aria-label="Show a new drawing word">
+        <span class="flourish" aria-hidden="true"><span class="pencil">✎</span><span class="star">✦</span></span>
+        <span class="prompt" id="prompt" aria-live="polite"></span>
+        <span class="tap-note">tap for another →</span>
+      </button>
+    </main>
+    <script>
+      const words = [
+        "Angel", "Ark", "Baptism", "Beehive", "Boat", "Bread", "Bridge", "Camel",
+        "Candle", "Chapel", "Church", "Cloud", "Crown", "Dove", "Fish", "Flower",
+        "Garden", "Gift", "Globe", "Heart", "Ladder", "Lamp", "Leaf", "Liahona",
+        "Manger", "Mountain", "Olive branch", "Ox", "Palm tree", "Prayer", "Rainbow",
+        "Ring", "Rod of iron", "Sandals", "Sheep", "Shield", "Star", "Stone",
+        "Sun", "Temple", "Tent", "Tree", "Water", "Well", "Whale"
+      ];
+
+      let deck = [];
+      let previous = "";
+      const prompt = document.getElementById("prompt");
+      const card = document.getElementById("flashcard");
+
+      function shuffle(items) {
+        const result = [...items];
+        for (let i = result.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [result[i], result[j]] = [result[j], result[i]];
+        }
+        return result;
+      }
+
+      function nextWord() {
+        if (!deck.length) {
+          deck = shuffle(words);
+          if (deck[deck.length - 1] === previous && deck.length > 1) {
+            [deck[deck.length - 1], deck[deck.length - 2]] = [deck[deck.length - 2], deck[deck.length - 1]];
+          }
+        }
+        previous = deck.pop();
+        prompt.textContent = previous;
+        prompt.classList.remove("bounce");
+        void prompt.offsetWidth;
+        prompt.classList.add("bounce");
+      }
+
+      card.addEventListener("click", nextWord);
+      window.addEventListener("keydown", (event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          nextWord();
+        }
+      });
+      nextWord();
+    </script>
+  </body>
+</html>

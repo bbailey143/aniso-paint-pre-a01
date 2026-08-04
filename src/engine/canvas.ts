@@ -94,6 +94,10 @@ export class CanvasEngine {
    * procedurally at screen resolution. Set by `setPaper`. */
   private paperTooth = 0.45;
   private paperFreq = 130;
+  /** Display tone belongs to the selected paper row; paint still uses its shared paths. */
+  private paperTone: readonly [number, number, number] = [0.93, 0.92, 0.88];
+  /** 0 preserves the watercolour grain; 1 selects the shared fibrous pastel tooth. */
+  private paperGrainKind = 0;
   private readonly paperSeed = PAPER_SEED;
 
   /** Zoom about a point given in document px, so the paper stays put under the
@@ -144,7 +148,9 @@ export class CanvasEngine {
     this.fluid = new FluidEngine(gpu, SIM, this.paperTex.createView(), this.inkPaperTex.createView());
 
     this.paperParams = device.createBuffer({
-      size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
+      // Three 16-byte uniform groups: the paper's water appetite is a ninth
+      // scalar, so this can no longer be the old 32-byte row.
+      size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
     });
     this.compParams = device.createBuffer({
       // 80, not 64: the water-view flag added a fifth 16-byte group. This size,
@@ -227,15 +233,18 @@ export class CanvasEngine {
 
   /** Regenerate the paper substrate for a chosen sheet. */
   setPaper(p: Paper) {
-    const buf = new ArrayBuffer(32);
+    const buf = new ArrayBuffer(48);
     new Float32Array(buf).set([
-      p.toothAmp, p.featureFreq, p.sizing, p.rc, p.cMin, p.cMax, PAPER_SEED, 0,
+      p.toothAmp, p.featureFreq, p.sizing, p.rc, p.cMin, p.cMax, PAPER_SEED,
+      p.grainKind === 'pastel' ? 1 : 0, p.waterUptake,
     ]);
     this.gpu.device.queue.writeBuffer(this.paperParams, 0, buf);
     // The composite re-derives the same grain at screen resolution, so it needs
     // the two rows that shape it. Same seed, same function, same sheet.
     this.paperTooth = p.toothAmp;
     this.paperFreq = p.featureFreq;
+    this.paperTone = p.tone;
+    this.paperGrainKind = p.grainKind === 'pastel' ? 1 : 0;
 
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -356,6 +365,10 @@ export class CanvasEngine {
     dv.setFloat32(80, this.paperTooth, true);
     dv.setFloat32(84, this.paperFreq, true);
     dv.setFloat32(88, this.paperSeed, true);
+    dv.setFloat32(92, this.paperGrainKind, true);
+    dv.setFloat32(96, this.paperTone[0], true);
+    dv.setFloat32(100, this.paperTone[1], true);
+    dv.setFloat32(104, this.paperTone[2], true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

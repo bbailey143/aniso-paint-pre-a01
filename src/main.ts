@@ -80,6 +80,7 @@ async function main() {
     layFlat = conteLayFlat.checked;
     stroke.setLayFlat(layFlat);
     updateConteViewer();
+    updatePenCursorContact();
   });
   // Windows commonly hides the system cursor while a tablet pen is in range or
   // touching down. Keep a canvas-drawn locator driven by the same PointerEvent
@@ -88,25 +89,63 @@ async function main() {
   penCursor.id = 'pen-cursor';
   penCursor.setAttribute('aria-hidden', 'true');
   document.body.appendChild(penCursor);
-  const hidePenCursor = () => penCursor.classList.remove('on', 'down');
+  let lastToolPointer: PointerEvent | null = null;
+  const hidePenCursor = () => {
+    penCursor.classList.remove('on', 'down');
+    canvas.classList.remove('contact-cursor');
+  };
+  const updatePenCursorContact = (event = lastToolPointer) => {
+    if (!event) return;
+    const radians = Math.PI / 180;
+    const tiltX = event.tiltX ?? 0;
+    const tiltY = event.tiltY ?? 0;
+    const tx = Math.tan(tiltX * radians);
+    const ty = Math.tan(tiltY * radians);
+    const tiltAngle = Math.atan(Math.hypot(tx, ty)) / radians;
+    let tiltAzimuth = Math.atan2(ty, tx) / radians;
+    if (tiltAzimuth < 0) tiltAzimuth += 360;
+    const contact = stroke.paperContact({
+      pressure: event.pressure,
+      tiltAngle, tiltAzimuth,
+      twist: event.twist ?? 0,
+    });
+    // The canvas operates in device pixels while this overlay is laid out in
+    // CSS pixels. This is the same contain-and-zoom scale used by `toDoc()`.
+    const cellPx = Math.min(gpu.canvas.width / engine.doc, gpu.canvas.height / engine.doc)
+      * engine.zoom / gpu.dpr;
+    // A hairline must remain findable on a high-resolution display. This only
+    // affects the locator's minimum visible outline, never the paint contact.
+    const width = Math.max(4, 2 * contact.majorRadius * cellPx);
+    const height = Math.max(4, 2 * contact.minorRadius * cellPx);
+    penCursor.style.setProperty('--pen-width', `${width}px`);
+    penCursor.style.setProperty('--pen-height', `${height}px`);
+    penCursor.style.setProperty('--pen-angle', `${contact.angle}deg`);
+    penCursor.classList.toggle('chisel', contact.profile === 'chisel');
+  };
   const trackPenCursor = (event: PointerEvent) => {
-    if (event.pointerType !== 'pen') {
+    const onPaper = event.composedPath().includes(canvas);
+    const toolPointer = event.pointerType === 'pen' || (event.pointerType === 'mouse' && onPaper);
+    if (!toolPointer) {
       hidePenCursor();
       return;
     }
     // Use viewport coordinates and listen above both the canvas and the
     // controls. A tablet pen can hover from the sheet straight onto the palette;
     // leaving the canvas must not make its locator disappear.
+    lastToolPointer = event;
     penCursor.style.left = `${event.clientX}px`;
     penCursor.style.top = `${event.clientY}px`;
+    updatePenCursorContact(event);
     penCursor.classList.add('on');
     penCursor.classList.toggle('down', event.buttons !== 0 || event.pressure > 0);
+    canvas.classList.toggle('contact-cursor', event.pointerType === 'mouse' && onPaper);
   };
   window.addEventListener('pointermove', trackPenCursor, true);
   window.addEventListener('pointerdown', trackPenCursor, true);
   window.addEventListener('pointerup', trackPenCursor, true);
   window.addEventListener('pointerout', (event) => {
-    if (event.pointerType === 'pen' && event.relatedTarget === null) hidePenCursor();
+    if ((event.pointerType === 'pen' && event.relatedTarget === null)
+      || event.pointerType === 'mouse') hidePenCursor();
   }, true);
   window.addEventListener('blur', hidePenCursor);
   // Palette construction immediately announces its initial mix. Keep this
@@ -140,12 +179,20 @@ async function main() {
     onTiltChange(gravityX, gravityY, cosAlpha) {
       engine.setFluid({ gravityX, gravityY, cosAlpha });
     },
-    onClear() { engine.clear(); requestFrame(); },
+    onClear() {
+      engine.clear();
+      // Clear Sheet affects only the document. `clear()` resets its pigment-slot
+      // map, so restore the current palette mix and re-dip the selected brush.
+      engine.setMix(palette.recipe);
+      stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
+      requestFrame();
+    },
     onWaterView(on) { engine.waterView = on; requestFrame(); },
     onBrushChange(def, size) {
       setConteSelected(false);
       stroke.setBrush(def, size);
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
+      updatePenCursorContact();
     },
     // A dry medium carries its own pigment — a pencil is graphite whatever is
     // on the palette — so it sets its own slot weights and leaves the mix alone.
@@ -153,6 +200,7 @@ async function main() {
       stroke.setDryMedium(medium, size);
       engine.setDryMix(new Map(medium.pigments));
       setConteSelected(medium.slug === 'conte-crayon');
+      updatePenCursorContact();
     },
     // Rinse: pigment out, clean water in. The brush stays loaded — it is now a
     // water brush, which is what you wet paper with. The sheet is untouched.
@@ -207,6 +255,7 @@ async function main() {
     const { dx, dy } = toDoc((ev.clientX - r.left) * gpu.dpr, (ev.clientY - r.top) * gpu.dpr);
     engine.zoomAt(Math.exp(-ev.deltaY * 0.0015), dx, dy);
     setZoomHud();
+    updatePenCursorContact();
     requestFrame();
   }, { passive: false });
 

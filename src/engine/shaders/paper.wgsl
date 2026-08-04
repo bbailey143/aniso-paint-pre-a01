@@ -5,7 +5,9 @@
 // valley amplitude and feature scale), sizing, and capillary radius r_c are the
 // per-sheet parameters — hot press is fine and shallow, rough is coarse and deep.
 //
-// Output PAPER = (h, c, sizing, r_c). Written once when the sheet is chosen.
+// Output PAPER = (h, c, sizing, effective r_c). Written once when the sheet is
+// chosen. The last lane includes the sheet's water appetite, so the shared fluid
+// pass can distinguish a thirsty dry sheet without a medium-specific route.
 
 struct PaperParams {
   toothAmp: f32,     // 0..1 peak-to-valley amplitude of the tooth
@@ -15,7 +17,8 @@ struct PaperParams {
   cMin: f32,
   cMax: f32,
   seed: f32,
-  _pad: f32,
+  grainKind: f32,    // 0 = watercolor grain, 1 = shared fibrous pastel tooth
+  waterUptake: f32, // 1 = ordinary watercolour response; >1 drinks faster
 };
 @group(0) @binding(0) var<uniform> P: PaperParams;
 @group(0) @binding(1) var dst: texture_storage_2d<rgba16float, write>;
@@ -48,6 +51,15 @@ fn fbm(p: vec2f) -> f32 {
   return v; // ~0..1
 }
 
+// A softly felted paper: long fibres with a quieter cross-fibre weave. This is
+// deliberately a height-field source, not a photographic layer, so the dry
+// deposit pass and the visible sheet agree on where a tool catches.
+fn pastel_fibre(p: vec2f) -> f32 {
+  let long = vnoise(vec2f(p.x * 0.72 + p.y * 0.18, p.y * 4.6 - p.x * 0.09));
+  let cross = vnoise(vec2f(p.x * 5.1 + p.y * 0.08, p.y * 0.58));
+  return clamp(0.5 + (long - 0.5) * 0.78 + (cross - 0.5) * 0.22, 0.0, 1.0);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let dim = textureDimensions(dst);
@@ -56,11 +68,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   // Anisotropic weave: stretch the grain slightly so streaks read as fibres.
   let p = vec2f(uv.x * P.featureFreq, uv.y * P.featureFreq * 1.15);
-  var h = fbm(p);
+  var grain = fbm(p);
+  // Keep watercolour byte-for-byte on its established fBm route. Pastel only
+  // replaces its source with the common felted fibre field.
+  if (P.grainKind > 0.5) {
+    grain = mix(grain, pastel_fibre(p), 0.68);
+  }
   // Contrast the grain by the tooth amplitude; keep it centred around 0.5.
-  h = 0.5 + (h - 0.5) * (0.4 + P.toothAmp * 1.6);
+  var h = 0.5 + (grain - 0.5) * (0.4 + P.toothAmp * 1.6);
   h = clamp(h, 0.02, 0.98);
 
   let c = h * (P.cMax - P.cMin) + P.cMin;
-  textureStore(dst, vec2i(gid.xy), vec4f(h, c, P.sizing, P.rc));
+  textureStore(dst, vec2i(gid.xy), vec4f(h, c, P.sizing, P.rc * P.waterUptake));
 }

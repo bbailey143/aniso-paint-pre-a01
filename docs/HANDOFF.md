@@ -133,9 +133,9 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-07-29 (Codex's dry-media merge landed and was verified
-against the pre-merge build; wet paint is bit-for-bit unchanged)
-**By:** Claude (Opus), continuing from Codex
+**Last updated:** 2026-08-03 (toned pastel paper and linked material picker added;
+cursor and thermal work remain separately in flight)
+**By:** Codex, continuing the shared relay
 
 ## MERGE VERIFICATION — `0892571`, checked 2026-07-29
 
@@ -199,6 +199,133 @@ requiring a code edit for each newly generated link. **Done:** `npm.cmd run buil
 passes, `npm.cmd run ipad -- -Help` prints its instructions, and the current
 Cloudflare link returns HTTP 200 after a clean local-server restart. iPad drawing
 remains the artist validation.
+
+## IN FLIGHT — paper-contact cursor (Codex, 2026-08-03)
+
+**Artist request.** The pen locator must show the contact that would meet the
+paper: round tools as their round footprint, and chisel/Conté tools as their
+rotated short/long rectangular contact. Conté `Lay Flat` must visibly lengthen the
+same cursor contact that the deposit pass uses.
+
+**Implemented.** `DryTool.contact()` now supplies both the dry deposit pass and
+the cursor with one tilt/twist/Lay Flat contact description. `StrokeEngine` exposes
+that description to the existing locator; `main.ts` maps its grid-cell dimensions
+through the active zoom, and `style.css` renders it as a round or rotated chisel
+outline. The mouse receives the same outline while over the paper; the regular
+hand cursor still takes priority during navigation. Wet brushes use a selected
+round/flat tuft silhouette because their exact individual-hair contact exists only
+after the live brush solve begins. No paint, input, or shader equation changed.
+
+**Build checkpoint.** `npm.cmd run build` passed on 2026-08-03.
+
+**Tilt readout (2026-08-03).** The board-tilt puck now reports its selected
+inclination directly below the control: centre is `tilt: 0°`, and the rim is
+`tilt: 90°`. This is the actual angle derived from the existing puck radius,
+not a separate visual setting.
+
+**Artist verification still owed.** On the live WebGPU page, hover a
+round tool, Flat Sable, upright Conté, tilted Conté, and `Lay Flat`; the cursor
+must change shape and orientation with the selected tool while painting remains
+under its centre. The final visual check is a real pen hover/draw on Bartford's
+tablet, because browser automation cannot supply trustworthy tilt/hover events.
+
+## IN FLIGHT — toned pastel paper and material picker (Codex, 2026-08-03)
+
+**Artist request.** Add one shared, softly fibrous pastel surface in eight selected
+tones, intended for dry and smudgeable media but honestly poor at holding a wet
+watercolour wash. Replace the flat paper/brush button grids with three linked,
+compact selectors: family, collection, and final sheet/tool. The final selection
+gets a quiet tone swatch and an explicit Inspect button because dropdown entries
+cannot be press-held.
+
+**Route being implemented.** `src/substrate/papers.ts` will keep every sheet as a
+reusable paper row: categorisation, tone, visible grain label, wet-suitability
+copy, and the existing physical rows. The eight pastel colours will share one
+pastel tooth style, use a low-sizing/high-uptake row marked `[UNVERIFIED]`, and
+will not create a dry-only paint route. `src/ui/palette.ts` and `src/style.css`
+will replace the flat selectors while retaining the current pinned settings cards,
+normal brush/dry-tool selection, and Conté Lay Flat viewer callbacks. `canvas.ts`
+and `composite.wgsl` will pass the chosen paper tone to the visible sheet,
+including Water View; no wet or dry deposit equation will change.
+
+**Next action.** Finish the picker rows and visible tone path, run
+`npm.cmd run build`, then load the WebGPU page and hand-check every selector route:
+dark/light pastel with graphite, pastel with Conté, pastel with watercolour, and a
+tool from each collection. If compilation fails, preserve the cursor edits in
+`src/main.ts`, `src/input/stroke.ts`, `src/media/dry-tool.ts`, and `src/style.css`
+while correcting only the new picker/tone work.
+
+**Implemented checkpoint (2026-08-03).** `src/substrate/papers.ts` now has the
+three watercolor rows at `Watercolor → Hot Press / Cold Press / Rough` and eight
+`Dry Media → Pastel` rows: Charcoal, Night Blue, Warm Slate, Dusty Rose, Natural,
+Light Grey, Ivory, and White. All pastel colours share one procedural fibrous tooth
+and the same `[UNVERIFIED]` low-sizing/high-uptake paper row; they do not create a
+new dry-media or watercolour equation. `canvas.ts` and `composite.wgsl` carry the
+chosen sRGB paper tone through the normal display and Water View. A correction
+converts the stored sRGB tone into the composite's linear-light space, so Charcoal
+actually appears dark rather than washed-out grey.
+
+`Palette` now offers linked Tool family / Tool collection / Tool and Paper family /
+Paper collection / Sheet selectors, retains normal wet/dry/Conté selection callbacks,
+and adds Inspect buttons that open the existing pinned cards. The former button grids
+remain in the DOM but are hidden while the new picker is active. The picker panel
+scrolls internally on short displays so the lower water-view and clear controls stay
+reachable. `npm.cmd run build` passes. Live `http://localhost:5173` loaded on
+`webgpu: amd / gcn-4` without console warnings; the browser route confirmed Water
+Media, Dry Media/Graphite, Drawing Sticks/Conté, and Dry Media/Pastel/Charcoal,
+including the Conté viewer and pinned paper Inspect card. Still required is the
+artist's real mark judgement: graphite on both a dark and light pastel sheet, Conté
+on pastel, and watercolour on pastel to judge the intended poor wet behaviour.
+
+**Follow-up in flight (2026-08-03).** The first pastel pass carried tone and a
+shared physical row, but its procedural height source still used the watercolor
+grain shape. Add a reusable `grainKind` paper-row field and carry it through both
+the baked `paper.wgsl` tooth that dry tools catch and the matching screen-space
+`composite.wgsl` relief. `watercolor` must retain its current code path exactly;
+`pastel` gets one restrained common fibre structure for all eight tones. Do not add
+a photographic texture layer or change wet/dry equations. Once the live shader
+loads cleanly, delete only the unused generated `src/assets/pastel-fibre-v1.png`.
+
+**Code checkpoint (2026-08-03).** `Paper.grainKind` now distinguishes `watercolor`
+from `pastel`; Canvas sends it through both the paper-generation uniform and the
+composite uniform. `paper.wgsl` uses the pastel branch to bake a subtle common
+long-fibre/cross-fibre height field, so it is the actual tooth dry tools catch.
+`composite.wgsl` mirrors that same function in `grain_h`, while the watercolor
+branch retains its established fBm source. `npm.cmd run build` passes. Live shader
+validation is temporarily blocked because the prior in-app browser connection was
+finalized and no browser can currently be acquired; therefore
+`src/assets/pastel-fibre-v1.png` is intentionally still present. Delete that exact
+unused file only after the browser loads the new shader without a WebGPU warning.
+
+**IN FLIGHT — wet film versus absorbed fibre (Codex, 2026-08-03).** A matched
+live AMD/WebGPU stroke confirmed the intended physical split but exposed a display
+mistake: after 30 identical solver frames, Hot Press held `728.85` water in the
+surface film and `0.00048` in the fibres, while Pastel held `638.49` in the film
+and `59.25` in the fibres. The normal paint view still made them look too alike
+because its wet appearance used whichever was larger — surface film *or* absorbed
+water. Correct that so only a surface film is glossy and strongly deepened; damp
+fibre stays matte with only a restrained darkening. Make Water View keep its teal
+absorbed-water reading visible beneath a weakened surface-blue overlay. Also fix
+the clear-sheet action: it currently resets CanvasEngine's pigment-slot map but
+does not reapply the palette's current recipe, leaving the next stroke water-only.
+After the change, test the same wet Ultramarine stroke on Hot Press and Pastel,
+check the Rinse button gives a genuinely clean water brush, and run the build.
+
+**Implemented checkpoint (2026-08-03).** `Paper.waterUptake` is now a shared
+paper-row property. All watercolour sheets stay at `1`; all pastel tones share
+`6`, carried through the paper uniform and stored as an effective capillary
+radius. The capillary pass permits that thirsty dry sheet to use the extra range
+without changing any existing watercolour row. The normal paint view now separates
+surface film (gloss and full wet deepening) from fibre-bound water (matte, slight
+damp darkening). Water View preserves teal absorbed-water information through a
+weakened blue surface-film overlay. In the same live AMD/WebGPU 30-frame stroke,
+Hot Press held `573.12` in surface film and `0.00043` absorbed; Pastel held
+`389.43` surface and `147.04` absorbed. Build passes and the browser console has
+no WebGPU warning. Clear Sheet affects only the document and preserves the active
+palette mix. The pigment-panel Clear affects only the mix: it empties that recipe
+and gives the brush a full clean-water rinse, leaving the existing painting alone.
+Rinse likewise leaves `0` pigment with a fully water-loaded brush while keeping
+the palette mix ready for the separate Rinse / Load action.
 
 ## IN FLIGHT — thermal / idle-frame investigation (Codex, 2026-08-01)
 

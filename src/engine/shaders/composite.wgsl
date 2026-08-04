@@ -36,7 +36,12 @@ struct Comp {
   pTooth: f32,
   pFreq: f32,
   pSeed: f32,
-  _pad0: f32,
+  grainKind: f32,   // 0 = watercolor grain, 1 = shared fibrous pastel tooth
+
+  // Display tone for the active sheet. This is deliberately separate from the
+  // physical paper texture: every medium still reads the shared paper rows.
+  paperTone: vec3f,
+  _pad1: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -182,6 +187,13 @@ fn grain_vnoise(p: vec2f) -> f32 {
   let d = grain_hash(i + vec2f(1.0, 1.0));
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+// Must mirror `pastel_fibre` in paper.wgsl: this is visible relief from the
+// very same height field the solver and dry-media tooth gate read.
+fn grain_pastel_fibre(p: vec2f) -> f32 {
+  let long = grain_vnoise(vec2f(p.x * 0.72 + p.y * 0.18, p.y * 4.6 - p.x * 0.09));
+  let cross = grain_vnoise(vec2f(p.x * 5.1 + p.y * 0.08, p.y * 0.58));
+  return clamp(0.5 + (long - 0.5) * 0.78 + (cross - 0.5) * 0.22, 0.0, 1.0);
+}
 fn grain_h(uv: vec2f) -> f32 {
   let p = vec2f(uv.x * C.pFreq, uv.y * C.pFreq * 1.15);
   var v = 0.0;
@@ -207,7 +219,13 @@ fn grain_h(uv: vec2f) -> f32 {
     freq = freq * 2.03;
     amp = amp * 0.5;
   }
-  var h = 0.5 + (v - 0.5) * (0.4 + C.pTooth * 1.6);
+  var grain = v;
+  // Watercolour retains the established fBm output. The pastel branch uses one
+  // quiet fibre family for both its visible texture and physical tooth.
+  if (C.grainKind > 0.5) {
+    grain = mix(grain, grain_pastel_fibre(p), 0.68);
+  }
+  var h = 0.5 + (grain - 0.5) * (0.4 + C.pTooth * 1.6);
   return clamp(h, 0.02, 0.98);
 }
 
@@ -256,9 +274,19 @@ fn srgb_encode(c: f32) -> f32 {
   return 1.055 * pow(v, 1.0 / 2.4) - 0.055;
 }
 
+// Paper rows store the artist's familiar sRGB sheet colour. Convert it before
+// multiplying it into the physically linear composite, then encode once at the
+// end as usual. Without this, a charcoal sheet (#373436) is shown as mid-grey.
+fn srgb_decode(c: f32) -> f32 {
+  let v = clamp(c, 0.0, 1.0);
+  if (v <= 0.04045) { return v / 12.92; }
+  return pow((v + 0.055) / 1.055, 2.4);
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4f {
   let bg = vec3f(0.043, 0.047, 0.055);
+  let sheetTone = vec3f(srgb_decode(C.paperTone.r), srgb_decode(C.paperTone.g), srgb_decode(C.paperTone.b));
 
   // Screen px -> document px -> document uv.
   //
@@ -313,9 +341,10 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     total1 = total1 + max(amt1[i], 0.0);
   }
 
-  // Paper: (h, c, sizing, rc). Near-white reflectance, dulled a touch by sizing.
+  // Paper: (h, c, sizing, effective capillary radius). Near-white reflectance,
+  // dulled a touch by sizing.
   let pap = textureSampleLevel(paper, samp, uv, 0.0);
-  let Rpaper = mix(0.93, 0.88, pap.z);   // sized paper sits slightly less brilliant
+  let baseRpaper = mix(0.93, 0.88, pap.z);   // sized paper sits slightly less brilliant
 
   // Wet state drives the gloss dial. A standing water film is specular (low
   // k_instrument -> deep, saturated); as it dries the surface goes matte and the
@@ -323,8 +352,14 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // than a post-process. [UNVERIFIED — Card 4; bench it against real swatches.]
   let w0v = paint(wet0, uv);
   let w5v = paint(wet5, uv);
-  let wetness = clamp(max(w0v.y * 6.0, w5v.x * 3.0), 0.0, 1.0);
-  let kIns = mix(C.kInstrument, 0.0, wetness);
+  // A surface film and water bound in paper fibre are not the same thing. Only
+  // the former is glossy and strongly deepens the wash. Fibre-bound water keeps
+  // a quiet damp darkening, but reads matte.
+  let filmWetness = clamp(w0v.y * 6.0, 0.0, 1.0);
+  let fibreDamp = clamp(w5v.x / max(pap.y, 1.0e-4), 0.0, 1.0);
+  let wetness = max(filmWetness, fibreDamp * 0.22);
+  let kIns = mix(C.kInstrument, 0.0, filmWetness);
+  let Rpaper = baseRpaper * mix(1.0, 0.94, fibreDamp);
 
   // ---- Water view -----------------------------------------------------------
   //
@@ -349,8 +384,8 @@ fn fs(in: VsOut) -> @location(0) vec4f {
 
     // Dry paper reads as the paper, dimmed, so the sheet's tooth still gives a
     // sense of place instead of the mark floating on flat grey.
-    let paperTone = 0.72 + 0.16 * pap.x;
-    var out = vec3f(paperTone * 0.90, paperTone * 0.93, paperTone * 0.97);
+    let paperValue = 0.72 + 0.16 * pap.x;
+    var out = sheetTone * paperValue;
 
     // The amount of water in a drying wash spans about four decades: a fresh
     // flooded stroke carries ~0.08 per cell, and it is still visibly damp at
@@ -366,10 +401,12 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     let ramp = fn_ramp(film, decades);
     let soakAmt = fn_ramp(soak, decades);
 
-    // Soaked-in water first: it lies under the standing film.
-    out = mix(out, vec3f(0.36, 0.62, 0.66), soakAmt * 0.85);
-    // Standing film over it.
-    out = mix(out, vec3f(0.05, 0.24, 0.72), ramp);
+    // Soaked-in water first: it lies under the standing film. When a thirsty
+    // sheet has both, leave the teal visible instead of letting surface blue
+    // completely hide the absorbed-water signal.
+    out = mix(out, vec3f(0.36, 0.62, 0.66), soakAmt * 0.9);
+    let visibleFilm = ramp * (1.0 - soakAmt * 0.62);
+    out = mix(out, vec3f(0.05, 0.24, 0.72), visibleFilm);
 
     // The wet mask boundary, drawn as a faint line. This is the contact line —
     // the thing the drying rate is keyed to, and the thing whose behaviour the
@@ -452,7 +489,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
   let lambert = clamp(dot(n, lightDir), 0.0, 1.0);
   let shade = 0.82 + 0.18 * lambert;      // subtle; paper is not shiny
-  rgb = rgb * shade;
+  rgb = rgb * sheetTone * shade;
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

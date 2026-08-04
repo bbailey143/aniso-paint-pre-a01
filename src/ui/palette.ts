@@ -53,6 +53,8 @@ export class Palette {
   private recipeRow!: HTMLElement;
   private events: PaletteEvents;
   private mediumInfo?: HTMLElement;
+  private activeDry: DryMedium | null = null;
+  private activePaper: Paper = PAPERS[1];
 
   constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
@@ -69,11 +71,19 @@ export class Palette {
 
     this.buildWells();
     this.buildSurface(initialEvapRate);
-    this.root.querySelector('#mix-clear')!.addEventListener('click', () => this.clear());
+    this.root.querySelector('#mix-clear')!.addEventListener('click', () => {
+      // This is the pigment-panel Clear, not Clear Sheet: leave the painting
+      // alone, empty the colour recipe, and give the brush a full clean-water
+      // rinse so the very next mark cannot carry the old mix.
+      this.clear();
+      this.events.onRinse?.();
+    });
     this.refresh();
   }
 
   private buildSurface(initialEvapRate: number) {
+    this.buildToolPicker();
+    this.buildPaperPicker();
     // The tool rack: wet brushes and dry media side by side. They are different
     // engines underneath — a brush solves a tuft and pushes fluid, a pencil
     // scrapes a tip across the tooth — but to the hand they are just tools, so
@@ -156,7 +166,9 @@ export class Palette {
       // Size belongs to whichever tool is in hand — resizing a pencil must not
       // silently put the brush back.
       const dryOn = dries.querySelector('.paper.on');
-      if (dryOn) {
+      if (this.activeDry) {
+        this.events.onDryMedium?.(this.activeDry, this.brushSize);
+      } else if (dryOn) {
         const t = DRY_TOOLS[Array.from(dries.children).indexOf(dryOn)];
         this.events.onDryMedium?.(t.medium, this.brushSize);
       } else {
@@ -203,6 +215,7 @@ export class Palette {
     // water move down/right on the page without a hidden axis flip.
     const tiltPad = this.root.querySelector('#tilt-pad') as HTMLElement;
     const tiltPuck = this.root.querySelector('#tilt-puck') as HTMLElement;
+    const tiltAngle = this.root.querySelector('#tilt-angle') as HTMLElement;
     const setTilt = (clientX: number, clientY: number) => {
       const rect = tiltPad.getBoundingClientRect();
       const radius = Math.max(1, rect.width / 2 - 10);
@@ -211,6 +224,10 @@ export class Palette {
       const length = Math.hypot(x, y);
       if (length > 1) { x /= length; y /= length; }
       tiltPuck.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      // The puck radius is sin(alpha), so invert it for the artist-facing board
+      // angle. Centre is level; the rim is a 90 degree slope.
+      const degrees = Math.round(Math.asin(Math.min(1, length)) * 180 / Math.PI);
+      tiltAngle.textContent = `tilt: ${degrees}°`;
       // The radial puck distance is sin(alpha), so this is cos(alpha) for the
       // existing capillary pass while x/y remain the normalized gravity vector.
       this.events.onTiltChange?.(x, y, Math.sqrt(Math.max(0, 1 - x * x - y * y)));
@@ -224,6 +241,7 @@ export class Palette {
     });
     this.root.querySelector('#tilt-level')!.addEventListener('click', () => {
       tiltPuck.style.transform = 'translate(0, 0)';
+      tiltAngle.textContent = 'tilt: 0°';
       this.events.onTiltChange?.(0, 0, 1);
     });
 
@@ -255,6 +273,110 @@ export class Palette {
   }
 
   /** The shared press-and-hold gesture used by media, brushes, and papers. */
+  private buildToolPicker() {
+    const host = this.root.querySelector('#tool-picker')!;
+    const choices = [
+      ...BRUSHES.map((brush) => ({ family: 'Water Media', collection: 'Watercolour Brushes', name: brush.name, brush })),
+      ...DRY_TOOLS.map((tool) => {
+        const collection = tool.slug.startsWith('graphite-') ? 'Graphite'
+          : tool.slug.startsWith('ballpoint-') ? 'Ballpoint'
+          : tool.slug === 'fountain-chisel' ? 'Fountain Pen' : 'Drawing Sticks';
+        return { family: 'Dry Media', collection, name: tool.name, dry: tool.medium };
+      }),
+    ];
+    const family = document.createElement('select');
+    const collection = document.createElement('select');
+    const tool = document.createElement('select');
+    family.setAttribute('aria-label', 'Tool family');
+    collection.setAttribute('aria-label', 'Tool collection');
+    tool.setAttribute('aria-label', 'Tool');
+    const inspect = document.createElement('button');
+    inspect.className = 'pal-btn inspect-btn';
+    inspect.type = 'button';
+    inspect.textContent = 'Inspect tool';
+    host.append(family, collection, tool, inspect);
+    const fill = (el: HTMLSelectElement, values: string[], selected?: string) => {
+      el.replaceChildren(...values.map((value) => {
+        const option = document.createElement('option'); option.value = value; option.textContent = value;
+        return option;
+      }));
+      if (selected && values.includes(selected)) el.value = selected;
+    };
+    const update = (keep = true) => {
+      const families = [...new Set(choices.map((item) => item.family))];
+      fill(family, families, keep ? family.value : 'Water Media');
+      const collections = [...new Set(choices.filter((item) => item.family === family.value).map((item) => item.collection))];
+      fill(collection, collections, keep ? collection.value : 'Watercolour Brushes');
+      const available = choices.filter((item) => item.family === family.value && item.collection === collection.value);
+      fill(tool, available.map((item) => item.name), keep ? tool.value : 'Round Sable');
+      return available.find((item) => item.name === tool.value)!;
+    };
+    const apply = () => {
+      const selected = update();
+      if ('brush' in selected) {
+        this.activeDry = null;
+        this.brush = selected.brush;
+        this.root.classList.remove('dry-mode');
+        this.events.onBrushChange?.(selected.brush, this.brushSize);
+      } else {
+        this.activeDry = selected.dry;
+        this.root.classList.add('dry-mode');
+        this.events.onDryMedium?.(selected.dry, this.brushSize);
+      }
+    };
+    family.addEventListener('change', () => { update(); apply(); });
+    collection.addEventListener('change', () => { update(); apply(); });
+    tool.addEventListener('change', apply);
+    inspect.addEventListener('click', () => {
+      const selected = update();
+      if ('brush' in selected) this.showBrushInfo(selected.brush, inspect);
+      else this.showMediumInfo(selected.dry, inspect);
+    });
+    update(false);
+  }
+
+  private buildPaperPicker() {
+    const host = this.root.querySelector('#paper-picker')!;
+    const family = document.createElement('select');
+    const collection = document.createElement('select');
+    const sheet = document.createElement('select');
+    family.setAttribute('aria-label', 'Paper family');
+    collection.setAttribute('aria-label', 'Paper collection');
+    sheet.setAttribute('aria-label', 'Sheet');
+    const summary = document.createElement('div');
+    summary.className = 'paper-summary';
+    const swatch = document.createElement('i');
+    const label = document.createElement('span');
+    const inspect = document.createElement('button');
+    inspect.className = 'pal-btn inspect-btn'; inspect.type = 'button'; inspect.textContent = 'Inspect paper';
+    summary.append(swatch, label, inspect);
+    host.append(family, collection, sheet, summary);
+    const fill = (el: HTMLSelectElement, values: string[], selected?: string) => {
+      el.replaceChildren(...values.map((value) => {
+        const option = document.createElement('option'); option.value = value; option.textContent = value;
+        return option;
+      }));
+      if (selected && values.includes(selected)) el.value = selected;
+    };
+    const update = (keep = true) => {
+      fill(family, [...new Set(PAPERS.map((item) => item.family))], keep ? family.value : 'Watercolor');
+      fill(collection, [...new Set(PAPERS.filter((item) => item.family === family.value).map((item) => item.collection))], keep ? collection.value : 'Cold Press');
+      const available = PAPERS.filter((item) => item.family === family.value && item.collection === collection.value);
+      fill(sheet, available.map((item) => item.name), keep ? sheet.value : 'Medium Texture');
+      const selected = available.find((item) => item.name === sheet.value)!;
+      this.activePaper = selected;
+      swatch.style.background = `rgb(${selected.tone.map((value) => Math.round(value * 255)).join(', ')})`;
+      label.textContent = `${selected.grainStyle} — ${selected.wetSuitability}`;
+      return selected;
+    };
+    const apply = () => this.events.onPaperChange?.(update());
+    family.addEventListener('change', () => { update(); apply(); });
+    collection.addEventListener('change', () => { update(); apply(); });
+    sheet.addEventListener('change', apply);
+    inspect.addEventListener('click', () => this.showPaperInfo(this.activePaper, inspect));
+    update(false);
+  }
+
   private installSettingsHold(el: HTMLElement, open: () => void) {
     let holdTimer: number | undefined;
     let blockClickUntil = 0;
@@ -536,24 +658,31 @@ export class Palette {
           <button id="rinse" class="pal-btn jar-btn" title="Rinse the brush — pigment out, clean water in. The sheet is untouched.">
             <span class="jar-ico">◌</span> rinse
           </button>
-          <button id="rinse-load" class="pal-btn jar-btn accent" title="Rinse, then re-dip in the current mix — back to a known state.">
+          <button id="rinse-load" class="pal-btn jar-btn" title="Rinse, then re-dip in the current mix — back to a known state.">
             <span class="jar-ico">◍</span> rinse / load
           </button>
         </div>
         <div id="recipe" class="recipe"></div>
       </div>
       <div class="surface">
+        <div class="pal-sub">tool</div>
+        <div id="tool-picker" class="linked-picker" aria-label="Tool picker"></div>
+        <div id="legacy-tools" aria-hidden="true">
         <div class="pal-sub">brush</div>
         <div id="brushes" class="papers"></div>
         <div class="pal-sub">dry media</div>
         <div id="dry-tools" class="papers six"></div>
-        <p class="medium-hint">press and hold a tool or paper for settings</p>
+        </div>
+        <p class="medium-hint">Choose a family, then a collection and tool. Inspect keeps its card pinned.</p>
         <label class="loading-row">
           <span>size</span>
           <input id="brush-size" type="range" min="0.15" max="2.4" step="0.025" />
         </label>
         <div class="pal-sub">paper</div>
+        <div id="paper-picker" class="linked-picker" aria-label="Paper picker"></div>
+        <div id="legacy-papers" aria-hidden="true">
         <div id="papers" class="papers"></div>
+        </div>
         <label class="loading-row">
           <span>load</span>
           <input id="loading" type="range" min="0.02" max="1" step="0.02" />
@@ -571,6 +700,7 @@ export class Palette {
           <div id="tilt-pad" class="tilt-pad" role="application" aria-label="Drag the blue puck toward the downhill direction">
             <span id="tilt-puck" class="tilt-puck"></span>
           </div>
+          <p id="tilt-angle" class="tilt-angle">tilt: 0°</p>
           <p class="tilt-hint">drag toward downhill</p>
         </section>
         <label class="loading-row" title="Show where the water is instead of the colour. Deep blue is a lot of standing water, teal is water soaked into the fibres, the yellow line is the wet edge. Display only — it changes nothing about the paint.">
