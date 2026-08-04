@@ -29,6 +29,7 @@ export class Palette {
       onPaperChange: (paper) => events.onPaperChange?.(paper),
     }, this.settings);
     this.controls = new SurfaceControls(this.root, {
+      onLoadingChange: (loading) => events.onMixChange?.(recipeToHex(this.recipe), this.recipe, loading),
       onEvapChange: (rate) => events.onEvapChange?.(rate),
       onWaterChange: (charge) => events.onWaterChange?.(charge),
       onTiltChange: (x, y, cosAlpha) => events.onTiltChange?.(x, y, cosAlpha),
