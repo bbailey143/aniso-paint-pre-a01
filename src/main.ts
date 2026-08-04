@@ -1,3 +1,3 @@
 import { WindowManager } from './ui/window-manager';
-
-// ... existing imports and application code remain unchanged ...
+// WindowManager integration is loaded by the application entry point.
+void WindowManager;
