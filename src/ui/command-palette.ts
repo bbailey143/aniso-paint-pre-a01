@@ -52,10 +52,10 @@ export class CommandPalette {
     this.trigger = document.createElement('div');
     this.trigger.id = 'cmd-trigger';
     this.trigger.setAttribute('role', 'button');
-    this.trigger.setAttribute('aria-label', 'Open command palette (Ctrl+K)');
+    this.trigger.setAttribute('aria-label', 'Open command palette (Alt+K)');
     this.trigger.tabIndex = 0;
     this.trigger.innerHTML = `
-      <span class="cmd-hint">⌘K · commands</span>
+      <span class="cmd-hint">Alt+K · commands</span>
       <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>`;
     document.body.appendChild(this.trigger);
 
@@ -78,7 +78,7 @@ export class CommandPalette {
     });
 
     window.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         this.open ? this.hide() : this.show();
       }
