@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .vite/
 bench/canvas-spike/target/
+.env

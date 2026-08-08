@@ -1,4 +1,4 @@
-﻿cargo :    Compiling canvas-spike v0.1.0 (C:\Users\benja\Documents\aniso-paint-pre-a01\bench\canvas-spike)
+cargo :    Compiling canvas-spike v0.1.0 (C:\Users\benja\Documents\aniso-paint-pre-a01\bench\canvas-spike)
 At line:1 char:116
 + ... paint-pre-a01\bench\canvas-spike"; cargo build --release 2>&1 | Out-F ...
 +                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
