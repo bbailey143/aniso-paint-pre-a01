@@ -4,10 +4,12 @@ import { PointerInput, type StylusSample } from './input/pointer';
 import { StrokeEngine } from './input/stroke';
 import { Palette } from './ui/palette';
 import { WindowManager } from './ui/window-manager';
+import { CommandPalette } from './ui/command-palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
-import { WATERCOLOR } from './media/library';
+import { WATERCOLOR, DRY_TOOLS } from './media/library';
+import { PIGMENTS } from './color/pigment-palette';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 function setText(id: string, text: string) { document.getElementById(id)?.replaceChildren(document.createTextNode(text)); }
@@ -73,6 +75,54 @@ async function main() {
   }, WATERCOLOR.evapRate);
   engine.setPaper(PAPERS[1]); engine.setWetMedium(WATERCOLOR); engine.setMix(palette.recipe); if (palette.recipe.size === 0) palette.add('ultramarine-blue'); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
   new WindowManager();
+  const cmd = new CommandPalette();
+
+  // — Tools —
+  BRUSHES.forEach((b) => {
+    cmd.register({
+      id: `tool-${b.slug}`, name: b.name, group: 'Tools',
+      hint: b.kind === 'flat' ? 'Flat brush — spreads and scratches' : 'Round brush — points well',
+      keywords: 'brush paint wet',
+      action: () => { setConteSelected(false); stroke.setBrush(b, palette.brushSize); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); updatePenCursorContact(); },
+    });
+  });
+  DRY_TOOLS.forEach((t) => {
+    cmd.register({
+      id: `tool-${t.slug}`, name: t.name, group: 'Tools',
+      hint: t.medium.family === 'dry' ? 'Dry media' : undefined,
+      keywords: 'dry pencil graphite charcoal conte crayon ink ballpoint fountain',
+      action: () => { stroke.setDryMedium(t.medium, palette.brushSize); engine.setDryMix(new Map(t.medium.pigments)); setConteSelected(t.medium.slug === 'conte-crayon'); updatePenCursorContact(); },
+    });
+  });
+
+  // — Paper —
+  PAPERS.forEach((p) => {
+    cmd.register({
+      id: `paper-${p.slug}`, name: p.name, group: 'Paper',
+      hint: `${p.family} — ${p.grainStyle}`,
+      keywords: 'paper sheet substrate surface',
+      action: () => { engine.setPaper(p); requestFrame(); },
+    });
+  });
+
+  // — Pigments —
+  for (const p of PIGMENTS) {
+    cmd.register({
+      id: `pigment-${p.slug}`, name: p.name, group: 'Pigments',
+      hint: p.ci,
+      keywords: `color colour ${p.temp}`,
+      action: () => { palette.add(p.slug); },
+    });
+  }
+
+  // — Actions —
+  cmd.register({ id: 'act-clear', name: 'Clear Sheet', group: 'Actions', hint: 'Wipe the painting', keywords: 'clear wipe erase delete', action: () => { engine.clear(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); } });
+  cmd.register({ id: 'act-rinse', name: 'Rinse Brush', group: 'Actions', hint: 'Pigment out, clean water in', keywords: 'rinse wash clean water', action: () => stroke.rinse(1) });
+  cmd.register({ id: 'act-rinse-load', name: 'Rinse & Re-dip', group: 'Actions', hint: 'Rinse then reload current mix', keywords: 'rinse load dip reload', action: () => { stroke.rinse(1); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); } });
+  cmd.register({ id: 'act-clear-mix', name: 'Clear Mix', group: 'Actions', hint: 'Empty the colour recipe', keywords: 'mix clear empty color', action: () => { palette.clear(); stroke.rinse(1); } });
+  cmd.register({ id: 'act-water-view', name: 'Toggle Water View', group: 'Actions', hint: 'See where water is, not colour', keywords: 'water view debug display', action: () => { engine.waterView = !engine.waterView; requestFrame(); } });
+  cmd.register({ id: 'act-tilt-level', name: 'Level the Board', group: 'Actions', hint: 'Return paper to flat', keywords: 'tilt level flat board gravity', action: () => { engine.setFluid({ gravityX: 0, gravityY: 0, cosAlpha: 1 }); requestFrame(); } });
+  cmd.register({ id: 'act-fit', name: 'Fit View', group: 'Actions', hint: 'Reset zoom and pan', shortcut: 'Ctrl+0', keywords: 'zoom fit reset view', action: () => { engine.resetView(); setZoomHud(); requestFrame(); } });
 
   function toDoc(px: number, py: number) { const vw = gpu.canvas.width, vh = gpu.canvas.height; const scale = Math.min(vw / engine.doc, vh / engine.doc) * engine.zoom; return { dx: (px - vw / 2) / scale + engine.panX, dy: (py - vh / 2) / scale + engine.panY }; }
   function toGrid(s: StylusSample) { const { dx, dy } = toDoc(s.px, s.py); if (dx < 0 || dy < 0 || dx > engine.doc || dy > engine.doc) return null; return { gx: (dx / engine.doc) * engine.sim, gy: (dy / engine.doc) * engine.sim }; }
