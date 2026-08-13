@@ -255,6 +255,13 @@ async function main() {
   document.getElementById('p-reset')!.addEventListener('click', () => {
     worstFrame = 0; missedFrames = 0; runFrames = 0; smoothFrame = 0; smoothCpu = 0;
   });
+  // The touch equivalent of Ctrl+0.
+  document.getElementById('view-fit')!.addEventListener('click', () => {
+    engine.resetView();
+    setZoomHud();
+    updatePenCursorContact();
+    requestFrame();
+  });
 
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setWetMedium(WATERCOLOR);
@@ -371,11 +378,99 @@ async function main() {
   canvas.addEventListener('auxclick', (ev) => { if (ev.button === 1) ev.preventDefault(); });
   setZoomHud();
 
+  // ---- Touch: fingers move the paper, the Pencil paints --------------------
+  //
+  // There is no wheel and no space bar on an iPad, so without this the sheet
+  // cannot be moved or zoomed at all.
+  //
+  // Fingers deliberately never paint. A pinch always begins with one finger
+  // landing a moment before the second, so if a single finger painted, every
+  // zoom would start by laying a mark on the paper — and on a wet wash that
+  // mark spreads and cannot be taken back. Keeping the Pencil for paint and
+  // fingers for navigation removes that failure entirely rather than trying to
+  // detect it after the fact.
+  const touches = new Map<number, { x: number; y: number }>();
+  let pinch: { spread: number; cx: number; cy: number } | null = null;
+
+  const touchCentre = () => {
+    let x = 0, y = 0;
+    for (const t of touches.values()) { x += t.x; y += t.y; }
+    const n = Math.max(1, touches.size);
+    return { x: x / n, y: y / n };
+  };
+  // Distance between the first two fingers. Zero with fewer than two down,
+  // which is what makes a one-finger drag a pure slide.
+  const touchSpread = () => {
+    if (touches.size < 2) return 0;
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  // Re-baseline instead of applying a delta. Adding or lifting a finger moves
+  // the centre point, and without this the sheet jumps at the moment a second
+  // finger arrives.
+  const rebase = () => {
+    const c = touchCentre();
+    pinch = { spread: touchSpread(), cx: c.x, cy: c.y };
+  };
+
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType !== 'touch') return;
+    // A finger landing mid-stroke must not drag the sheet out from under the
+    // Pencil that is drawing on it.
+    if (painting) return;
+    ev.preventDefault();
+    touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    // Capture keeps the gesture alive if a finger slides off the canvas onto a
+    // rail. It can throw on a pointer the browser no longer considers active,
+    // and a failed capture must not abandon the gesture.
+    try { canvas.setPointerCapture(ev.pointerId); } catch { /* gesture still tracks */ }
+    rebase();
+  }, { capture: true });
+
+  canvas.addEventListener('pointermove', (ev) => {
+    if (ev.pointerType !== 'touch' || !touches.has(ev.pointerId)) return;
+    ev.preventDefault();
+    touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (!pinch) return;
+    const c = touchCentre();
+    const spread = touchSpread();
+
+    // Slide first: the sheet follows the centre of the fingers.
+    engine.panBy((c.x - pinch.cx) * gpu.dpr, (c.y - pinch.cy) * gpu.dpr,
+                 gpu.canvas.width, gpu.canvas.height);
+
+    // Then zoom about that same point, so the bit of paper between the fingers
+    // is the bit that stays put — the same rule the mouse wheel follows.
+    if (spread > 0 && pinch.spread > 0) {
+      const r = canvas.getBoundingClientRect();
+      const { dx, dy } = toDoc((c.x - r.left) * gpu.dpr, (c.y - r.top) * gpu.dpr);
+      engine.zoomAt(spread / pinch.spread, dx, dy);
+    }
+
+    pinch = { spread, cx: c.x, cy: c.y };
+    setZoomHud();
+    updatePenCursorContact();
+    requestFrame();
+  }, { capture: true });
+
+  const endTouch = (ev: PointerEvent) => {
+    if (!touches.has(ev.pointerId)) return;
+    touches.delete(ev.pointerId);
+    if (touches.size === 0) pinch = null;
+    else rebase();
+  };
+  canvas.addEventListener('pointerup', endTouch, { capture: true });
+  canvas.addEventListener('pointercancel', endTouch, { capture: true });
+
   let smoothV = 0;
   new PointerInput(canvas, () => gpu.dpr, {
     // The gate that makes hand-panning safe: while space is held or a pan is
-    // under way, a press on the canvas never becomes a stroke.
-    shouldIgnorePress() { return spaceHeld || panning; },
+    // under way, a press on the canvas never becomes a stroke. A finger is
+    // refused here too — this, not event ordering, is what guarantees a pinch
+    // cannot leave paint behind.
+    shouldIgnorePress(e: PointerEvent) {
+      return spaceHeld || panning || e.pointerType === 'touch';
+    },
     onStrokeStart(s: StylusSample) {
       painting = true;
       setHand();

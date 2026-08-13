@@ -697,6 +697,9 @@ export class Palette {
           <span>water view</span>
           <input id="water-view" type="checkbox" />
         </label>
+        <!-- There is no Ctrl+0 on an iPad, so getting back to the whole sheet
+             needs a control you can actually reach with a finger. -->
+        <button id="view-fit" class="pal-btn" title="Show the whole sheet again">fit sheet</button>
         <button id="wash-clear" class="pal-btn">clear sheet</button>
       </section>`;
   }
