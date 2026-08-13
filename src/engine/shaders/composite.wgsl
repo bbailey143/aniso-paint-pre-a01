@@ -271,8 +271,14 @@ fn overLayer(Rsub: f32, KS: vec2f, thickness: f32) -> f32 {
   let A = 1.0 + ratio;
   let Bc = sqrt(max(ratio * ratio + 2.0 * ratio, 0.0));
   let bSx = clamp(Bc * KS.y * thickness, 0.0, 40.0);
-  let sh = sinh_(bSx);
-  let ch = cosh_(bSx);
+  // sinh and cosh of the SAME argument, so take the exponential once and read
+  // both off it. Identical arithmetic; this runs 38 bands deep on every layer
+  // of every painted pixel. The compiler may already fold it — measure before
+  // believing this bought anything.
+  let ex = exp(bSx);
+  let inv = 1.0 / ex;
+  let sh = (ex - inv) * 0.5;
+  let ch = (ex + inv) * 0.5;
   let denom = A * sh + Bc * ch;
   let Rl = sh / denom;
   let Tl = Bc / denom;
