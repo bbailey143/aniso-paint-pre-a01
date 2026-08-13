@@ -8,6 +8,7 @@ import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu 
 import { PointerInput, type StylusSample } from './input/pointer';
 import { StrokeEngine } from './input/stroke';
 import { Palette } from './ui/palette';
+import { Rail } from './ui/rail';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
@@ -152,6 +153,7 @@ async function main() {
   // startup value outside the palette object so that first announcement can
   // charge the brush before `palette` itself has been assigned.
   let waterCharge = 0;
+
   // A blank sheet should be still. Request a frame only when there is something
   // new to show, or while the wet solver says paint is still moving.
   let framePending = false;
@@ -212,6 +214,21 @@ async function main() {
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
     },
   }, WATERCOLOR.evapRate);
+  // ---- Left rail: the instrument side --------------------------------------
+  // The studio's own five drawers hang off the right rail, built inside the
+  // palette. This side carries what is not a painting control: the readouts,
+  // and a switch for the paint box itself.
+  const leftRail = new Rail('left');
+  const debugPanel = document.getElementById('debug-panel')!;
+  debugPanel.hidden = false;               // the drawer owns visibility now
+  leftRail.addPanel({
+    id: 'debug', label: 'Debug', title: 'Debug Information', body: debugPanel,
+  });
+  leftRail.addToggle({
+    id: 'paints', label: 'Paints', title: 'Show or hide the paint box', on: true,
+    onChange: (on) => palette.setPanSetVisible(on),
+  });
+
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setWetMedium(WATERCOLOR);
   engine.setMix(palette.recipe);

@@ -1,12 +1,14 @@
-// The pigment tray + mixing area (P2).
+// The studio panel: tools, paper, and the sheet-level controls.
 //
-// Twelve measured pigments. Click a well to add a part to the current mix; the
-// result is computed through the real Kubelka-Munk chain and shown beside the
-// "naive RGB average" so the difference is visible — blue + yellow makes green
-// under KM and grey/brown under RGB. That contrast is the product thesis.
+// The pigments used to live here too. They now have their own floating box —
+// see ui/pan-set.ts — but this class still owns the recipe both of its mixing
+// surfaces edit, and is still the only thing that announces a mix change. The
+// colour it reports is the real Kubelka-Munk result; the old side-by-side
+// "naive RGB average" comparison has been retired.
 
-import { PIGMENTS } from '../color/pigment-palette';
-import { recipeToHex, recipeToNaiveRGBHex, tintHex, type Recipe } from '../color/km';
+import { recipeToHex, type Recipe } from '../color/km';
+import { PanSet } from './pan-set';
+import { Rail } from './rail';
 import { PAPERS, type Paper } from '../substrate/papers';
 import { BRUSHES } from '../brush/library';
 import type { BrushDef } from '../brush/types';
@@ -47,10 +49,10 @@ export class Palette {
   brush: BrushDef = BRUSHES[0];
   brushSize = 1.0;
   private root: HTMLElement;
-  private mixSwatch!: HTMLElement;
-  private rgbSwatch!: HTMLElement;
-  private mixHexLabel!: HTMLElement;
-  private recipeRow!: HTMLElement;
+  /** The studio's five drawers hang off this. */
+  private rail: Rail;
+  /** The pigments live in their own floating box now — see ui/pan-set.ts. */
+  private panSet: PanSet;
   private events: PaletteEvents;
   private mediumInfo?: HTMLElement;
   private activeDry: DryMedium | null = null;
@@ -58,26 +60,44 @@ export class Palette {
 
   constructor(mount: HTMLElement, events: PaletteEvents = {}, initialEvapRate = 0) {
     this.events = events;
+    // `#palette` is now a bare container, not a panel. Its children are the
+    // rail and the drawers, each fixed to the right edge on its own.
     this.root = document.createElement('div');
     this.root.id = 'palette';
-    this.root.className = 'panel';
     this.root.innerHTML = this.template();
     mount.appendChild(this.root);
+    this.rail = new Rail('right', this.root);
 
-    this.mixSwatch = this.root.querySelector('#mix-km')!;
-    this.rgbSwatch = this.root.querySelector('#mix-rgb')!;
-    this.mixHexLabel = this.root.querySelector('#mix-hex')!;
-    this.recipeRow = this.root.querySelector('#recipe')!;
-
-    this.buildWells();
-    this.buildSurface(initialEvapRate);
-    this.root.querySelector('#mix-clear')!.addEventListener('click', () => {
-      // This is the pigment-panel Clear, not Clear Sheet: leave the painting
-      // alone, empty the colour recipe, and give the brush a full clean-water
-      // rinse so the very next mark cannot carry the old mix.
-      this.clear();
-      this.events.onRinse?.();
+    // The pan set is a separate floating window, not a section of this panel.
+    // It owns the pans, the mixing slab and the by-parts stack; this palette
+    // still owns the recipe those surfaces are editing.
+    this.panSet = new PanSet(mount, {
+      // A fresh dip replaces the load; otherwise clicks stack, which is the
+      // by-parts mixing the bottom flap has always done.
+      onPickPigment: (slug, fresh) => {
+        if (fresh) this.recipe.clear();
+        this.add(slug);
+      },
+      onLoadRecipe: (recipe) => this.setRecipe(recipe),
+      onRemovePart: (slug) => this.remove(slug),
+      onClearMix: () => {
+        // This is the pigment Clear, not Clear Sheet: leave the painting alone,
+        // empty the colour recipe, and give the brush a full clean-water rinse
+        // so the very next mark cannot carry the old mix.
+        this.clear();
+        this.events.onRinse?.();
+      },
+      // No refresh() on either rinse: refresh re-fires onMixChange, which
+      // re-dips the brush, so rinsing and then refreshing would immediately
+      // undo the rinse. The palette still holds the mix; only the brush was
+      // washed out.
+      onRinse: () => this.events.onRinse?.(),
+      onRinseLoad: () => this.events.onRinseLoad?.(),
     });
+
+    this.buildSurface(initialEvapRate);
+    // Wire the controls first, then re-parent them into drawers.
+    this.buildRail();
     this.refresh();
   }
 
@@ -106,7 +126,7 @@ export class Palette {
         clearAll();
         el.classList.add('on');
         this.brush = b;
-        this.root.classList.remove('dry-mode');
+        this.setDryMode(false);
         this.events.onBrushChange?.(b, this.brushSize);
       });
       brushes.appendChild(el);
@@ -154,7 +174,7 @@ export class Palette {
         }
         clearAll();
         el.classList.add('on');
-        this.root.classList.add('dry-mode');
+        this.setDryMode(true);
         this.events.onDryMedium?.(t.medium, this.brushSize);
       });
       dries.appendChild(el);
@@ -253,23 +273,6 @@ export class Palette {
       this.events.onWaterView?.(waterView.checked);
     });
 
-    const flash = (el: Element) => {
-      el.classList.add('flash');
-      setTimeout(() => el.classList.remove('flash'), 220);
-    };
-    // No refresh() here on purpose: refresh re-fires onMixChange, which re-dips
-    // the brush — so rinsing and then refreshing would immediately undo the
-    // rinse. The palette still holds the mix; only the brush was washed out.
-    const rinseBtn = this.root.querySelector('#rinse')!;
-    rinseBtn.addEventListener('click', () => {
-      this.events.onRinse?.();
-      flash(rinseBtn);
-    });
-    const rinseLoadBtn = this.root.querySelector('#rinse-load')!;
-    rinseLoadBtn.addEventListener('click', () => {
-      this.events.onRinseLoad?.();
-      flash(rinseLoadBtn);
-    });
   }
 
   /** The shared press-and-hold gesture used by media, brushes, and papers. */
@@ -316,11 +319,11 @@ export class Palette {
       if ('brush' in selected) {
         this.activeDry = null;
         this.brush = selected.brush;
-        this.root.classList.remove('dry-mode');
+        this.setDryMode(false);
         this.events.onBrushChange?.(selected.brush, this.brushSize);
       } else {
         this.activeDry = selected.dry;
-        this.root.classList.add('dry-mode');
+        this.setDryMode(true);
         this.events.onDryMedium?.(selected.dry, this.brushSize);
       }
     };
@@ -635,37 +638,13 @@ export class Palette {
     this.mediumInfo = undefined;
   }
 
+  /** Each `studio-part` becomes its own drawer on the right rail. They were one
+   *  scrolling column until the iPad showed what that costs: a panel the height
+   *  of the screen sitting on the painting the whole time it is open. Splitting
+   *  them means the thing you opened is the only thing in the way. */
   private template(): string {
     return `
-      <div class="pal-head">
-        <span class="hud-title">pigments</span>
-        <button id="mix-clear" class="pal-btn" title="clear mix">clear</button>
-      </div>
-      <div id="wells" class="wells"></div>
-      <div class="mix">
-        <div class="mix-swatches">
-          <div class="mix-col">
-            <div id="mix-km" class="swatch big" title="Kubelka-Munk (real pigment)"></div>
-            <span class="mix-cap">Kubelka-Munk</span>
-          </div>
-          <div class="mix-col">
-            <div id="mix-rgb" class="swatch big muted" title="naive RGB average (wrong)"></div>
-            <span class="mix-cap">naive RGB</span>
-          </div>
-        </div>
-        <div id="mix-hex" class="mix-hex">—</div>
-        <div class="jar">
-          <button id="rinse" class="pal-btn jar-btn" title="Rinse the brush — pigment out, clean water in. The sheet is untouched.">
-            <span class="jar-ico">◌</span> rinse
-          </button>
-          <button id="rinse-load" class="pal-btn jar-btn" title="Rinse, then re-dip in the current mix — back to a known state.">
-            <span class="jar-ico">◍</span> rinse / load
-          </button>
-        </div>
-        <div id="recipe" class="recipe"></div>
-      </div>
-      <div class="surface">
-        <div class="pal-sub">tool</div>
+      <section class="studio-part" data-part="tool" data-label="Tool">
         <div id="tool-picker" class="linked-picker" aria-label="Tool picker"></div>
         <div id="legacy-tools" aria-hidden="true">
         <div class="pal-sub">brush</div>
@@ -678,11 +657,16 @@ export class Palette {
           <span>size</span>
           <input id="brush-size" type="range" min="0.15" max="2.4" step="0.025" />
         </label>
-        <div class="pal-sub">paper</div>
+      </section>
+
+      <section class="studio-part" data-part="paper" data-label="Paper">
         <div id="paper-picker" class="linked-picker" aria-label="Paper picker"></div>
         <div id="legacy-papers" aria-hidden="true">
         <div id="papers" class="papers"></div>
         </div>
+      </section>
+
+      <section class="studio-part" data-part="paint" data-label="Paint">
         <label class="loading-row">
           <span>load</span>
           <input id="loading" type="range" min="0.02" max="1" step="0.02" />
@@ -695,36 +679,58 @@ export class Palette {
           <span title="Evaporation speed">drying</span>
           <input id="evap" type="range" min="0" max="0.004" step="0.0001" />
         </label>
-        <section class="tilt-control" aria-label="paper tilt">
+      </section>
+
+      <section class="studio-part" data-part="board" data-label="Board">
+        <div class="tilt-control" aria-label="paper tilt">
           <div class="tilt-head"><span>tilt</span><button id="tilt-level" class="pal-btn" title="Return the paper to level">level</button></div>
           <div id="tilt-pad" class="tilt-pad" role="application" aria-label="Drag the blue puck toward the downhill direction">
             <span id="tilt-puck" class="tilt-puck"></span>
           </div>
           <p id="tilt-angle" class="tilt-angle">tilt: 0°</p>
           <p class="tilt-hint">drag toward downhill</p>
-        </section>
+        </div>
+      </section>
+
+      <section class="studio-part" data-part="sheet" data-label="Sheet">
         <label class="loading-row" title="Show where the water is instead of the colour. Deep blue is a lot of standing water, teal is water soaked into the fibres, the yellow line is the wet edge. Display only — it changes nothing about the paint.">
           <span>water view</span>
           <input id="water-view" type="checkbox" />
         </label>
         <button id="wash-clear" class="pal-btn">clear sheet</button>
-      </div>`;
+      </section>`;
   }
 
-  private buildWells() {
-    const wells = this.root.querySelector('#wells')!;
-    for (const p of PIGMENTS) {
-      const el = document.createElement('button');
-      el.className = 'well';
-      // Swatch-card look: masstone (full strength) grading to a 25% tint, so the
-      // pigment's true undertone reads even for dark staining blues/violets.
-      const tint = tintHex(p.slug, 0.25) ?? p.hex;
-      el.style.background = `linear-gradient(135deg, ${p.hex} 0%, ${p.hex} 42%, ${tint} 100%)`;
-      el.title = `${p.name} (${p.ci}) — ${p.temp}`;
-      el.setAttribute('aria-label', p.name);
-      el.addEventListener('click', () => this.add(p.slug));
-      wells.appendChild(el);
+  /** Move each part onto the right rail. The drawers stay inside `this.root`,
+   *  so every `this.root.querySelector('#…')` above still resolves and the
+   *  `#palette.dry-mode` dimming rules still reach the controls they dim. */
+  private buildRail() {
+    const titles: Record<string, string> = {
+      tool: 'Tool', paper: 'Paper', paint: 'Paint', board: 'Board', sheet: 'Sheet',
+    };
+    for (const part of Array.from(this.root.querySelectorAll<HTMLElement>('.studio-part'))) {
+      const id = part.dataset.part!;
+      this.rail.addPanel({
+        id,
+        label: part.dataset.label ?? titles[id] ?? id,
+        title: titles[id] ?? id,
+        body: part,
+      });
     }
+  }
+
+  /** The paint box is a depicted object rather than chrome, so it is hidden
+   *  wholesale rather than folded into a drawer. */
+  setPanSetVisible(on: boolean) {
+    this.panSet.setVisible(on);
+  }
+
+  /** A dry tool in hand makes the wet controls inert. Dim them rather than
+   *  remove them, so nothing jumps when the tool changes — and dim the pan set
+   *  too, which is a separate window and does not inherit this panel's class. */
+  private setDryMode(on: boolean) {
+    this.root.classList.toggle('dry-mode', on);
+    this.panSet.setDryMode(on);
   }
 
   add(slug: string, parts = 1) {
@@ -744,26 +750,20 @@ export class Palette {
     this.refresh();
   }
 
+  /** Replace the whole load — this is what lifting a mixture off the slab does.
+   *  The parts arrive as puddle volumes rather than whole counts; KM normalises
+   *  at mix time, so they are carried through as measured. */
+  setRecipe(next: Recipe) {
+    this.recipe.clear();
+    for (const [slug, parts] of next) {
+      if (parts > 0) this.recipe.set(slug, parts);
+    }
+    this.refresh();
+  }
+
   private refresh() {
     const km = recipeToHex(this.recipe);
-    const rgb = recipeToNaiveRGBHex(this.recipe);
-    this.mixSwatch.style.background = km ?? 'transparent';
-    this.rgbSwatch.style.background = rgb ?? 'transparent';
-    this.mixHexLabel.textContent = km ? km : 'add pigments to mix';
-
-    // Recipe chips (click to remove one part).
-    this.recipeRow.innerHTML = '';
-    for (const [slug, parts] of this.recipe) {
-      const p = PIGMENTS.find((x) => x.slug === slug)!;
-      const chip = document.createElement('button');
-      chip.className = 'chip';
-      const dot = tintHex(slug, 0.35) ?? p.hex;
-      chip.innerHTML = `<i style="background:${dot}"></i>${p.name}${parts > 1 ? ` ×${parts}` : ''}`;
-      chip.title = `remove one part of ${p.name}`;
-      chip.addEventListener('click', () => this.remove(slug));
-      this.recipeRow.appendChild(chip);
-    }
-
+    this.panSet.render(this.recipe, km);
     this.events.onMixChange?.(km, this.recipe, this.loading);
   }
 }

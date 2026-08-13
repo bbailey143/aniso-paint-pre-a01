@@ -10,36 +10,42 @@
     <!-- The paint surface. Full-bleed; everything else floats over it. -->
     <canvas id="stage" touch-action="none"></canvas>
 
-    <!-- Minimal, out-of-the-way chrome. Dark and crisp. -->
-    <div id="hud" class="panel">
-      <span class="hud-title">aniso-paint</span>
-      <span id="hud-gpu" class="hud-line">webgpu: …</span>
-      <!-- Wheel zooms about the cursor, middle-drag or space-drag pans,
-           Ctrl/Cmd+0 fits the sheet again. -->
-      <span id="hud-zoom" class="hud-line"
-            title="Wheel to zoom · middle-drag or space-drag to pan · Ctrl+0 to fit">100%</span>
-    </div>
+    <!-- Debug chrome. Not a panel any more: main.ts hands this whole block to
+         the left rail, which keeps it folded away until the Debug tab is
+         pressed. Instrument readings should be available, not resident. -->
+    <div id="debug-panel" hidden>
+      <div class="debug-body">
+        <section id="hud" class="debug-card">
+          <h3 class="debug-subtitle"><span>App</span></h3>
+          <span class="hud-title">aniso-paint</span>
+          <span id="hud-gpu" class="hud-line">webgpu: ...</span>
+          <!-- Wheel zooms about the cursor, middle-drag or space-drag pans,
+               Ctrl/Cmd+0 fits the sheet again. -->
+          <span id="hud-zoom" class="hud-line"
+                title="Wheel to zoom - middle-drag or space-drag to pan - Ctrl+0 to fit">100%</span>
+        </section>
 
-    <!-- Live stylus readout (P1 proof the tablet is wired). -->
-    <div id="stylus" class="panel">
-      <div class="stylus-row"><span>type</span><b id="s-type">—</b></div>
-      <div class="stylus-row"><span>pressure</span><b id="s-pressure">—</b></div>
-      <div class="stylus-row"><span>tilt</span><b id="s-tilt">—</b></div>
-      <div class="stylus-row"><span>velocity</span><b id="s-velocity">—</b></div>
-      <div class="stylus-row"><span>twist</span><b id="s-twist">—</b></div>
-    </div>
+        <section id="stylus" class="debug-card">
+          <h3 class="debug-subtitle"><span>Stylus</span></h3>
+          <div class="stylus-row"><span>type</span><b id="s-type">-</b></div>
+          <div class="stylus-row"><span>pressure</span><b id="s-pressure">-</b></div>
+          <div class="stylus-row"><span>tilt</span><b id="s-tilt">-</b></div>
+          <div class="stylus-row"><span>velocity</span><b id="s-velocity">-</b></div>
+          <div class="stylus-row"><span>twist</span><b id="s-twist">-</b></div>
+        </section>
 
-    <!-- Conservation gauges. Invariant 1: paint, lift the brush, watch them hold. -->
-    <div id="gauges" class="panel">
-      <span class="hud-title">conservation</span>
-      <div class="stylus-row"><span>water</span><b id="g-water">—</b></div>
-      <div class="stylus-row"><span>pigment</span><b id="g-pigment">—</b></div>
-      <!-- Dry media keep their own line. They live on a finer grid in different
-           units, so adding them to `pigment` would bury a wet-band leak. -->
-      <div class="stylus-row"><span>ink/graphite</span><b id="g-ink">—</b></div>
-      <div class="stylus-row"><span>wet cells</span><b id="g-wet">—</b></div>
-      <div class="stylus-row"><span>mean |div|</span><b id="g-div">—</b></div>
-      <div class="stylus-row"><span>relax</span><b id="g-relax">—</b></div>
+        <section id="gauges" class="debug-card">
+          <h3 class="debug-subtitle"><span>Conservation</span></h3>
+          <div class="stylus-row"><span>water</span><b id="g-water">-</b></div>
+          <div class="stylus-row"><span>pigment</span><b id="g-pigment">-</b></div>
+          <!-- Dry media keep their own line. They live on a finer grid in different
+               units, so adding them to `pigment` would bury a wet-band leak. -->
+          <div class="stylus-row"><span>ink/graphite</span><b id="g-ink">-</b></div>
+          <div class="stylus-row"><span>wet cells</span><b id="g-wet">-</b></div>
+          <div class="stylus-row"><span>mean |div|</span><b id="g-div">-</b></div>
+          <div class="stylus-row"><span>relax</span><b id="g-relax">-</b></div>
+        </section>
+      </div>
     </div>
 
     <!-- Conte contact instrument. It is shown only while that rectangular stick

@@ -1,27 +1,26 @@
-/* Dark, crisp, out of the way. The canvas is the room; chrome floats. */
-:root {
-  --bg: #0b0c0e;
-  --panel: rgba(22, 24, 28, 0.72);
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --ink: #e7e9ee;
-  --ink-dim: #8b909a;
-  --accent: #d8b26a;
-  --tilt-blue: #52a9dd;
-  color-scheme: dark;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400&display=swap');
+@import './design/tokens.css';
+
+/* Midnight instrument. The canvas is the room; chrome floats over it and stays
+   grey so the only colour in the field of view is paint. Every value in here
+   comes from src/design/tokens.css — if you are about to type a hex, stop. */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
-  color: var(--ink);
-  font: 12px/1.4 ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  background: var(--color-void);
+  color: var(--color-mist);
+  font: var(--weight-regular) var(--text-ui)/var(--leading-ui) var(--font-ui);
+  font-feature-settings: var(--font-features);
+  letter-spacing: var(--tracking-ui);
   -webkit-user-select: none;
   user-select: none;
   touch-action: none;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
 }
 
 #stage {
@@ -50,9 +49,9 @@ html, body {
   z-index: 30;
   width: var(--pen-width, 22px);
   height: var(--pen-height, 22px);
-  border: 1px solid rgba(24, 31, 38, 0.92);
+  border: 1px solid rgba(8, 9, 10, 0.92);
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(245, 247, 250, 0.92);
+  box-shadow: 0 0 0 1px rgba(229, 229, 230, 0.92);
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -50%) rotate(var(--pen-angle, 0deg)) scale(1);
@@ -63,30 +62,222 @@ html, body {
 #pen-cursor.on { opacity: 1; }
 #pen-cursor.down { transform: translate(-50%, -50%) rotate(var(--pen-angle, 0deg)) scale(0.82); }
 
+/* Elevation is a hairline and a 2px shadow — never a glow. The blur is the one
+   deliberate departure from the reference system: an opaque panel would hide
+   the painting it is sitting on. */
 .panel {
   position: fixed;
-  background: var(--panel);
+  background: var(--panel-bg);
+  border: 0;
+  border-radius: var(--radius-panel);
+  padding: var(--space-12);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  box-shadow: var(--shadow-panel);
+}
+
+/* ==========================================================================
+   Edge rails and drawers.
+
+   The whole of the chrome folds into two thin strips welded to the screen
+   edges. Nothing is open when the app loads, and only one drawer per rail can
+   be open at a time, so at most one panel is ever over the paper.
+
+   The rails are the one piece of resident chrome. That is the price of being
+   able to get anything back; everything else is off the sheet until asked for.
+   ========================================================================== */
+.rail {
+  position: fixed;
+  z-index: 50;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4);
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  box-shadow: var(--shadow-panel);
+}
+.rail-left {
+  left: 0;
+  transform: translateY(-50%);
+  border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+}
+.rail-right {
+  right: 0;
+  transform: translateY(-50%);
+  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
+}
+
+/* Set vertically so a one-word label fits a strip narrow enough to ignore. */
+.rail-tab {
+  writing-mode: vertical-rl;
+  width: 40px;
+  min-height: 66px;
+  padding: var(--space-8) 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--color-fog);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-ui);
+  letter-spacing: var(--tracking-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.rail-tab:hover { color: var(--color-paper); background: var(--control-bg); }
+.rail-tab:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
+/* One lit control per view: the open drawer's tab takes the lime ring, not a
+   lime fill, so it reads as "this is the open one" without shouting. */
+.rail-tab.on {
+  color: var(--color-paper);
+  background: var(--control-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-primary);
+}
+/* A switch that is on is a setting, not an action, and Paints is on by default
+   — leaving it lime would burn the one-lit-control budget permanently and
+   leave nothing for the open drawer to say with. Same reasoning as the paper
+   selection below: neutral high contrast instead of the accent. */
+.rail-tab-toggle.on {
+  color: var(--color-paper);
+  background: var(--control-bg);
+  box-shadow: inset 0 0 0 1px var(--color-smoke);
+}
+
+.drawer {
+  position: fixed;
+  z-index: 49;
+  top: 50%;
+  width: 268px;
+  max-width: calc(100vw - 108px);
+  max-height: calc(100vh - var(--space-24));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+/* A class rule beats the user-agent's [hidden], so say it here. A closed
+   drawer must leave the layout completely — otherwise it goes on swallowing
+   pointers aimed at the paper behind it. */
+.drawer[hidden] { display: none; }
+.drawer-right { right: 52px; transform: translate(calc(100% + 64px), -50%); opacity: 0; }
+.drawer-left  { left: 52px;  transform: translate(calc(-100% - 64px), -50%); opacity: 0; }
+.drawer.open  { transform: translate(0, -50%); opacity: 1; }
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+  background: var(--panel-head-bg);
+  border-bottom: 1px solid var(--panel-border);
+}
+.drawer-title {
+  color: var(--color-mist);
+  font-size: var(--text-caption);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-ui);
+}
+.drawer-close {
+  width: 26px; height: 26px; flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  color: var(--color-fog);
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  backdrop-filter: blur(12px) saturate(1.1);
-  -webkit-backdrop-filter: blur(12px) saturate(1.1);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-control);
+  font: 18px/1 var(--font-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.drawer-close:hover { color: var(--color-paper); border-color: var(--color-smoke); background: var(--control-bg); }
+.drawer-close:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-12);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The instrument readings are a drawer body now — the left rail supplies the
+   header and the folding. Nothing here positions itself any more. */
+.debug-body {
+  display: grid;
+  gap: var(--space-8);
+}
+
+/* A finger is not a mouse pointer. Everything you actually grab gets bigger on
+   a touch screen; the layout is unchanged on the desktop development loop. */
+@media (pointer: coarse) {
+  .rail-tab { width: 44px; min-height: 72px; }
+  .drawer-close { width: 34px; height: 34px; }
+  .linked-picker select { padding: 10px var(--space-8); font-size: var(--text-body); }
+  .loading-row input[type="range"] { height: 30px; }
+  .pal-btn { padding: 9px var(--space-12); }
+  .drawer-right { right: 56px; }
+  .drawer-left { left: 56px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer { transition: none; }
+}
+.debug-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-8);
+  background: var(--card-bg);
+  border: 0;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-hair);
+}
+.debug-subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-4);
+  color: var(--color-ash);
+  font-size: var(--text-label);
+  line-height: var(--leading-ui);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+}
+.debug-subtitle::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--panel-border);
 }
 
 #hud {
-  top: 12px;
-  left: 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.hud-title { color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
-.hud-line { color: var(--ink-dim); }
+.hud-title {
+  color: var(--color-mist);
+  font-size: var(--text-caption);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-ui);
+  font-weight: var(--weight-medium);
+}
+/* Machine values take the mono face — this app's issue IDs are CI codes. */
+.hud-line {
+  color: var(--color-fog);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
 
 #stylus {
-  bottom: 12px;
-  left: 12px;
   min-width: 148px;
   display: flex;
   flex-direction: column;
@@ -94,37 +285,53 @@ html, body {
 }
 
 #gauges {
-  /* Stack the live readout above the pointer report, leaving the right edge
-     solely for the painter controls.  The 132px offset is the stylus panel's
-     112px compact height plus an 8px breathing gap and its 12px viewport inset. */
-  bottom: 132px;
-  left: 12px;
   min-width: 172px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-#gauges .hud-title { margin-bottom: 3px; }
-.stylus-row { display: flex; justify-content: space-between; gap: 12px; }
-.stylus-row span { color: var(--ink-dim); }
-.stylus-row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stylus-row { display: flex; justify-content: space-between; gap: var(--space-12); }
+.stylus-row span {
+  color: var(--color-fog);
+  font-family: var(--font-ui);
+  font-size: var(--text-label);
+}
+.stylus-row b {
+  color: var(--color-mist);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Hooks for gauge state. Semantic colour is separate from the accent and does
+   not spend the one-chromatic-element budget. */
+.stylus-row b.ok { color: var(--color-pulse-green); }
+.stylus-row b.warn { color: var(--color-coral-red); }
 
 /* Live Conte contact instrument. The model is deliberately geometric rather
    than photoreal: it explains which face is touching without competing with
-   the painting. */
+   the painting. Its terracotta is kept at full strength — the stick depicts a
+   real sanguine crayon, so that colour is imagery, not chrome. */
 #conte-viewer {
   display: none;
-  right: 260px;
-  bottom: 12px;
+  /* Clear of the right rail. The studio panel that used to reserve 260px here
+     is a set of drawers now, and they are closed unless asked for. */
+  right: 60px;
+  bottom: var(--space-12);
   width: 218px;
-  padding: 10px;
+  padding: var(--space-12);
   overflow: hidden;
-  border-color: rgba(153, 79, 55, 0.46);
-  background: linear-gradient(145deg, rgba(25, 22, 22, 0.88), rgba(15, 17, 20, 0.78));
+  background: var(--panel-bg);
 }
 #conte-viewer.on { display: block; }
-.conte-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.conte-contact { color: #c8866f; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; }
+.conte-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-8); }
+.conte-contact {
+  color: var(--color-fog);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-mono);
+}
 .conte-scene {
   position: relative;
   height: 128px;
@@ -187,154 +394,669 @@ html, body {
 }
 .conte-top { top: -7px; transform: rotateX(90deg); }
 .conte-bottom { bottom: -7px; transform: rotateX(90deg); background: #773421; }
-.conte-readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; color: var(--ink-dim); font-size: 9px; }
+.conte-readout {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4);
+  color: var(--color-ash); font-family: var(--font-ui); font-size: var(--text-label);
+}
 .conte-readout span { display: flex; flex-direction: column; gap: 1px; }
-.conte-readout b { color: var(--ink); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.conte-readout b {
+  color: var(--color-mist);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
 .conte-flat {
   display: flex; align-items: center; justify-content: center; gap: 7px;
-  margin-top: 8px; padding: 5px 8px;
-  border: 1px solid rgba(200, 134, 111, 0.38); border-radius: 5px;
-  color: #dfaa94; cursor: pointer;
-  background: rgba(153, 79, 55, 0.10);
+  margin-top: var(--space-8); padding: 6px var(--space-8);
+  border: 1px solid var(--panel-border); border-radius: var(--radius-control);
+  color: var(--color-mist); cursor: pointer;
+  background: transparent;
+  font-size: var(--text-label);
 }
-.conte-flat:hover { background: rgba(153, 79, 55, 0.19); }
-.conte-flat input { accent-color: #a95d40; }
-#conte-viewer.lay-flat .conte-flat { border-color: #c8866f; background: rgba(153, 79, 55, 0.24); color: #f0c4b2; }
+.conte-flat:hover { background: var(--control-bg); border-color: var(--color-smoke); }
+.conte-flat input { accent-color: var(--accent-primary); }
+#conte-viewer.lay-flat .conte-flat {
+  border-color: var(--accent-primary);
+  background: var(--control-bg);
+  color: var(--color-paper);
+}
 
 @media (max-width: 820px) {
-  #conte-viewer { right: 248px; width: 188px; }
+  #conte-viewer { right: 56px; width: 188px; }
   .conte-scene { height: 112px; }
   .conte-stick, .conte-left, .conte-right { height: 78px; }
   .conte-stick { bottom: 26px; }
 }
 
-/* Pigment tray + mixing area */
-#palette {
-  top: 12px;
-  right: 12px;
-  width: 236px;
-  max-height: calc(100vh - 24px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+/* The studio is no longer a panel. It is a container whose children — the
+   right rail and its five drawers — each fix themselves to the edge. Keeping
+   them inside it is what lets the dry-mode dimming rules below still reach
+   controls that now live in different drawers. */
+#palette { display: contents; }
+.studio-part { display: flex; flex-direction: column; gap: 6px; }
 .pal-head { display: flex; justify-content: space-between; align-items: center; }
 .pal-btn {
-  background: transparent; color: var(--ink-dim); border: 1px solid var(--panel-border);
-  border-radius: 5px; padding: 2px 8px; font: inherit; cursor: pointer;
+  background: transparent; color: var(--color-mist);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-control); padding: 4px var(--space-8);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-ui);
+  letter-spacing: var(--tracking-ui);
+  cursor: pointer;
 }
-.pal-btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+.pal-btn:hover { color: var(--color-paper); border-color: var(--color-smoke); background: var(--control-bg); }
+.pal-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 
-.wells { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
-.well {
-  aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
-  cursor: pointer; padding: 0; transition: transform 0.06s ease, box-shadow 0.06s ease;
+.pal-sub {
+  color: var(--color-ash); font-size: var(--text-label);
+  font-weight: var(--weight-regular); letter-spacing: 0;
 }
-.well:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.5); }
-.well:active { transform: translateY(0); }
-
-.mix { display: flex; flex-direction: column; gap: 8px; }
-.mix-swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.mix-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.swatch.big {
-  width: 100%; height: 52px; border-radius: 7px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background-image: linear-gradient(45deg, #1a1a1a 25%, transparent 25%, transparent 75%, #1a1a1a 75%),
-                    linear-gradient(45deg, #1a1a1a 25%, transparent 25%, transparent 75%, #1a1a1a 75%);
-  background-size: 12px 12px; background-position: 0 0, 6px 6px; /* checker for empty */
-}
-.swatch.big[style*="background:"] { background-image: none; }
-.mix-cap { color: var(--ink-dim); font-size: 11px; }
-.mix-col .muted { opacity: 0.92; }
-.mix-hex {
-  text-align: center; color: var(--ink); font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em; min-height: 16px;
-}
-.recipe { display: flex; flex-wrap: wrap; gap: 4px; }
-.chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: rgba(255,255,255,0.05); color: var(--ink); border: 1px solid var(--panel-border);
-  border-radius: 12px; padding: 2px 8px 2px 4px; font: inherit; font-size: 11px; cursor: pointer;
-}
-.chip:hover { background: rgba(255,255,255,0.1); }
-.chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,0.2); }
-
-/* Water jar: rinse the brush without touching the sheet. */
-.jar { display: grid; grid-template-columns: 1fr 1.35fr; gap: 5px; }
-.jar-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 4px; }
-.jar-ico { font-size: 13px; line-height: 1; }
-.jar-btn.accent { color: var(--accent); border-color: rgba(216, 178, 106, 0.35); }
-.jar-btn:hover { background: rgba(255, 255, 255, 0.06); }
-.jar-btn.flash { background: rgba(216, 178, 106, 0.22); border-color: var(--accent); }
-
-.surface { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
-.pal-sub { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
-.linked-picker { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.linked-picker { display: grid; grid-template-columns: 1fr; gap: var(--space-4); }
 .linked-picker select {
   width: 100%; min-width: 0; appearance: auto;
-  padding: 4px 6px; border: 1px solid var(--panel-border); border-radius: 4px;
-  background: rgba(6, 8, 10, 0.72); color: var(--ink); font: inherit; cursor: pointer;
+  padding: 6px var(--space-8);
+  border: 1px solid var(--input-border); border-radius: var(--radius-control);
+  background: var(--card-bg); color: var(--color-mist);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-ui);
+  cursor: pointer;
 }
-.linked-picker select:hover, .linked-picker select:focus-visible { border-color: var(--accent); outline: none; }
-.linked-picker option { background: #16181c; color: var(--ink); }
-.linked-picker .inspect-btn { justify-self: end; padding: 3px 7px; font-size: 10px; }
-.paper-summary { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px; min-width: 0; color: var(--ink-dim); font-size: 10px; }
-.paper-summary i { width: 18px; height: 18px; display: block; border: 1px solid rgba(255,255,255,0.28); border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18); }
+.linked-picker select:hover { border-color: var(--color-smoke); }
+.linked-picker select:focus-visible { border-color: var(--color-mist); outline: none; }
+.linked-picker option { background: var(--color-obsidian); color: var(--color-mist); }
+.linked-picker .inspect-btn { justify-self: end; padding: 3px 7px; font-size: var(--text-label); }
+.paper-summary {
+  display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px;
+  min-width: 0; color: var(--color-ash); font-family: var(--font-ui); font-size: var(--text-label);
+}
+.paper-summary i {
+  width: 18px; height: 18px; display: block;
+  border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
 .paper-summary span { min-width: 0; line-height: 1.25; }
 #legacy-tools, #legacy-papers { display: none; }
-.papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.papers { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
 .papers.six { grid-template-columns: repeat(3, 1fr); gap: 3px; }
-.papers.six .paper { padding: 4px 0; font-size: 10px; }
-.medium-hint { color: var(--ink-dim); font-size: 10px; text-align: center; }
+.papers.six .paper { padding: var(--space-4) 0; font-size: var(--text-label); }
+.medium-hint {
+  color: var(--color-ash); font-family: var(--font-ui);
+  font-size: var(--text-label); text-align: center;
+}
 .medium-info {
   position: fixed;
   pointer-events: auto;
   z-index: 40;
   width: 286px;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - var(--space-24));
   overflow-y: auto;
-  padding: 10px;
-  background: rgba(18, 20, 24, 0.94);
-  border-color: rgba(216, 178, 106, 0.46);
+  padding: var(--space-12);
+  background: rgba(15, 16, 17, 0.94);
 }
-.medium-info-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.medium-info-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8); }
 .medium-info-head .hud-title { display: block; }
-.medium-info-sub { display: block; color: var(--ink-dim); font-size: 10px; }
+.medium-info-sub {
+  display: block; color: var(--color-fog);
+  font-family: var(--font-ui); font-size: var(--text-label);
+}
 .medium-info-close {
   width: 22px; height: 22px; padding: 0; flex: 0 0 auto;
-  background: transparent; color: var(--ink-dim); border: 1px solid var(--panel-border);
-  border-radius: 4px; font: 20px/18px sans-serif; cursor: pointer;
+  background: transparent; color: var(--color-fog);
+  border: 1px solid var(--panel-border); border-radius: var(--radius-control);
+  font: 18px/18px var(--font-ui); cursor: pointer;
 }
-.medium-info-close:hover { color: var(--ink); border-color: var(--ink-dim); background: rgba(255, 255, 255, 0.06); }
-.medium-info-note { margin: 7px 0 9px; color: var(--ink-dim); font-size: 10px; }
+.medium-info-close:hover { color: var(--color-paper); border-color: var(--color-smoke); background: var(--control-bg); }
+.medium-info-note {
+  margin: 7px 0 9px; color: var(--color-fog);
+  font-family: var(--font-ui); font-size: var(--text-label); line-height: var(--leading-body);
+}
 .medium-info-group { border-top: 1px solid var(--panel-border); padding: 7px 0 3px; }
-.medium-info-group h3 { margin-bottom: 3px; color: var(--accent); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.medium-info-row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 0; color: var(--ink-dim); font-size: 10px; }
-.medium-info-row b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+.medium-info-group h3 {
+  margin-bottom: 3px; color: var(--color-ash); font-size: var(--text-label);
+  font-weight: var(--weight-regular); letter-spacing: 0;
+}
+.medium-info-row {
+  display: flex; justify-content: space-between; gap: var(--space-12); padding: 1px 0;
+  color: var(--color-fog); font-family: var(--font-ui); font-size: var(--text-label);
+}
+.medium-info-row b {
+  color: var(--color-mist); font-family: var(--font-mono);
+  font-weight: var(--weight-regular); letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
 /* With a dry tool in hand the wet controls do nothing — dim them rather than
    remove them, so the layout does not jump when switching tools. */
-#palette.dry-mode .mix,
 #palette.dry-mode #loading,
 #palette.dry-mode #evap,
 #palette.dry-mode .wet-only { opacity: 0.4; }
-.paper { text-align: center; padding: 4px 2px; }
-.paper.on { color: var(--accent); border-color: var(--accent); }
-.loading-row { display: flex; align-items: center; gap: 8px; }
-.loading-row span { color: var(--ink-dim); }
-.loading-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 
-/* Temporary board-tilt instrument. The blue puck is the only bright moving
-   element: it reads as direction, not a second busy panel. */
+.paper { text-align: center; padding: var(--space-4) 2px; }
+/* The tool in your hand is the one lit control in the view — it gets the lime.
+   The sheet you are painting on is a setting, not an action, so it takes a
+   neutral high-contrast state instead. That keeps one chromatic element. */
+#brushes .paper.on,
+#dry-tools .paper.on {
+  color: var(--color-void);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-primary);
+}
+#brushes .paper.on:hover,
+#dry-tools .paper.on:hover { color: var(--color-void); background: var(--accent-primary); }
+#papers .paper.on {
+  color: var(--color-paper);
+  border-color: var(--color-smoke);
+  background: var(--control-bg-hover);
+}
+
+.loading-row { display: flex; align-items: center; gap: var(--space-8); }
+.loading-row span { color: var(--color-fog); font-size: var(--text-label); }
+.loading-row input[type="range"] { flex: 1; accent-color: var(--color-mist); }
+
+/* Board tilt is information, not an action — it reads in the system's
+   informational teal, which never marks something you can commit. */
 .tilt-control { border-top: 1px solid var(--panel-border); padding-top: 6px; }
-.tilt-head { display: flex; align-items: center; justify-content: space-between; background: rgba(0, 0, 0, 0.26); padding: 2px 4px; color: var(--tilt-blue); text-transform: uppercase; letter-spacing: 0.07em; font-size: 10px; }
-.tilt-head .pal-btn { border: 0; border-radius: 0; padding: 1px 3px; font-size: 10px; color: var(--ink-dim); }
-.tilt-head .pal-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
-.tilt-pad { position: relative; width: 116px; aspect-ratio: 1; margin: 7px auto 3px; border: 2px solid rgba(231, 233, 238, 0.78); border-radius: 50%; background: rgba(255, 255, 255, 0.025); cursor: crosshair; touch-action: none; }
-.tilt-pad::before, .tilt-pad::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.12); }
+.tilt-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 0; color: var(--color-ash);
+  font-size: var(--text-label); font-weight: var(--weight-regular); letter-spacing: 0;
+}
+.tilt-head .pal-btn { border: 0; padding: 1px 4px; font-size: var(--text-label); color: var(--color-fog); }
+.tilt-head .pal-btn:hover { color: var(--color-paper); background: var(--control-bg); }
+.tilt-pad {
+  position: relative; width: 116px; aspect-ratio: 1; margin: 7px auto 3px;
+  border: 1px solid var(--color-smoke); border-radius: 50%;
+  background: rgba(255, 255, 255, 0.025); cursor: crosshair; touch-action: none;
+}
+.tilt-pad::before, .tilt-pad::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.10); }
 .tilt-pad::before { width: 1px; height: 12px; left: 50%; top: -6px; }
 .tilt-pad::after { height: 1px; width: 12px; top: 50%; left: -6px; }
-.tilt-puck { position: absolute; width: 18px; height: 18px; left: calc(50% - 9px); top: calc(50% - 9px); border-radius: 50%; background: var(--tilt-blue); border: 2px solid rgba(231, 233, 238, 0.8); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55); pointer-events: none; transition: transform 0.05s linear; }
-.tilt-angle { margin: 0; color: var(--tilt-blue); text-align: center; font-size: 10px; letter-spacing: 0.04em; }
-.tilt-hint { color: var(--ink-dim); text-align: center; font-size: 10px; }
+.tilt-puck {
+  position: absolute; width: 16px; height: 16px;
+  left: calc(50% - 8px); top: calc(50% - 8px);
+  border-radius: 50%; background: var(--color-signal-teal);
+  border: 0; box-shadow: inset 0 0 0 1px rgba(8, 9, 10, 0.5);
+  pointer-events: none; transition: transform 0.05s linear;
+}
+.tilt-angle {
+  margin: 0; color: var(--color-signal-teal); text-align: center;
+  font-family: var(--font-mono); font-size: var(--text-label);
+  letter-spacing: var(--tracking-mono); font-variant-numeric: tabular-nums;
+}
+.tilt-hint {
+  color: var(--color-ash); font-family: var(--font-ui);
+  text-align: center; font-size: var(--text-label);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .well, .tilt-puck, .conte-stick, .conte-shadow, #pen-cursor { transition: none; }
+}
+
+/* ==========================================================================
+   The pan set — a floating watercolour box.
+
+   This is a depicted physical object, not chrome, so it keeps its own material
+   colours and a softer corner than the 12px panel maximum, the same exception
+   the Conte crayon takes. It is deliberately off-white rather than paper-white:
+   a glaring slab beside a wet wash would bias the very colour judgement the
+   painter is here to make.
+   ========================================================================== */
+.pan-set {
+  --pal-shell:    #f0ede6;
+  --pal-shell-lo: #ddd9cf;
+  --pal-groove:   #c2bdb1;
+  --pal-well:     #d6d2c7;
+  --pal-slab:     #f7f5f0;
+  --pal-ink:      #48463f;
+  --pal-ink-dim:  #84806f;
+
+  position: fixed;
+  z-index: 45;
+  left: 16px;
+  top: 16px;
+  width: 198px;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  background: linear-gradient(158deg, var(--pal-shell) 0%, var(--pal-shell-lo) 100%);
+  border-radius: 16px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  color: var(--pal-ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-label);
+  touch-action: none;
+}
+.pan-set.dragging { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.55); }
+
+/* ---- lid: the drag handle, moulded like the real one --------------------- */
+.ps-lid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 3px 4px 7px;
+  border-bottom: 1px solid var(--pal-groove);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+  cursor: grab;
+}
+.pan-set.dragging .ps-lid { cursor: grabbing; }
+.ps-lid-grid {
+  width: 46px; height: 13px; flex: 0 0 auto; border-radius: 2px;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.09) 0 9px, transparent 9px 12px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+.ps-lid-label {
+  flex: 1;
+  color: var(--pal-ink-dim);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ps-lid-btn {
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: var(--radius-control);
+  color: var(--pal-ink);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-ui);
+  cursor: pointer;
+}
+.ps-lid-btn:hover { background: rgba(0, 0, 0, 0.1); }
+
+/* ---- body: the compact pan box ------------------------------------------- */
+.ps-body { display: block; }
+
+.ps-tray {
+  padding: 5px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.045);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.16), 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.ps-pans { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
+
+/* Each pan is a moulded recess; the cake of paint sits down inside it. */
+.ps-pan {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 5px;
+  background: var(--pal-well);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.26),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.5);
+}
+.ps-pan.empty { background: #e3dfd4; }
+.ps-pan-add {
+  position: absolute;
+  inset: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(93, 89, 81, 0.56);
+  font: 300 22px/1 var(--font-ui);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.ps-pan-add:hover { color: rgba(72, 99, 112, 0.9); background: rgba(255, 255, 255, 0.28); }
+.ps-pan-add:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.ps-cake {
+  position: absolute;
+  inset: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  cursor: grab;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 3px rgba(255, 255, 255, 0.16);
+  transition: transform 0.07s ease, filter 0.07s ease;
+}
+.ps-cake:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.ps-cake:active { cursor: grabbing; transform: translateY(0) scale(0.96); }
+.ps-cake:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+/* ---- ceramic surfaces ---------------------------------------------------- */
+.ps-flap {
+  border-radius: 8px;
+  background: linear-gradient(170deg, #faf8f4, #e9e5dc);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.07),
+    inset 0 2px 4px rgba(0, 0, 0, 0.09),
+    0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* The mixing slab is a smaller, attached ceramic drawer. It remains sized
+   while tucked away: opening the drawer therefore never clears an in-progress
+   mix just because the canvas temporarily had no visible width. */
+.ps-drawer {
+  position: absolute;
+  top: 43px;
+  left: calc(100% + 4px);
+  width: 244px;
+  height: 254px;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-radius: 13px;
+  background: linear-gradient(158deg, #f4f1ea 0%, #ded9ce 100%);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.07);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-12px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 0s linear 150ms;
+}
+.pan-set.drawer-open .ps-drawer {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
+  transition-delay: 0s;
+}
+.ps-drawer-head {
+  padding: 1px 3px 5px;
+  border-bottom: 1px solid rgba(80, 76, 67, 0.2);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.68);
+  color: var(--pal-ink-dim);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.ps-drawer-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 5px;
+}
+.ps-water-rail {
+  width: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(89, 84, 73, 0.08);
+}
+.ps-water-stops {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 0 4px;
+}
+.ps-water-dot {
+  width: 19px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+.ps-water-dot::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+  background: rgba(84, 97, 109, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+.ps-water-dot:hover::after { background: rgba(68, 94, 111, 0.68); transform: scale(1.18); }
+.ps-water-dot.filled::after {
+  background: #6d8798;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.78), 0 0 0 2px rgba(83, 102, 113, 0.18);
+}
+.ps-water-dot.selected::after {
+  transform: scale(1.22);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.78), 0 0 0 3px rgba(83, 102, 113, 0.26);
+}
+.ps-water-dot:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.ps-rail-divider {
+  width: 18px;
+  height: 1px;
+  flex: 0 0 auto;
+  margin: 4px 0;
+  background: rgba(78, 74, 66, 0.2);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.58);
+}
+.ps-rail-action {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(78, 75, 68, 0.72);
+  cursor: pointer;
+}
+.ps-rail-action:hover { background: rgba(255, 255, 255, 0.48); color: rgba(58, 78, 91, 0.98); }
+.ps-rail-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.ps-rail-action.on { background: rgba(104, 132, 151, 0.22); color: #405c70; box-shadow: inset 0 0 0 1px rgba(78, 104, 120, 0.25); }
+.ps-wipe-action i {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 2px 2px;
+}
+.ps-wipe-action i::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -2px;
+  width: 12px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 4px -2px 0 -0.2px currentColor;
+}
+.ps-wipe-action i::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1px;
+  height: 5px;
+  background: currentColor;
+  box-shadow: 3px 0 0 currentColor;
+}
+.ps-picker-action i {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+.ps-picker-action i::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ps-picker-action i::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  width: 6px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+.ps-drawer-well {
+  flex: 1;
+  min-height: 0;
+  padding: 5px;
+  display: flex;
+  position: relative;
+  border-radius: 9px;
+  background: linear-gradient(170deg, #faf8f4, #e9e5dc);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.07),
+    inset 0 2px 4px rgba(0, 0, 0, 0.09),
+    0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.ps-drawer .ps-slab { min-height: 0; height: 100%; }
+.ps-loupe {
+  position: absolute;
+  inset: 5px;
+  display: none;
+  pointer-events: none;
+}
+.ps-loupe.on { display: block; }
+.ps-drawer-toggle {
+  position: absolute;
+  z-index: 1;
+  top: 66px;
+  right: -21px;
+  width: 22px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(58, 55, 48, 0.3);
+  border-left-color: rgba(255, 255, 255, 0.62);
+  border-radius: 0 7px 7px 0;
+  background: linear-gradient(180deg, #e8e4db, #d2cdc2);
+  color: var(--pal-ink-dim);
+  cursor: pointer;
+  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+.ps-drawer-toggle::before { content: '>'; font: 16px/1 var(--font-ui); }
+.pan-set.drawer-open .ps-drawer-toggle::before { content: '<'; }
+.ps-drawer-toggle:hover { background: #f2efe8; color: var(--pal-ink); }
+.ps-drawer-toggle:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+/* A wet slab: the sheen sits under the paint, so colour laid on it reads as
+   sitting in water rather than printed on plastic. */
+.ps-slab {
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  display: block;
+  border-radius: 5px;
+  background:
+    radial-gradient(120% 70% at 30% 12%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(168deg, #fbfaf7 0%, #eeece5 100%);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.7);
+  cursor: crosshair;
+  touch-action: none;
+}
+.ps-slab.picking { cursor: copy; }
+.ps-flap-note {
+  color: var(--pal-ink-dim);
+  font-size: 10px;
+  text-align: center;
+  letter-spacing: 0.03em;
+}
+
+.ps-flap-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-8);
+}
+
+/* ---- the colour now on the brush ---------------------------------------- */
+.ps-current-row { display: flex; align-items: center; gap: var(--space-8); }
+.ps-current {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22), inset 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+.ps-current.empty {
+  background-image:
+    linear-gradient(45deg, #cfcabd 25%, transparent 25%, transparent 75%, #cfcabd 75%),
+    linear-gradient(45deg, #cfcabd 25%, transparent 25%, transparent 75%, #cfcabd 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+.ps-current-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ps-hex {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--pal-ink);
+}
+.ps-hint { color: var(--pal-ink-dim); font-size: 10px; line-height: 1.35; }
+
+.ps-jar { display: grid; grid-template-columns: 1fr 1.3fr; gap: var(--space-4); }
+.ps-btn {
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: var(--radius-control);
+  color: var(--pal-ink);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-ui);
+  cursor: pointer;
+}
+.ps-btn:hover { background: rgba(0, 0, 0, 0.1); }
+.ps-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+.ps-chips { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.ps-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px 3px 5px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: var(--radius-pill);
+  color: var(--pal-ink);
+  font: var(--weight-regular) 11px/var(--leading-ui) var(--font-ui);
+  cursor: pointer;
+}
+.ps-chip:hover { background: rgba(0, 0, 0, 0.1); }
+.ps-chip i {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* The picker is the one that latches, so its compact rail icon shows its state. */
+.ps-btn.on {
+  background: var(--accent-primary);
+  border-color: rgba(0, 0, 0, 0.28);
+  color: #1b1c10;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.ps-btn.on:hover { background: var(--accent-primary); filter: brightness(1.04); }
+
+/* A pencil cannot pick up watercolour. */
+.pan-set.dry-mode .ps-tray,
+.pan-set.dry-mode .ps-drawer { opacity: 0.4; pointer-events: none; }
+
+/* Switched off from the left rail. Gone from the layout entirely, so a hidden
+   box cannot intercept a stroke; the mix it holds is untouched by this. */
+.pan-set.box-hidden { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-cake, .ps-drawer { transition: none; }
+}

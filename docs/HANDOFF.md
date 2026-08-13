@@ -133,9 +133,215 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-08-03 (toned pastel paper and linked material picker added;
-cursor and thermal work remain separately in flight)
+**Last updated:** 2026-08-11 (PIGMENTS mixing-slab side drawer implementation underway)
 **By:** Codex, continuing the shared relay
+
+## IN FLIGHT — PIGMENTS mixing-slab side drawer (Codex, 2026-08-11)
+
+**Artist request.** The current compact PIGMENTS palette (the soft-grey rounded
+panel, pan grid, load area, and rinse controls) keeps its look. Move only its
+currently squeezed mixing slab into a smaller attached drawer on the right. A
+small shared-edge arrow opens and closes that drawer. The open drawer must give
+the existing mixing interaction more room, use the same quiet palette chrome,
+and read as a clean white ceramic watercolour slab — no illustrative staining,
+texture effects, or new paint behaviour.
+
+**Correction in flight.** The first narrow-screen fallback stacked the drawer
+below PIGMENTS. Bartford rejected that: the slab is a right-side drawer at every
+usable width, because its attached horizontal relationship is the point of the
+control. Remove only that stacked fallback; preserve the compact panel, arrow,
+and all mixing behaviour. If a screen is genuinely too narrow, keep the drawer
+to the right and let the movable palette be positioned where the user can see it
+rather than changing the drawer's direction.
+
+**New artist report (2026-08-11).** In the supplied recording, the colour shown
+inside the PIGMENTS selected swatch and on the ceramic mixing slab is much darker
+than the same colour becomes on paper after it is picked up. That is misleading:
+the palette must show the colour's water-diluted appearance on its white ceramic,
+not a dark, opaque stand-in. Inspect `src/ui/mixing-slab.ts`'s canvas compositing
+and the selected-colour swatch in `src/ui/pan-set.ts`; make their display agree
+with the app's paper-facing paint appearance without changing the actual canvas
+pigment recipe. Also audit the slab's behaviour: ceramic is non-absorbent, so
+water and pigment must remain entirely on its surface and move/dilute freely;
+do not apply paper absorption, staining, or settling to it. Verify with the
+recording, a build, and live interaction if the browser can launch.
+
+**Colour/ceramic checkpoint.** The recording was inspected at 6 s and 27 s:
+the selected 2% Quinacridone Magenta / 98% Dioxazine Purple mix displayed as
+near-charcoal `#423b3b`, while its stroke on paper remained visibly purple. The
+cause was confirmed in source: `recipeToHex()` and the slab both used opaque KM
+masstone, while the canvas uses finite-thickness KM over a white ground. `km.ts`
+now exposes that same finite-layer calculation and reuses CanvasEngine's existing
+thickness scale. `mixing-slab.ts` uses it for every ceramic cell and `pan-set.ts`
+uses the same thin fresh-dip colour for its selected swatch. The ceramic surface
+no longer drains water under a brush or deletes pigment when Water is pressed;
+Water now only rewets and spreads the existing pigment. `npm.cmd run build` and
+`git diff --check` pass. Artist follow-up: repeat the video's purple pick-and-
+paint sequence and judge that the selected chip, slab puddle, and initial paper
+stroke now belong to the same colour family; this is an optical match, not a
+claim of exact paper/ceramic material parity.
+
+**New ceramic-flow report (2026-08-11).** The next supplied recording shows one
+loaded brush leaving a narrow, resistant-looking streak, then exhausting while
+the painter has to scrub it. That is rejected. This surface is a wet,
+non-absorbent ceramic palette: pigment must leave the brush gradually, keep
+moving through the water over the larger slab after the brush lifts, and never
+settle, stain, soak in, or need mechanical scrubbing to mix. In
+`src/ui/mixing-slab.ts`, reduce the existing abstract brush-to-slab transfer,
+use conservative whole-slab diffusion during a short post-stroke ceramic-flow
+window, and keep water at the surface. The current rate constants have no
+external card source, so document their outcome as `[UNVERIFIED]` and let the
+artist's next hand test decide them. Preserve the actual document paint engine
+and recipe callbacks entirely.
+
+**Free-flow checkpoint.** `mixing-slab.ts` now uses a coarser smooth puddle
+grid, reduces the abstract amount a brush gives up per movement from `1/30` to
+`1/180`, and increases carry-along during a stroke. Its ceramic diffusion now
+exchanges pigment across each shared cell edge once, which conserves the pigment
+inside the slab rather than fading it away. `pan-set.ts` runs those surface-only
+whole-slab exchanges for 2.4 seconds after a stroke or Water click. These values
+are explicitly `[UNVERIFIED]`: they exist to meet Bartford's hand-described
+ceramic behaviour, not to claim a measured real-world rate. No document fluid,
+paper, pigment, or brush recipe code changed. `npm.cmd run build` and
+`git diff --check` pass. **Artist test next:** one dip and a short loose sweep
+should leave colour on the brush, visibly bloom the puddle after lift, and let
+the whole slab remain workable without scrubbing. If it still feels resistant,
+adjust only this palette surface row, never the sheet engine.
+
+**Artist tuning correction (2026-08-11).** The first free-flow pass was a little
+too eager. Keep the non-absorbent ceramic and gradual brush release, but reduce
+only the palette flow's reach: use six whole-slab exchanges per frame for a
+2-second post-stroke window instead of eight for 2.4 seconds. This is still
+`[UNVERIFIED]` hand-feel tuning; test it as a quieter bloom, not a return to
+resistant scrubbing.
+
+**Second tuning correction (2026-08-11).** The six-pass/two-second change was
+still visually too strong. Cut the post-stroke ceramic movement to two
+whole-slab exchanges per frame for 0.75 seconds. This is a deliberate large
+pull-back in the automatic bloom only; keep the slab wet, non-absorbent, and
+easy to work with a brush. `[UNVERIFIED]` until Bartford's next hand test.
+
+**Third tuning correction (2026-08-11).** Bartford asked for one final small
+pull-back. Keep the two exchange passes but shorten only the automatic ceramic
+flow window from 0.75 seconds to 0.6 seconds. This retains a quiet settling
+motion without changing brush release or water retention.
+
+**New picker request (2026-08-11).** Turn the mixing-slab Picker into a classic
+round loupe. While Picker is active, a circular ring must follow the pointer,
+enlarge the actual slab pixels directly beneath its centre, and make its click
+sample tighter than the old broad averaging area. It must remain an overlay on
+the existing custom `PanSet`/`MixingSlab` UI — no new framework or separate
+colour representation. Close the loupe as soon as the colour is lifted or
+Picker is turned off. Verify build; the artist must confirm the feel with a
+real pointer or pen on the live page.
+
+**Picker-loupe checkpoint.** `PanSet` now places a pointer-transparent canvas
+over the slab only while Picker is active. It draws a 24px circular magnifier
+from the actual rendered slab canvas, with a centre dot that marks the pickup
+point; it hides on leave, after a lift, or when Picker switches off. `MixingSlab`
+keeps the sampling in its own pigment field and reduces its local pickup disc
+from two cells to one, so the new ring helps choose an actual tighter colour
+instead of a separate preview value. `npm.cmd run build` and `git diff --check`
+pass. Artist test: toggle Picker, hover the edge between two colours, verify the
+ring enlarges those real pixels, and click the desired side to lift it.
+
+**New ceramic-water rail request (2026-08-11).** Along the outer left edge of
+the right-side Mixing Slab, add a slender vertical water-preload rail: five
+selectable dots, with a single water-drop marker at the low end and three
+water-drop markers at the high end. The selected dot sets how wet the
+non-absorbent ceramic slab starts and therefore how readily pigment moves around
+that surface. It must not change the paper, document brush, or pigment recipe.
+Keep the marks quiet, tactile, and integrated with the existing soft-grey
+palette rather than adding labels or decorative illustration. The five level
+values are a hand-feel interface mapping, so mark them `[UNVERIFIED]`; confirm
+the artist can see and tap each dot and that the top choice remains freely
+flowing while the bottom merely calms the ceramic movement rather than making it
+absorbent.
+
+**Ceramic-water rail checkpoint.** `PanSet` now puts five touch-sized vertical
+dot choices on the drawer's outer-left edge, with three small CSS water-drop
+marks at the fully wet top and one at the lightest bottom. The top choice is the
+existing freely flowing state; the other four choices are the deliberately
+simple `[UNVERIFIED]` 0.8/0.6/0.4/0.2 hand-feel steps. Selecting one changes only
+`MixingSlab`'s ceramic surface water level, which modulates its pigment mobility
+without removing, absorbing, or sending pigment to the paper. Water restores the
+top choice, and Wipe preserves the artist's selected preload. `npm.cmd run
+build`, `git diff --check`, and a source-based design evaluation passed. Live
+visual/touch confirmation remains the artist check: open the right drawer,
+choose each dot, and make sure the range is clear and the low end stays slippery
+rather than scrubby.
+
+**New rail and palette-controls correction (2026-08-11).** Bartford clarified
+the water rail belongs on the *right* side of the Mixing Slab. Tighten its dots
+into a compact five-step vertical meter: choosing a level fills that dot and all
+dots below it (top/full wet = all five; middle = that dot plus the two below).
+Below the meter, place a divider then a small wipe/trash icon with the hover
+tooltip `Wipe the mixing area clean`; below a second divider, a small colour-
+picker icon with `Choose a color from the mixing area.` that toggles the existing
+slab picker. Remove the Water, Picker, and Wipe text buttons from the main
+palette. Finally, turn each blank palette pan into a quiet `+` target that saves
+the currently selected paint swatch into that empty well when clicked. Preserve
+the existing non-absorbent ceramic physics and keep the controls touch/pen
+reachable; none of this must change the paper or paint-engine recipes.
+
+**Rail and palette-controls checkpoint.** The drawer now places the compact
+water meter on the right of the slab. Its dots fill cumulatively from the chosen
+dot down: full wet visibly fills all five, the midpoint fills itself and the two
+below, and the low mark fills just itself. Separators lead to an icon-only wipe
+button (`Wipe the mixing area clean`) and an icon-only picker latch (`Choose a
+color from the mixing area.`); these replace the former Water/Picker/Wipe text
+row in the main palette. Empty pans now show `+`; they retain the active
+Kubelka-Munk recipe, then become normal clickable saved-colour pans, rather than
+copying a screen RGB. Build and diff checks pass, and the source-based design
+evaluation passed. Browser screenshots remain unavailable because its connection
+closes after launch; artist test remains: verify the closely stacked dots and
+small rail icons feel comfortably reachable with the intended pen/finger.
+
+**Water-drop icon correction (2026-08-11).** Bartford says the rail's current
+CSS markers do not read as raindrops. Replace only their visual construction in
+`src/style.css`: use a clearly legible teardrop silhouette with a rounded lower
+body and pointed top, retaining the compact one-drop/three-drop scale, ceramic
+palette colour, and all existing rail behaviour. No controls or paint behaviour
+should change. Verify the build and have the artist judge the actual visible
+shape in the drawer.
+
+**Water-drop correction checkpoint.** The markers now use an upright two-piece
+CSS silhouette: a small pointed crown overlaps a circular lower reservoir, so
+each reads as one tiny teardrop rather than the prior rotated lozenge. The
+three-drop group keeps its slight middle lift and all controls/behaviour are
+unchanged. `npm.cmd run build`, `git diff --check`, and design evaluation pass.
+Artist check: visually judge the high and low markers in the open drawer; if the
+tiny silhouette still is not immediately read as water, change only the marker
+shape/scale in `src/style.css`.
+
+**Artist rejection — remove water-drop markers (2026-08-11).** Bartford does
+not want the revised drop icons either. Remove both the one-drop and three-drop
+marker elements from the rail and remove their now-unused CSS, leaving the
+five-dot water meter, separators, wipe/picker rail actions, and all water
+behaviour exactly as-is. This is a clean temporary omission, not a substitute
+icon. Verify the build and let Bartford decide the eventual visual vocabulary
+later.
+
+**Water-marker removal checkpoint.** The one- and three-drop markup and its
+marker-only CSS are now gone. The rail is intentionally undecorated: compact
+five-dot meter, divider, wipe action, divider, picker action. `npm.cmd run
+build` and `git diff --check` pass, and a source check confirms no marker
+references remain. The attempted external visual evaluation could not finish
+because its browser connection stalled; no new visual design remains to assess.
+
+**Implementation checkpoint.** `src/ui/pan-set.ts` now holds `#ps-slab` in a
+fixed-size `#ps-drawer` controlled by native `#ps-drawer-toggle`; it starts
+closed and supports pointer, touch, Enter, and Space. `src/style.css` keeps the
+compact main box and its existing controls, and gives the drawer a clean glazed
+ceramic inset. The hidden drawer keeps its dimensions, so opening it does not
+reset an in-progress mix.
+
+**Evidence / next action.** `npm.cmd run build` passed (TypeScript and Vite).
+`git diff --check` passed. Browser visual QA remains: agent-browser's local
+Chrome/CDP process hung during launch, so verify the arrow and a real slab
+stroke in a normal local browser. Confirm the main pigment controls remain
+usable, the arrow toggles the drawer, and all dip/smear/lift/wipe/water/rinse/
+rinse-load actions still behave as before.
 
 ## MERGE VERIFICATION — `0892571`, checked 2026-07-29
 

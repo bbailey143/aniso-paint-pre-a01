@@ -22,6 +22,10 @@ export interface Spectral {
   S: Float64Array; // scattering, N_BANDS
 }
 
+/** The canvas compositor's pigment-loading scale. Palette previews use this
+ * same established value, so the colour in hand matches the colour on paper. */
+export const WATERCOLOUR_THICKNESS_SCALE = 5.0;
+
 /** Duncan linear mix in concentration space. Empty/zero recipe -> null. */
 export function mixSpectral(recipe: Recipe): Spectral | null {
   let total = 0;
@@ -54,6 +58,42 @@ export function reflectance(sp: Spectral, kInstrument: number = SAUNDERSON.kInst
     const rInt = 1 + ks - Math.sqrt(ks * ks + 2 * ks);
     let r = kInstrument * k1 + ((1 - k1) * (1 - k2) * rInt) / (1 - k2 * rInt);
     R[b] = Math.min(1, Math.max(0, r));
+  }
+  return R;
+}
+
+/**
+ * Finite-thickness Kubelka-Munk over a white ceramic or paper ground.
+ *
+ * This mirrors `overLayer` in `composite.wgsl`. Opaque reflectance is useful
+ * for a dry pan, but misleading for a watercolour puddle: a thin wash lets the
+ * white surface keep contributing light.
+ */
+export function finiteLayerReflectance(
+  sp: Spectral,
+  thickness: number,
+  substrateReflectance = 1,
+  kInstrument: number = SAUNDERSON.kInstrumentDefault,
+): Float64Array {
+  const { k1, k2 } = SAUNDERSON;
+  const R = new Float64Array(N_BANDS);
+  for (let b = 0; b < N_BANDS; b++) {
+    const S = Math.max(sp.S[b], 1e-6);
+    const ratio = sp.K[b] / S;
+    const A = 1 + ratio;
+    const B = Math.sqrt(Math.max(ratio * ratio + 2 * ratio, 0));
+    // Mirrors the compositor's established guard against runaway sinh/cosh.
+    const bsx = Math.min(Math.max(B * S * thickness, 0), 40);
+    const sh = Math.sinh(bsx);
+    const ch = Math.cosh(bsx);
+    const denominator = A * sh + B * ch;
+    const Rlayer = denominator > 1e-12 ? sh / denominator : 0;
+    const Tlayer = denominator > 1e-12 ? B / denominator : 1;
+    const internal = Rlayer + (Tlayer * Tlayer * substrateReflectance)
+      / Math.max(1 - Rlayer * substrateReflectance, 1e-12);
+    const external = kInstrument * k1
+      + ((1 - k1) * (1 - k2) * internal) / (1 - k2 * internal);
+    R[b] = Math.min(1, Math.max(0, external));
   }
   return R;
 }
@@ -92,6 +132,15 @@ export function recipeToHex(recipe: Recipe, kInstrument?: number): string | null
   const sp = mixSpectral(recipe);
   if (!sp) return null;
   return srgbToHex(xyzToSRGB(reflectanceToXYZ(reflectance(sp, kInstrument))));
+}
+
+/** Visible watercolour on white ceramic or paper. Unlike `recipeToHex`, this
+ * preserves the white ground through a thin wet layer instead of showing the
+ * opaque masstone. */
+export function recipeToLayerHex(recipe: Recipe, thickness: number): string | null {
+  const sp = mixSpectral(recipe);
+  if (!sp) return null;
+  return srgbToHex(xyzToSRGB(reflectanceToXYZ(finiteLayerReflectance(sp, thickness))));
 }
 
 /** A pigment as a tint: `fraction` parts pigment + rest Titanium White, through
