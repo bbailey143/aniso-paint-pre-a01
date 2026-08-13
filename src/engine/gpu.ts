@@ -12,6 +12,17 @@ export interface Gpu {
   canvas: HTMLCanvasElement;
   /** Device pixel ratio actually applied to the drawing buffer. */
   dpr: number;
+  /**
+   * Diagnostic multiplier on that ratio, 0..1. An iPad reports a device pixel
+   * ratio of 2, so the same sheet becomes four times the fragments it is on a
+   * 1x Windows display — before the mobile GPU is accounted for at all.
+   * Dropping this is the cheapest discriminator between a frame that is
+   * fill-rate bound and one that is not.
+   *
+   * Diagnostic only. It changes how many pixels the result is displayed at,
+   * never the simulation: the fluid grid is SIM² whatever this says.
+   */
+  renderScale: number;
 }
 
 export class WebGpuUnavailable extends Error {}
@@ -44,7 +55,7 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
 
-  const gpu: Gpu = { adapter, device, context, format, canvas, dpr: 1 };
+  const gpu: Gpu = { adapter, device, context, format, canvas, dpr: 1, renderScale: 1 };
   resizeToDisplay(gpu);
   return gpu;
 }
@@ -54,7 +65,10 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
  * the device's max texture dimension. Returns true if the size changed.
  */
 export function resizeToDisplay(gpu: Gpu): boolean {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // `dpr` stays the ratio actually applied, scale included, because everything
+  // downstream — pointer mapping, the pen locator — derives from it. Scaling it
+  // here therefore keeps the paint landing under the pen at any render scale.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2) * (gpu.renderScale || 1);
   const maxDim = gpu.device.limits.maxTextureDimension2D;
   const w = Math.max(1, Math.min(Math.floor(gpu.canvas.clientWidth * dpr), maxDim));
   const h = Math.max(1, Math.min(Math.floor(gpu.canvas.clientHeight * dpr), maxDim));

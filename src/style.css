@@ -213,6 +213,35 @@ html, body {
   gap: var(--space-8);
 }
 
+.perf-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-8); margin-top: var(--space-4);
+  color: var(--color-fog); font-size: var(--text-label); cursor: pointer;
+}
+.perf-row select {
+  padding: 2px var(--space-4);
+  border: 1px solid var(--input-border); border-radius: var(--radius-control);
+  background: var(--card-bg); color: var(--color-mist);
+  font: var(--weight-regular) var(--text-label)/var(--leading-ui) var(--font-mono);
+  cursor: pointer;
+}
+.perf-row select option { background: var(--color-obsidian); color: var(--color-mist); }
+.perf-row input { accent-color: var(--accent-primary); }
+
+/* Blur off. The frosted panels are the one deliberate departure from the
+   reference system, and they are not free: the compositor re-blurs whatever is
+   behind them, and what is behind them is a canvas that changes every frame.
+   Falling back to an opaque surface keeps the panels readable — a transparent
+   panel with the blur removed would show the painting straight through the
+   text. */
+body.no-blur .panel,
+body.no-blur .rail {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--color-carbon);
+}
+body.no-blur .medium-info { background: var(--color-carbon); }
+
 /* A finger is not a mouse pointer. Everything you actually grab gets bigger on
    a touch screen; the layout is unchanged on the desktop development loop. */
 @media (pointer: coarse) {

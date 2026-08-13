@@ -25,6 +25,31 @@
                 title="Wheel to zoom - middle-drag or space-drag to pan - Ctrl+0 to fit">100%</span>
         </section>
 
+        <!-- Frame cost, and the two switches that tell you where it went.
+             Real GPU timings need timestamp queries, which are not WebGPU core
+             and so are bench-only under D12 — these are CPU-side numbers. They
+             still separate the cases: if `frame` is long while `cpu` is short,
+             the time is going to the GPU or the compositor, not to JavaScript. -->
+        <section id="perf" class="debug-card">
+          <h3 class="debug-subtitle"><span>Performance</span></h3>
+          <div class="stylus-row"><span>frame</span><b id="p-frame">-</b></div>
+          <div class="stylus-row"><span>fps</span><b id="p-fps">-</b></div>
+          <div class="stylus-row"><span>cpu</span><b id="p-cpu">-</b></div>
+          <div class="stylus-row"><span>buffer</span><b id="p-buffer">-</b></div>
+          <label class="perf-row" title="Draw the sheet at a fraction of the display's pixels. The simulation grid never changes — only how many pixels the result is shown at. If the lag clears at 50%, the frame is fill-rate bound.">
+            <span>render scale</span>
+            <select id="p-scale">
+              <option value="1">100%</option>
+              <option value="0.75">75%</option>
+              <option value="0.5">50%</option>
+            </select>
+          </label>
+          <label class="perf-row" title="The frosted-glass effect behind every panel and rail. Safari re-blurs what is behind them, and the thing behind them is a canvas that changes every frame.">
+            <span>panel blur</span>
+            <input id="p-blur" type="checkbox" checked />
+          </label>
+        </section>
+
         <section id="stylus" class="debug-card">
           <h3 class="debug-subtitle"><span>Stylus</span></h3>
           <div class="stylus-row"><span>type</span><b id="s-type">-</b></div>

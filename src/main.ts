@@ -229,6 +229,23 @@ async function main() {
     onChange: (on) => palette.setPanSetVisible(on),
   });
 
+  // Two discriminators for a slow frame, reported into the Performance card.
+  // Render scale changes only how many pixels the sheet is displayed at — the
+  // fluid grid is SIM² regardless — so a lag that clears at 50% is fill rate,
+  // and one that does not is somewhere else.
+  const scaleSelect = document.getElementById('p-scale') as HTMLSelectElement;
+  scaleSelect.addEventListener('change', () => {
+    gpu.renderScale = parseFloat(scaleSelect.value);
+    resizeToDisplay(gpu);
+    updatePenCursorContact();
+    requestFrame();
+  });
+  const blurToggle = document.getElementById('p-blur') as HTMLInputElement;
+  blurToggle.addEventListener('change', () => {
+    document.body.classList.toggle('no-blur', !blurToggle.checked);
+    requestFrame();
+  });
+
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setWetMedium(WATERCOLOR);
   engine.setMix(palette.recipe);
@@ -372,9 +389,38 @@ async function main() {
   });
 
   // ---- Frame loop ----------------------------------------------------------
+  // Frames are drawn on demand, so wall-clock fps means nothing on a still
+  // sheet. Only consecutive frames close enough together to belong to the same
+  // continuous run are averaged — otherwise the idle gap between two strokes
+  // gets averaged in and a perfectly healthy wet sheet reports 2 fps.
+  const FRAME_RUN_GAP_MS = 250;
+  let lastFrameStart = 0;
+  let smoothFrame = 0;
+  let smoothCpu = 0;
+
+  // Driven off a timer rather than the frame loop on purpose. The loop stops
+  // the moment the paint does, so a readout written only from inside it shows
+  // a dash on a still sheet and looks broken. The values hold the last
+  // continuous run — which is the number worth reading, and you can only read
+  // it once the pen is off the paper anyway.
+  const updatePerf = () => {
+    setText('p-frame', smoothFrame > 0 ? `${smoothFrame.toFixed(1)} ms` : '—');
+    setText('p-fps', smoothFrame > 0 ? String(Math.round(1000 / smoothFrame)) : '—');
+    setText('p-cpu', smoothCpu > 0 ? `${smoothCpu.toFixed(2)} ms` : '—');
+    setText('p-buffer', `${gpu.canvas.width}×${gpu.canvas.height} @${gpu.dpr.toFixed(2)}x`);
+  };
+  window.setInterval(updatePerf, 250);
+  updatePerf();
+
   let gaugeTick = 0;
   function frame() {
     framePending = false;
+    const frameStart = performance.now();
+    const gap = frameStart - lastFrameStart;
+    if (lastFrameStart > 0 && gap < FRAME_RUN_GAP_MS) {
+      smoothFrame = smoothFrame > 0 ? smoothFrame * 0.9 + gap * 0.1 : gap;
+    }
+    lastFrameStart = frameStart;
     const resized = resizeToDisplay(gpu);
     // Dry media first: they deposit straight onto the floor and never enter the
     // fluid band, so a pencil line laid this frame is already under any wash
@@ -402,6 +448,8 @@ async function main() {
       setText('g-div', r.meanDivergence.toFixed(5));
       setText('g-relax', String(r.relaxIters));
     }
+    const cpu = performance.now() - frameStart;
+    smoothCpu = smoothCpu > 0 ? smoothCpu * 0.9 + cpu * 0.1 : cpu;
     if (engine.isFluidActive) requestFrame();
   }
   requestFrame();
