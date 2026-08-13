@@ -34,6 +34,12 @@
           <h3 class="debug-subtitle"><span>Performance</span></h3>
           <div class="stylus-row"><span>frame</span><b id="p-frame">-</b></div>
           <div class="stylus-row"><span>fps</span><b id="p-fps">-</b></div>
+          <!-- The mean hides hitching: 60 fps average with an occasional 40 ms
+               frame feels worse than a steady 55 and reads better. This is the
+               worst frame of the last run, and the count of frames that missed
+               a 60 Hz budget. -->
+          <div class="stylus-row"><span>worst</span><b id="p-worst">-</b></div>
+          <div class="stylus-row"><span>missed</span><b id="p-missed">-</b></div>
           <div class="stylus-row"><span>cpu</span><b id="p-cpu">-</b></div>
           <div class="stylus-row"><span>buffer</span><b id="p-buffer">-</b></div>
           <label class="perf-row" title="Draw the sheet at a fraction of the display's pixels. The simulation grid never changes — only how many pixels the result is shown at. If the lag clears at 50%, the frame is fill-rate bound.">
@@ -48,6 +54,11 @@
             <span>panel blur</span>
             <input id="p-blur" type="checkbox" checked />
           </label>
+          <label class="perf-row" title="The paper's tooth lighting. It is evaluated procedurally at screen resolution — four noise samples per pixel, on every pixel of the sheet whether paint is there or not. Off means flat paper: the sheet loses its grain, so this is a measurement, not a way to work.">
+            <span>paper relief</span>
+            <input id="p-relief" type="checkbox" checked />
+          </label>
+          <button id="p-reset" class="pal-btn" type="button" title="Clear the worst-frame and missed-frame counters before a fresh measurement">reset counters</button>
         </section>
 
         <section id="stylus" class="debug-card">

@@ -41,7 +41,14 @@ struct Comp {
   // Display tone for the active sheet. This is deliberately separate from the
   // physical paper texture: every medium still reads the shared paper rows.
   paperTone: vec3f,
-  _pad1: f32,
+
+  // Diagnostic: 0 skips the paper relief lighting entirely. The relief costs
+  // four `grain_h` evaluations per fragment and each is an fBm of sine-hashed
+  // value noise, so it is paid on every pixel of the sheet whether or not any
+  // paint is there. Switching it off is how you find out what share of a slow
+  // frame is the tooth. Display only — the solver reads the baked paper
+  // texture, which this never touches.
+  reliefOn: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -479,16 +486,19 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   //
   // At or below fit, one screen pixel is coarser than one paper texel and this
   // reduces to what the baked texture would have given.
-  let scaleNow = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
-  let texel = vec2f(1.0 / max(scaleNow, 1.0e-4)) / C.doc;
-  let hL = grain_h(uv - vec2f(texel.x, 0.0));
-  let hR = grain_h(uv + vec2f(texel.x, 0.0));
-  let hU = grain_h(uv - vec2f(0.0, texel.y));
-  let hD = grain_h(uv + vec2f(0.0, texel.y));
-  let n = normalize(vec3f(-(hR - hL) * C.relief, -(hD - hU) * C.relief, 1.0));
-  let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
-  let lambert = clamp(dot(n, lightDir), 0.0, 1.0);
-  let shade = 0.82 + 0.18 * lambert;      // subtle; paper is not shiny
+  var shade = 1.0;
+  if (C.reliefOn > 0.5) {
+    let scaleNow = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
+    let texel = vec2f(1.0 / max(scaleNow, 1.0e-4)) / C.doc;
+    let hL = grain_h(uv - vec2f(texel.x, 0.0));
+    let hR = grain_h(uv + vec2f(texel.x, 0.0));
+    let hU = grain_h(uv - vec2f(0.0, texel.y));
+    let hD = grain_h(uv + vec2f(0.0, texel.y));
+    let n = normalize(vec3f(-(hR - hL) * C.relief, -(hD - hU) * C.relief, 1.0));
+    let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
+    let lambert = clamp(dot(n, lightDir), 0.0, 1.0);
+    shade = 0.82 + 0.18 * lambert;        // subtle; paper is not shiny
+  }
   rgb = rgb * sheetTone * shade;
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);

@@ -245,6 +245,16 @@ async function main() {
     document.body.classList.toggle('no-blur', !blurToggle.checked);
     requestFrame();
   });
+  // The third candidate: the paper's tooth lighting, which is four procedural
+  // noise evaluations on every fragment of the sheet regardless of paint.
+  const reliefToggle = document.getElementById('p-relief') as HTMLInputElement;
+  reliefToggle.addEventListener('change', () => {
+    engine.reliefEnabled = reliefToggle.checked;
+    requestFrame();
+  });
+  document.getElementById('p-reset')!.addEventListener('click', () => {
+    worstFrame = 0; missedFrames = 0; runFrames = 0; smoothFrame = 0; smoothCpu = 0;
+  });
 
   engine.setPaper(PAPERS[1]);              // cold press default
   engine.setWetMedium(WATERCOLOR);
@@ -394,9 +404,15 @@ async function main() {
   // continuous run are averaged — otherwise the idle gap between two strokes
   // gets averaged in and a perfectly healthy wet sheet reports 2 fps.
   const FRAME_RUN_GAP_MS = 250;
+  // A 60 Hz budget. Anything past this missed a refresh, and enough of those is
+  // what "still some lag" feels like even when the average says 60 fps.
+  const BUDGET_60_MS = 16.7;
   let lastFrameStart = 0;
   let smoothFrame = 0;
   let smoothCpu = 0;
+  let worstFrame = 0;
+  let missedFrames = 0;
+  let runFrames = 0;
 
   // Driven off a timer rather than the frame loop on purpose. The loop stops
   // the moment the paint does, so a readout written only from inside it shows
@@ -406,6 +422,8 @@ async function main() {
   const updatePerf = () => {
     setText('p-frame', smoothFrame > 0 ? `${smoothFrame.toFixed(1)} ms` : '—');
     setText('p-fps', smoothFrame > 0 ? String(Math.round(1000 / smoothFrame)) : '—');
+    setText('p-worst', worstFrame > 0 ? `${worstFrame.toFixed(1)} ms` : '—');
+    setText('p-missed', runFrames > 0 ? `${missedFrames} / ${runFrames}` : '—');
     setText('p-cpu', smoothCpu > 0 ? `${smoothCpu.toFixed(2)} ms` : '—');
     setText('p-buffer', `${gpu.canvas.width}×${gpu.canvas.height} @${gpu.dpr.toFixed(2)}x`);
   };
@@ -419,6 +437,11 @@ async function main() {
     const gap = frameStart - lastFrameStart;
     if (lastFrameStart > 0 && gap < FRAME_RUN_GAP_MS) {
       smoothFrame = smoothFrame > 0 ? smoothFrame * 0.9 + gap * 0.1 : gap;
+      // Worst and missed are NOT smoothed. Smoothing is exactly what buries a
+      // hitch, and the hitch is the thing being hunted.
+      runFrames++;
+      if (gap > worstFrame) worstFrame = gap;
+      if (gap > BUDGET_60_MS * 1.5) missedFrames++;
     }
     lastFrameStart = frameStart;
     const resized = resizeToDisplay(gpu);

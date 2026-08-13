@@ -79,6 +79,14 @@ export class CanvasEngine {
   waterView = false;
 
   /**
+   * Paper relief lighting. A diagnostic switch, not an artistic one: the tooth
+   * shading costs four procedural grain evaluations on every fragment of the
+   * sheet, painted or not, so turning it off isolates that share of the frame.
+   * Display only — the solver reads the baked paper texture regardless.
+   */
+  reliefEnabled = true;
+
+  /**
    * View transform. `zoom = 1` fits the whole sheet; `(panX, panY)` is the
    * document point held at the centre of the window. These describe how the
    * sheet is LOOKED AT and never what the paint does — D11's separation of view
@@ -369,6 +377,9 @@ export class CanvasEngine {
     dv.setFloat32(96, this.paperTone[0], true);
     dv.setFloat32(100, this.paperTone[1], true);
     dv.setFloat32(104, this.paperTone[2], true);
+    // Offset 108 was the struct's tail padding, so this costs no bytes and the
+    // 112-byte agreement above still holds.
+    dv.setFloat32(108, this.reliefEnabled ? 1 : 0, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 
