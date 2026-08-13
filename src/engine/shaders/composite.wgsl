@@ -70,6 +70,10 @@ struct Comp {
 // can be smaller than a water-simulation cell without becoming a pale block.
 @group(0) @binding(16) var inkA: texture_2d<f32>;
 @group(0) @binding(17) var inkB: texture_2d<f32>;
+// The dry-media band's paper. Same (h, c, sizing, rc) layout as `paper`, baked
+// from the same function at four times the resolution — see `setPaper`. Bound
+// here so the relief lighting can READ the tooth instead of recomputing it.
+@group(0) @binding(18) var inkPaper: texture_2d<f32>;
 
 struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
@@ -490,10 +494,39 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   if (C.reliefOn > 0.5) {
     let scaleNow = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
     let texel = vec2f(1.0 / max(scaleNow, 1.0e-4)) / C.doc;
-    let hL = grain_h(uv - vec2f(texel.x, 0.0));
-    let hR = grain_h(uv + vec2f(texel.x, 0.0));
-    let hU = grain_h(uv - vec2f(0.0, texel.y));
-    let hD = grain_h(uv + vec2f(0.0, texel.y));
+
+    // The tooth is STATIC. It changes when the sheet changes and at no other
+    // time, yet the four `grain_h` calls below re-derive it on every fragment
+    // of every frame — four fBm evaluations, ~64 sine-hashes, paid on every
+    // pixel of the sheet whether or not any paint is there. On an iPad that
+    // measured as ten times the missed frames.
+    //
+    // `inkPaper` already holds exactly this field: same hash constants, same
+    // seed term, same four octaves, same tooth transform as `grain_h` — see
+    // paper.wgsl, which the two are required to keep in step anyway. So
+    // whenever the bake already holds every detail this magnification can
+    // show — one screen pixel at least as coarse as one baked texel — read it
+    // instead of recomputing it.
+    //
+    // Past that the screen out-resolves the bake and the procedural path takes
+    // over, which is the whole reason it exists: a magnified sheet keeps
+    // offering finer fibre instead of turning into soft blobs.
+    let bakeTexelDoc = C.doc.x / f32(textureDimensions(inkPaper).x);
+    let screenDoc = 1.0 / max(scaleNow, 1.0e-4);
+    var hL: f32; var hR: f32; var hU: f32; var hD: f32;
+    if (screenDoc >= bakeTexelDoc) {
+      // Uniform across the draw — it depends only on uniforms and the baked
+      // texture's size — so this branch costs no divergence.
+      hL = textureSampleLevel(inkPaper, samp, uv - vec2f(texel.x, 0.0), 0.0).x;
+      hR = textureSampleLevel(inkPaper, samp, uv + vec2f(texel.x, 0.0), 0.0).x;
+      hU = textureSampleLevel(inkPaper, samp, uv - vec2f(0.0, texel.y), 0.0).x;
+      hD = textureSampleLevel(inkPaper, samp, uv + vec2f(0.0, texel.y), 0.0).x;
+    } else {
+      hL = grain_h(uv - vec2f(texel.x, 0.0));
+      hR = grain_h(uv + vec2f(texel.x, 0.0));
+      hU = grain_h(uv - vec2f(0.0, texel.y));
+      hD = grain_h(uv + vec2f(0.0, texel.y));
+    }
     let n = normalize(vec3f(-(hR - hL) * C.relief, -(hD - hU) * C.relief, 1.0));
     let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
     let lambert = clamp(dot(n, lightDir), 0.0, 1.0);

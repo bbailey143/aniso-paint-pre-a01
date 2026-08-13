@@ -407,6 +407,12 @@ export class CanvasEngine {
         { binding: 15, resource: v.dry2b },
         { binding: 16, resource: v.ink0 },
         { binding: 17, resource: v.ink1 },
+        // The dry-media band's paper, bound for display as well as physics. It
+        // is the same height field `grain_h` computes, already baked at INK
+        // resolution, so the relief can read it instead of re-deriving it on
+        // every fragment of every frame. 14 sampled textures in this stage
+        // against a core default limit of 16 — see D12.
+        { binding: 18, resource: this.inkPaperTex.createView() },
       ],
     });
   }
