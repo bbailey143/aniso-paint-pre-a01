@@ -57,6 +57,11 @@ export class CanvasEngine {
 
   private paperPipe: GPUComputePipeline;
   private compPipe: GPURenderPipeline;
+  private resolvePipe: GPURenderPipeline;
+  /** Reduced-resolution colour buffer. Null while colourScale is 1. */
+  private resolveTex: GPUTexture | null = null;
+  private resolveW = 0;
+  private resolveH = 0;
   private paperParams: GPUBuffer;
   private compParams: GPUBuffer;
   private sampler: GPUSampler;
@@ -85,6 +90,19 @@ export class CanvasEngine {
    * Display only — the solver reads the baked paper texture regardless.
    */
   reliefEnabled = true;
+
+  /**
+   * How much of the window the colour is worked out at. 1 keeps the original
+   * behaviour exactly — every pixel resolved independently. Below 1 resolves
+   * the spectral stack into a smaller buffer and stretches it, while the paper
+   * tone and relief stay per-pixel.
+   *
+   * This is a real change to what is computed, not just how fast: the current
+   * path blends pigment AMOUNTS and then resolves the colour; the reduced path
+   * resolves colour and then blends COLOURS, and Kubelka-Munk is not linear.
+   * Both routes stay live so the difference can be judged on one painting.
+   */
+  colourScale = 1;
 
   /**
    * View transform. `zoom = 1` fits the whole sheet; `(panX, panY)` is the
@@ -161,10 +179,11 @@ export class CanvasEngine {
       size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
     });
     this.compParams = device.createBuffer({
-      // 80, not 64: the water-view flag added a fifth 16-byte group. This size,
-      // the ArrayBuffer in writeCompParams, and `struct Comp` in composite.wgsl
-      // must agree — an overflowing write is rejected whole and silently.
-      size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
+      // 128, not 112: the colour-scale dial added an eighth 16-byte group. This
+      // size, the ArrayBuffer in writeCompParams, and `struct Comp` in
+      // composite.wgsl must agree — an overflowing write is rejected whole and
+      // silently, which has cost time twice already.
+      size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
     });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
@@ -177,6 +196,15 @@ export class CanvasEngine {
       layout: 'auto', label: 'composite',
       vertex: { module: compModule, entryPoint: 'vs' },
       fragment: { module: compModule, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+    });
+    // The colour pass. RGBA16F because this carries LINEAR light on its way to
+    // the present pass, not a display-ready image — the same half-float the
+    // rest of the canvas uses under D8.
+    this.resolvePipe = device.createRenderPipeline({
+      layout: 'auto', label: 'composite-colour',
+      vertex: { module: compModule, entryPoint: 'vs' },
+      fragment: { module: compModule, entryPoint: 'fsResolve', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-list' },
     });
 
@@ -349,10 +377,10 @@ export class CanvasEngine {
   }
 
   private writeCompParams(viewW: number, viewH: number) {
-    // 112 bytes = 7 groups of 16. Must match `struct Comp` in composite.wgsl and
+    // 128 bytes = 8 groups of 16. Must match `struct Comp` in composite.wgsl and
     // the createBuffer size above. An overflowing uniform write is rejected
     // whole and silently; this has cost time twice already.
-    const buf = new ArrayBuffer(112);
+    const buf = new ArrayBuffer(128);
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
@@ -380,15 +408,28 @@ export class CanvasEngine {
     // Offset 108 was the struct's tail padding, so this costs no bytes and the
     // 112-byte agreement above still holds.
     dv.setFloat32(108, this.reliefEnabled ? 1 : 0, true);
+    // The water view never reads the reduced buffer, so tell the shader the
+    // colour is full-resolution whenever that view is on. This is the same
+    // condition `render()` uses to decide whether to run the colour pass at
+    // all — if the two disagree the present pass samples a stale buffer.
+    const reduced = this.colourScale < 0.999 && !this.waterView;
+    dv.setFloat32(112, reduced ? this.colourScale : 1, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 
   /** Bind group must be rebuilt each frame: the fluid ping-pongs its views. */
-  private compositeBind(): GPUBindGroup {
+  /**
+   * Bindings 0..17 — everything the SPECTRAL stack reads, and nothing else.
+   *
+   * The paper's tooth (18) and the colour buffer (19) belong to the present
+   * pass alone, so they are appended there. They must not be added here: a
+   * bind group carrying an entry its pipeline's layout does not declare is
+   * rejected whole, the pass draws nothing, and the sheet comes out black with
+   * only a console warning to say why.
+   */
+  private compositeEntries(): GPUBindGroupEntry[] {
     const v = this.fluid.views;
-    return this.gpu.device.createBindGroup({
-      layout: this.compPipe.getBindGroupLayout(0),
-      entries: [
+    return [
         { binding: 0, resource: { buffer: this.compParams } },
         { binding: 1, resource: { buffer: this.lib.ks } },
         { binding: 2, resource: { buffer: this.lib.cie } },
@@ -407,14 +448,47 @@ export class CanvasEngine {
         { binding: 15, resource: v.dry2b },
         { binding: 16, resource: v.ink0 },
         { binding: 17, resource: v.ink1 },
-        // The dry-media band's paper, bound for display as well as physics. It
-        // is the same height field `grain_h` computes, already baked at INK
-        // resolution, so the relief can read it instead of re-deriving it on
-        // every fragment of every frame. 14 sampled textures in this stage
-        // against a core default limit of 16 — see D12.
+    ];
+  }
+
+  private compositeBind(): GPUBindGroup {
+    // 18 is the dry-media band's paper: the same height field `grain_h`
+    // computes, already baked, so the relief reads it instead of re-deriving it
+    // per fragment. 19 is the colour buffer, which the shader references
+    // whether or not the reduced route is on — so it is always bound, pointing
+    // at a 1x1 texture when unused. 15 sampled textures in this stage against a
+    // core default limit of 16 (D12).
+    return this.gpu.device.createBindGroup({
+      layout: this.compPipe.getBindGroupLayout(0),
+      entries: [
+        ...this.compositeEntries(),
         { binding: 18, resource: this.inkPaperTex.createView() },
+        { binding: 19, resource: this.ensureResolveTex().createView() },
       ],
     });
+  }
+
+  private resolveBind(): GPUBindGroup {
+    return this.gpu.device.createBindGroup({
+      layout: this.resolvePipe.getBindGroupLayout(0),
+      entries: this.compositeEntries(),
+    });
+  }
+
+  /** Size the colour buffer to the current scale, reusing it when unchanged. */
+  private ensureResolveTex(): GPUTexture {
+    const reduced = this.colourScale < 0.999 && !this.waterView;
+    const w = reduced ? Math.max(1, Math.floor(this.gpu.canvas.width * this.colourScale)) : 1;
+    const h = reduced ? Math.max(1, Math.floor(this.gpu.canvas.height * this.colourScale)) : 1;
+    if (this.resolveTex && this.resolveW === w && this.resolveH === h) return this.resolveTex;
+    this.resolveTex?.destroy();
+    this.resolveTex = this.gpu.device.createTexture({
+      size: [w, h], format: 'rgba16float', label: 'composite-colour',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.resolveW = w;
+    this.resolveH = h;
+    return this.resolveTex;
   }
 
   /** Composite + Light to the swapchain. */
@@ -423,6 +497,27 @@ export class CanvasEngine {
     this.writeCompParams(canvas.width, canvas.height);
 
     const enc = device.createCommandEncoder();
+
+    // Colour first, into the reduced buffer, when that route is switched on.
+    // Sized and bound before the present pass so the two cannot disagree about
+    // which buffer is current.
+    const colourTex = this.ensureResolveTex();
+    const reduced = this.colourScale < 0.999 && !this.waterView;
+    if (reduced) {
+      const cpass = enc.beginRenderPass({
+        label: 'colour',
+        colorAttachments: [{
+          view: colourTex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          loadOp: 'clear', storeOp: 'store',
+        }],
+      });
+      cpass.setPipeline(this.resolvePipe);
+      cpass.setBindGroup(0, this.resolveBind());
+      cpass.draw(3);
+      cpass.end();
+    }
+
     const pass = enc.beginRenderPass({
       colorAttachments: [{
         view: context.getCurrentTexture().createView(),

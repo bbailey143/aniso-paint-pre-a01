@@ -49,6 +49,20 @@ struct Comp {
   // frame is the tooth. Display only — the solver reads the baked paper
   // texture, which this never touches.
   reliefOn: f32,
+
+  // 1 = work the colour out for every pixel on screen, as it always has.
+  // Below 1 = work it out in a buffer this fraction of the window and stretch
+  // the result up, with the paper's tone and relief still applied per pixel.
+  //
+  // The paint lives on the simulation grid, so at normal magnification the
+  // full-resolution path asks the same question of the same cell many times
+  // over. What is lost is sharpness in the COLOUR only — soft edges and bleeds
+  // are where to look for it — while the tooth, which is what the eye reads as
+  // detail, stays full resolution either way.
+  colourScale: f32,
+  _pad2: f32,
+  _pad3: f32,
+  _pad4: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -74,6 +88,9 @@ struct Comp {
 // from the same function at four times the resolution — see `setPaper`. Bound
 // here so the relief lighting can READ the tooth instead of recomputing it.
 @group(0) @binding(18) var inkPaper: texture_2d<f32>;
+// The reduced-resolution colour buffer, read only by the present pass. The
+// colour pass itself never references it, so its bind group layout omits it.
+@group(0) @binding(19) var resolved: texture_2d<f32>;
 
 struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
@@ -300,28 +317,42 @@ fn srgb_decode(c: f32) -> f32 {
   return pow((v + 0.055) / 1.055, 2.4);
 }
 
-@fragment
-fn fs(in: VsOut) -> @location(0) vec4f {
-  let bg = vec3f(0.043, 0.047, 0.055);
-  let sheetTone = vec3f(srgb_decode(C.paperTone.r), srgb_decode(C.paperTone.g), srgb_decode(C.paperTone.b));
-
-  // Screen px -> document px -> document uv.
-  //
-  // `fit` is the "contain" scale that puts the whole sheet in the window; zoom
-  // multiplies it, and (panX, panY) is the document point held at the centre of
-  // the window. At zoom 1 with the pan at the sheet's middle this is exactly the
-  // old centred contain fit, which is the regression path.
-  //
-  // `toGrid()` in src/main.ts INVERTS this. Change one and you must change the
-  // other, or paint stops landing under the cursor.
-  let fragPx = in.uv * C.view;
+// Screen px -> document px -> document uv.
+//
+// `fit` is the "contain" scale that puts the whole sheet in the window; zoom
+// multiplies it, and (panX, panY) is the document point held at the centre of
+// the window. At zoom 1 with the pan at the sheet's middle this is exactly the
+// old centred contain fit, which is the regression path.
+//
+// `toGrid()` in src/main.ts INVERTS this. Change one and you must change the
+// other, or paint stops landing under the cursor.
+//
+// `screenUv` is 0..1 across whatever target is being drawn, never pixels, so
+// the same mapping serves the reduced-resolution colour pass and the
+// full-resolution present pass without a second set of uniforms.
+fn docUvOf(screenUv: vec2f) -> vec2f {
+  let fragPx = screenUv * C.view;
   let scale = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
   let docPx = (fragPx - C.view * 0.5) / scale + vec2f(C.panX, C.panY);
-  let uv = docPx / C.doc;
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-    return vec4f(bg, 1.0);
-  }
+  return docPx / C.doc;
+}
+fn offSheet(uv: vec2f) -> bool {
+  return uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0;
+}
+fn sheetToneLinear() -> vec3f {
+  return vec3f(srgb_decode(C.paperTone.r), srgb_decode(C.paperTone.g), srgb_decode(C.paperTone.b));
+}
 
+/**
+ * Everything expensive, for one point on the document: the whole spectral
+ * stack resolved to LINEAR rgb, before the paper's own tone and its relief.
+ *
+ * Split out because this is the part that costs — 38 bands over up to three
+ * glaze layers — and the part that does not have to be evaluated once per
+ * screen pixel. Every input it reads comes off the simulation grid, so at
+ * normal magnification it is being asked the same question many times over.
+ */
+fn shadeLinear(uv: vec2f) -> vec3f {
   // Cell contents. What the eye sees is suspended pigment (floating in the
   // film) plus settled pigment (adsorbed on the paper) — the g/d split IS
   // granulation and lifting, but optically both absorb light, so both count.
@@ -378,66 +409,6 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let kIns = mix(C.kInstrument, 0.0, filmWetness);
   let Rpaper = baseRpaper * mix(1.0, 0.94, fibreDamp);
 
-  // ---- Water view -----------------------------------------------------------
-  //
-  // A debug display, not a render mode: it answers "where is the water, and how
-  // much" while a wash dries. Deep blue is a lot, pale blue is a little, and
-  // watching it fade IS watching the sheet dry. Nothing here feeds back into the
-  // simulation — it reads the same two textures the paint path already reads.
-  //
-  // The two kinds of water are shown differently on purpose, because telling
-  // them apart is the whole point of having this:
-  //
-  //   STANDING FILM (wet0.y) — water sitting on top of the paper, the stuff that
-  //   can still flow and carry pigment. Drawn in strong blue.
-  //
-  //   SOAKED IN (wet5.x) — water taken up into the fibres. It no longer flows
-  //   like a film but it keeps the paper workable. Drawn in a duller teal.
-  //
-  // Both scales are display-only and carry no physics.
-  if (C.waterView > 0.5) {
-    let film = max(w0v.y, 0.0);
-    let soak = max(w5v.x, 0.0);
-
-    // Dry paper reads as the paper, dimmed, so the sheet's tooth still gives a
-    // sense of place instead of the mark floating on flat grey.
-    let paperValue = 0.72 + 0.16 * pap.x;
-    var out = sheetTone * paperValue;
-
-    // The amount of water in a drying wash spans about four decades: a fresh
-    // flooded stroke carries ~0.08 per cell, and it is still visibly damp at
-    // ~0.0001. A linear ramp spends its whole range on the first moment and
-    // then shows flat nothing for the entire rest of the dry, which is exactly
-    // the part worth watching. So this is a LOG ramp over 1e-5 .. 1e-1.
-    //
-    // Consequence to keep in mind when reading it: equal steps of colour are
-    // equal RATIOS of water, not equal amounts. Deep blue is not "twice" pale
-    // blue. Nothing here is a measurement — use the CONSERVATION readout for
-    // numbers and this for where and when.
-    let decades = log2(1.0e4);
-    let ramp = fn_ramp(film, decades);
-    let soakAmt = fn_ramp(soak, decades);
-
-    // Soaked-in water first: it lies under the standing film. When a thirsty
-    // sheet has both, leave the teal visible instead of letting surface blue
-    // completely hide the absorbed-water signal.
-    out = mix(out, vec3f(0.36, 0.62, 0.66), soakAmt * 0.9);
-    let visibleFilm = ramp * (1.0 - soakAmt * 0.62);
-    out = mix(out, vec3f(0.05, 0.24, 0.72), visibleFilm);
-
-    // The wet mask boundary, drawn as a faint line. This is the contact line —
-    // the thing the drying rate is keyed to, and the thing whose behaviour the
-    // rim work turns on. Being able to SEE it is most of why this view exists.
-    let mHere = w0v.x;
-    let e = 1.0 / vec2f(textureDimensions(wet0));
-    let mR = biload(wet0, uv + vec2f(e.x, 0.0)).x;
-    let mD = biload(wet0, uv + vec2f(0.0, e.y)).x;
-    let onEdge = clamp(abs(mR - mHere) + abs(mD - mHere), 0.0, 1.0);
-    out = mix(out, vec3f(0.98, 0.85, 0.30), onEdge * 0.55);
-
-    return vec4f(srgb_encode(out.r), srgb_encode(out.g), srgb_encode(out.b), 1.0);
-  }
-
   let k1 = col.x;
   let k2 = col.y;
   let has2 = total2 >= 1e-4;
@@ -484,6 +455,113 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // deleting or diluting pigment, and keeps the row value artist-legible:
   // valueShift 0.18 produces an 18% wet-state value difference.
   rgb = rgb * max(1.0 - C.valueShift * wetness, 0.1);
+  return rgb;
+}
+
+// ---- Water view -------------------------------------------------------------
+//
+// A debug display, not a render mode: it answers "where is the water, and how
+// much" while a wash dries. Deep blue is a lot, pale blue is a little, and
+// watching it fade IS watching the sheet dry. Nothing here feeds back into the
+// simulation — it reads the same two textures the paint path already reads.
+//
+// The two kinds of water are shown differently on purpose, because telling
+// them apart is the whole point of having this:
+//
+//   STANDING FILM (wet0.y) — water sitting on top of the paper, the stuff that
+//   can still flow and carry pigment. Drawn in strong blue.
+//
+//   SOAKED IN (wet5.x) — water taken up into the fibres. It no longer flows
+//   like a film but it keeps the paper workable. Drawn in a duller teal.
+//
+// Both scales are display-only and carry no physics.
+//
+// It stays on the full-resolution pass and never uses the reduced colour
+// buffer: it costs almost nothing (no spectral loop at all), and a diagnostic
+// that is meant to show you exactly where the wet edge lies should not be
+// looked at through a half-resolution copy.
+fn waterViewColour(uv: vec2f) -> vec3f {
+  let pap = textureSampleLevel(paper, samp, uv, 0.0);
+  let w0v = paint(wet0, uv);
+  let w5v = paint(wet5, uv);
+  let film = max(w0v.y, 0.0);
+  let soak = max(w5v.x, 0.0);
+
+  // Dry paper reads as the paper, dimmed, so the sheet's tooth still gives a
+  // sense of place instead of the mark floating on flat grey.
+  let paperValue = 0.72 + 0.16 * pap.x;
+  var out = sheetToneLinear() * paperValue;
+
+  // The amount of water in a drying wash spans about four decades: a fresh
+  // flooded stroke carries ~0.08 per cell, and it is still visibly damp at
+  // ~0.0001. A linear ramp spends its whole range on the first moment and
+  // then shows flat nothing for the entire rest of the dry, which is exactly
+  // the part worth watching. So this is a LOG ramp over 1e-5 .. 1e-1.
+  //
+  // Consequence to keep in mind when reading it: equal steps of colour are
+  // equal RATIOS of water, not equal amounts. Deep blue is not "twice" pale
+  // blue. Nothing here is a measurement — use the CONSERVATION readout for
+  // numbers and this for where and when.
+  let decades = log2(1.0e4);
+  let ramp = fn_ramp(film, decades);
+  let soakAmt = fn_ramp(soak, decades);
+
+  // Soaked-in water first: it lies under the standing film. When a thirsty
+  // sheet has both, leave the teal visible instead of letting surface blue
+  // completely hide the absorbed-water signal.
+  out = mix(out, vec3f(0.36, 0.62, 0.66), soakAmt * 0.9);
+  let visibleFilm = ramp * (1.0 - soakAmt * 0.62);
+  out = mix(out, vec3f(0.05, 0.24, 0.72), visibleFilm);
+
+  // The wet mask boundary, drawn as a faint line. This is the contact line —
+  // the thing the drying rate is keyed to, and the thing whose behaviour the
+  // rim work turns on. Being able to SEE it is most of why this view exists.
+  let mHere = w0v.x;
+  let e = 1.0 / vec2f(textureDimensions(wet0));
+  let mR = biload(wet0, uv + vec2f(e.x, 0.0)).x;
+  let mD = biload(wet0, uv + vec2f(0.0, e.y)).x;
+  let onEdge = clamp(abs(mR - mHere) + abs(mD - mHere), 0.0, 1.0);
+  out = mix(out, vec3f(0.98, 0.85, 0.30), onEdge * 0.55);
+  return out;
+}
+
+/**
+ * The colour pass. Draws `shadeLinear` into an offscreen buffer that may be
+ * smaller than the window — that is the entire point — leaving the tone, the
+ * relief and the sRGB encode to the present pass below, which always runs at
+ * full resolution.
+ *
+ * Alpha marks nothing useful: the present pass decides what is off the sheet
+ * itself, at full resolution, so the paper's edge stays crisp no matter how
+ * coarse this buffer is.
+ */
+@fragment
+fn fsResolve(in: VsOut) -> @location(0) vec4f {
+  let uv = docUvOf(in.uv);
+  if (offSheet(uv)) { return vec4f(0.0, 0.0, 0.0, 0.0); }
+  return vec4f(shadeLinear(uv), 1.0);
+}
+
+@fragment
+fn fs(in: VsOut) -> @location(0) vec4f {
+  let bg = vec3f(0.043, 0.047, 0.055);
+  let uv = docUvOf(in.uv);
+  if (offSheet(uv)) { return vec4f(bg, 1.0); }
+
+  if (C.waterView > 0.5) {
+    let w = waterViewColour(uv);
+    return vec4f(srgb_encode(w.r), srgb_encode(w.g), srgb_encode(w.b), 1.0);
+  }
+
+  // Either read the colour the reduced pass already worked out, or work it out
+  // here at full resolution. This is the switch the whole change turns on, and
+  // both routes must stay live so the two can be compared on one painting.
+  var rgb: vec3f;
+  if (C.colourScale < 0.999) {
+    rgb = textureSampleLevel(resolved, samp, in.uv, 0.0).rgb;
+  } else {
+    rgb = shadeLinear(uv);
+  }
 
   // Relief lighting from the paper height gradient (tooth catches the light).
   //
@@ -538,7 +616,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     let lambert = clamp(dot(n, lightDir), 0.0, 1.0);
     shade = 0.82 + 0.18 * lambert;        // subtle; paper is not shiny
   }
-  rgb = rgb * sheetTone * shade;
+  rgb = rgb * sheetToneLinear() * shade;
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

@@ -245,6 +245,14 @@ async function main() {
     document.body.classList.toggle('no-blur', !blurToggle.checked);
     requestFrame();
   });
+  // Resolve the colour into a smaller buffer and stretch it, keeping the paper
+  // grain per-pixel. Both routes stay live so the two can be compared on the
+  // same painting rather than argued about.
+  const colourSelect = document.getElementById('p-colour') as HTMLSelectElement;
+  colourSelect.addEventListener('change', () => {
+    engine.colourScale = parseFloat(colourSelect.value);
+    requestFrame();
+  });
   // The third candidate: the paper's tooth lighting, which is four procedural
   // noise evaluations on every fragment of the sheet regardless of paint.
   const reliefToggle = document.getElementById('p-relief') as HTMLInputElement;

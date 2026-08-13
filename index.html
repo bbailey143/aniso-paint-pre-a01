@@ -54,6 +54,14 @@
             <span>panel blur</span>
             <input id="p-blur" type="checkbox" checked />
           </label>
+          <label class="perf-row" title="How much of the window the COLOUR is worked out at. The paper grain stays full resolution either way, so this stays much sharper than render scale does. Sharp is the original behaviour. Look at soft edges and at bleeds where two colours meet — that is where a difference would show.">
+            <span>colour detail</span>
+            <select id="p-colour">
+              <option value="1">sharp</option>
+              <option value="0.5">fast (half)</option>
+              <option value="0.35">faster (third)</option>
+            </select>
+          </label>
           <label class="perf-row" title="The paper's tooth lighting. It is evaluated procedurally at screen resolution — four noise samples per pixel, on every pixel of the sheet whether paint is there or not. Off means flat paper: the sheet loses its grain, so this is a measurement, not a way to work.">
             <span>paper relief</span>
             <input id="p-relief" type="checkbox" checked />
