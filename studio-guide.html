@@ -137,6 +137,19 @@
           </section>
 
           <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">The rack</span></div>
+            <p class="st-section-note">
+              Drag a knob <b>up and down</b> — not around it. Hold shift for fine
+              work, double-tap to put it back where it started. The last one is
+              centred: its zero is the middle, and either side means a direction.
+            </p>
+            <div class="st-card">
+              <div class="st-dials" id="g-dials"></div>
+              <div class="st-hint">Turn one off its sourced value and its ring goes lime — the same signal an edited row gives, so a rack shows its edits without being read.</div>
+            </div>
+          </section>
+
+          <section class="st-section">
             <div class="st-section-head"><span class="st-section-title">Response</span></div>
             <p class="st-section-note">
               Some settings are not a number but a relationship. Grab the curve and
@@ -206,6 +219,22 @@
 
     <script type="module">
       import { ResponseCurve } from '/src/studio/curve.ts';
+      import { Dial } from '/src/studio/dial.ts';
+
+      // A real rack, named the way a painter would name them. `bipolar` is for
+      // the one whose zero is the middle: wet-to-dry can go either way.
+      const rack = document.getElementById('g-dials');
+      const dials = [
+        { label: 'thickness',   value: 0.10, defaultValue: 0.10 },
+        { label: 'surface drag', value: 0.35, defaultValue: 0.35 },
+        { label: 'gravity',     value: 0.60, defaultValue: 0.60 },
+        { label: 'soaks in',    value: 0.42, defaultValue: 0.42 },
+        { label: 'edge dries',  value: 0.00, defaultValue: 0.00 },
+        { label: 'rim reach',   value: 2.40, defaultValue: 2.40, min: 0, max: 6, step: 0.1, unit: ' cells' },
+        { label: 'sheen',       value: 0.72, defaultValue: 0.72 },
+        { label: 'wet → dry',   value: 0.00, defaultValue: 0.00, min: -0.3, max: 0.3, bipolar: true },
+      ];
+      for (const d of dials) new Dial(rack, d);
 
       // Sliders: readout follows, and a value moved off its default says so.
       for (const row of document.querySelectorAll('#g-sliders [data-row]')) {
