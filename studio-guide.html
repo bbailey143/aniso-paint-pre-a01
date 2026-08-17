@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>aniso-paint — studio style guide</title>
+    <link rel="stylesheet" href="/src/design/tokens.css" />
+    <link rel="stylesheet" href="/src/studio/studio.css" />
+    <style>
+      /* Page-local only: the guide is a document about the studio language, so
+         it needs a little prose furniture the studios themselves never use. */
+      html, body { height: 100%; margin: 0; background: var(--color-void); }
+      body { -webkit-font-smoothing: antialiased; }
+      .guide-note {
+        margin: 0 0 var(--space-8);
+        color: var(--color-fog);
+        font-size: var(--text-label);
+        line-height: var(--leading-body);
+        max-width: 62ch;
+      }
+      .guide-note b { color: var(--color-mist); font-weight: var(--weight-medium); }
+      .guide-swatches { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+      .guide-chip {
+        display: flex; align-items: center; gap: 7px;
+        padding: 5px 10px 5px 6px;
+        border-radius: var(--radius-pill);
+        box-shadow: var(--shadow-hair);
+        color: var(--color-fog);
+        font-family: var(--font-mono);
+        font-size: var(--text-micro);
+      }
+      .guide-chip i { width: 14px; height: 14px; border-radius: 4px; }
+      .st-preview-sheet {
+        width: 100%; max-width: 420px; aspect-ratio: 4 / 3;
+        background:
+          repeating-linear-gradient(14deg, rgba(110,93,79,0.035) 0 1px, transparent 1px 4px),
+          linear-gradient(160deg, #e8e3d6, #d5cfbe);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="st">
+      <header class="st-head">
+        <div class="st-head-title">
+          <span class="st-title">Studio style guide</span>
+          <span class="st-subtitle">The shared language for the medium, paper and brush studios</span>
+        </div>
+        <div class="st-head-actions">
+          <button class="st-btn is-quiet" type="button">Revert</button>
+          <button class="st-btn" type="button">Duplicate</button>
+          <button class="st-btn is-primary" type="button">Save material</button>
+        </div>
+      </header>
+
+      <div class="st-body">
+        <div class="st-controls">
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">What this is</span></div>
+            <p class="guide-note">
+              Every studio is laid out the same way: <b>the dials on the left, the
+              thing they affect on the right</b>. Learning one studio should teach
+              you the next one. Below is every control a studio is allowed to use —
+              if a studio needs something that is not here, it goes here first.
+            </p>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">Identity</span></div>
+            <p class="st-section-note">What the material is called, in your words. This is the name that appears on the shelf.</p>
+            <div class="st-card">
+              <div class="st-row">
+                <label class="st-row-label" for="g-name">name</label>
+                <input class="st-input" id="g-name" type="text" value="Slow Oil, cold-pressed linseed" />
+                <span></span>
+              </div>
+              <div class="st-row">
+                <span class="st-row-label">solvent</span>
+                <span class="st-choice" role="group" aria-label="solvent">
+                  <button type="button" aria-pressed="false">water</button>
+                  <button type="button" aria-pressed="true">oil</button>
+                </span>
+                <span></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">Where the numbers come from</span></div>
+            <p class="st-section-note">
+              A studio hands you the power to invent numbers, so it has to be honest
+              about which ones were measured. Every value carries one of these.
+            </p>
+            <div class="st-card">
+              <div class="st-row">
+                <span class="st-row-label">viscosity</span>
+                <span><span class="st-prov is-cited">Card 5 · C97</span></span>
+                <span class="st-row-value">0.10</span>
+              </div>
+              <div class="st-hint">Traced to a paper. Change it and it stops being that paper's number.</div>
+              <div class="st-row">
+                <span class="st-row-label">rim reach</span>
+                <span><span class="st-prov is-unverified">unverified</span></span>
+                <span class="st-row-value">2.40</span>
+              </div>
+              <div class="st-hint">Reasoning, not a finding. Test it on the bench before trusting it.</div>
+              <div class="st-row is-edited">
+                <span class="st-row-label">drying</span>
+                <span><span class="st-prov is-yours">yours</span></span>
+                <span class="st-row-value">0.00</span>
+              </div>
+              <div class="st-hint">You set this. Honest about being a choice rather than a fact.</div>
+            </div>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">How it flows</span></div>
+            <p class="st-section-note">Thick paint holds a ridge; thin paint runs. These are the dials that decide which.</p>
+            <div class="st-card" id="g-sliders">
+              <div class="st-row" data-row>
+                <label class="st-row-label" for="g-visc">thickness</label>
+                <input class="st-slider" id="g-visc" type="range" min="0" max="1" step="0.01" value="0.1" data-default="0.1" />
+                <span class="st-row-value" data-value>0.10</span>
+              </div>
+              <div class="st-row" data-row>
+                <label class="st-row-label" for="g-drag">surface drag</label>
+                <input class="st-slider" id="g-drag" type="range" min="0" max="1" step="0.01" value="0.35" data-default="0.35" />
+                <span class="st-row-value" data-value>0.35</span>
+              </div>
+              <div class="st-row" data-row>
+                <label class="st-row-label" for="g-grav">gravity</label>
+                <input class="st-slider" id="g-grav" type="range" min="0" max="1" step="0.01" value="0.6" data-default="0.6" />
+                <span class="st-row-value" data-value>0.60</span>
+              </div>
+              <div class="st-hint">Move one and its readout turns lime — that is how you see at a glance what you have changed away from the sourced value.</div>
+            </div>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">Response</span></div>
+            <p class="st-section-note">
+              Some settings are not a number but a relationship. Grab the curve and
+              bend it — these are points on the line itself, not handles.
+            </p>
+            <div class="st-card">
+              <div class="st-curve" id="g-curve"></div>
+              <div class="st-curve-axes"><span>no pressure</span><span>full pressure</span></div>
+              <div class="st-row">
+                <span class="st-row-label">at half</span>
+                <span></span>
+                <span class="st-row-value" id="g-curve-mid">0.50</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">What it is made of</span></div>
+            <p class="st-section-note">Lists you compose. A pigment's own colour is real colour — it is the material, not decoration.</p>
+            <div class="st-card">
+              <table class="st-table">
+                <thead>
+                  <tr><th>pigment</th><th>index</th><th>parts</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><i class="st-dot" style="background:#2b4a9b"></i>Ultramarine Blue</td><td class="st-num">PB29</td><td class="st-num">3</td></tr>
+                  <tr><td><i class="st-dot" style="background:#c8452c"></i>Burnt Sienna</td><td class="st-num">PBr7</td><td class="st-num">1</td></tr>
+                  <tr><td><i class="st-dot" style="background:#e8e4da"></i>Titanium White</td><td class="st-num">PW6</td><td class="st-num">2</td></tr>
+                </tbody>
+              </table>
+              <div class="st-head-actions"><button class="st-btn is-quiet" type="button">+ add pigment</button></div>
+            </div>
+          </section>
+
+          <section class="st-section">
+            <div class="st-section-head"><span class="st-section-title">Colour roles</span></div>
+            <p class="st-section-note">
+              Lime marks the one thing you can commit, or the one value you changed —
+              never two things at once. Everything else is grey so the paint is the
+              only real colour on screen.
+            </p>
+            <div class="guide-swatches">
+              <span class="guide-chip"><i style="background:var(--accent-primary)"></i>accent · one at a time</span>
+              <span class="guide-chip"><i style="background:var(--color-pulse-green)"></i>cited</span>
+              <span class="guide-chip"><i style="background:var(--color-coral-red)"></i>unverified</span>
+              <span class="guide-chip"><i style="background:var(--color-iris-violet)"></i>yours</span>
+              <span class="guide-chip"><i style="background:var(--color-signal-teal)"></i>information</span>
+            </div>
+          </section>
+        </div>
+
+        <div class="st-preview">
+          <div class="st-preview-head">
+            <span>What it does</span>
+            <button class="st-btn is-quiet" type="button">Redraw</button>
+          </div>
+          <div class="st-preview-stage">
+            <div class="st-preview-sheet"></div>
+          </div>
+          <div class="st-preview-foot">
+            <span>the mark, not a picture of the mark</span>
+            <span>D13</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { ResponseCurve } from '/src/studio/curve.ts';
+
+      // Sliders: readout follows, and a value moved off its default says so.
+      for (const row of document.querySelectorAll('#g-sliders [data-row]')) {
+        const input = row.querySelector('input');
+        const out = row.querySelector('[data-value]');
+        const base = parseFloat(input.dataset.default);
+        const sync = () => {
+          out.textContent = parseFloat(input.value).toFixed(2);
+          row.classList.toggle('is-edited', Math.abs(parseFloat(input.value) - base) > 1e-9);
+        };
+        input.addEventListener('input', sync);
+        sync();
+      }
+
+      // Segmented choice: one pressed at a time.
+      for (const group of document.querySelectorAll('.st-choice')) {
+        group.addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          for (const b of group.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn));
+        });
+      }
+
+      const mid = document.getElementById('g-curve-mid');
+      const curve = new ResponseCurve(document.getElementById('g-curve'), {
+        points: [{ x: 0, y: 0 }, { x: 0.35, y: 0.18 }, { x: 0.7, y: 0.72 }, { x: 1, y: 1 }],
+        onChange: () => { mid.textContent = curve.valueAt(0.5).toFixed(2); },
+      });
+      mid.textContent = curve.valueAt(0.5).toFixed(2);
+    </script>
+  </body>
+</html>

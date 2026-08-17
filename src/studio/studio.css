@@ -1,0 +1,375 @@
+/* ============================================================================
+   STUDIO — the shared visual language for every building studio.
+   ----------------------------------------------------------------------------
+   A studio is where the artist BUILDS a material: a medium, a sheet, a brush.
+   It is not a developer inspector (D13), and the difference shows up in the
+   details — a studio names things the way a painter names them, shows what a
+   setting DOES rather than only what it is, and never lets an invented number
+   pass as a measured one.
+
+   Three rules this sheet exists to enforce:
+
+     1. Every studio is laid out the same way. Controls on one side, the thing
+        they affect on the other, always. Learning one studio must teach you
+        the next one.
+     2. Every number can say where it came from. The fence is the project's
+        central rule, so provenance is a first-class piece of the visual
+        language, not an afterthought — see `.st-prov`.
+     3. Colour is information. The lime accent marks one thing at a time; the
+        rest is grey. Material colour (a pigment swatch, a paper tone) is
+        imagery and keeps its own colour.
+
+   Everything here reads from src/design/tokens.css. If you are about to type a
+   hex, stop — the exception is depicted material, which is imagery, not chrome.
+   ============================================================================ */
+
+/* ---- Shell ---------------------------------------------------------------
+   Controls left, consequence right. Never the other way round: the artist is
+   turning a dial and watching a mark, and the mark is the point. */
+.st {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--color-void);
+  color: var(--color-mist);
+  font: var(--weight-regular) var(--text-ui)/var(--leading-ui) var(--font-ui);
+  letter-spacing: var(--tracking-ui);
+}
+
+.st-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  background: var(--panel-head-bg);
+  border-bottom: 1px solid var(--panel-border);
+}
+.st-head-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.st-title {
+  color: var(--color-paper);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-lg);
+}
+/* What is being built, in the artist's words — "Oil, slow-drying" not "row 4". */
+.st-subtitle { color: var(--color-fog); font-size: var(--text-label); }
+.st-head-actions { margin-left: auto; display: flex; gap: var(--space-8); }
+
+.st-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 0;
+}
+/* Wide enough for two, and the preview goes on top on a narrow iPad in
+   portrait — the controls are useless without seeing what they did. */
+@media (max-width: 900px) {
+  .st-body { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 40vh) 1fr; }
+  .st-preview { order: -1; border-left: 0; border-bottom: 1px solid var(--panel-border); }
+}
+
+.st-controls {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+.st-preview {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--panel-border);
+  background: var(--color-carbon);
+}
+
+/* ---- Sections ------------------------------------------------------------
+   A section is a group of settings that belong to one physical idea — how it
+   flows, how it dries, what it is made of. Named for the behaviour, not the
+   struct it happens to live in. */
+.st-section { display: flex; flex-direction: column; gap: var(--space-8); }
+.st-section-head { display: flex; align-items: baseline; gap: var(--space-8); }
+.st-section-title {
+  color: var(--color-mist);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-ui);
+}
+.st-section-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--panel-border);
+}
+/* One line, plain language, saying what this group of dials is FOR. */
+.st-section-note {
+  color: var(--color-fog);
+  font-size: var(--text-label);
+  line-height: var(--leading-body);
+  max-width: 60ch;
+}
+
+.st-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  background: var(--card-bg);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-hair);
+}
+
+/* ---- The workhorse row ---------------------------------------------------
+   label | control | value. The value is mono and tabular so a column of them
+   can be read down without the digits dancing. */
+.st-row {
+  display: grid;
+  grid-template-columns: 12ch minmax(0, 1fr) 6ch;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 32px;
+}
+.st-row > label,
+.st-row-label {
+  color: var(--color-mist);
+  font-size: var(--text-label);
+  cursor: default;
+}
+.st-row-value {
+  color: var(--color-mist);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* A value the artist has moved off its sourced default. Not an error — it is
+   the whole point of a studio — but it must be visible at a glance. */
+.st-row.is-edited .st-row-value { color: var(--accent-primary); }
+
+.st-slider {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--color-mist);
+  background: transparent;
+  cursor: pointer;
+}
+.st-row.is-edited .st-slider { accent-color: var(--accent-primary); }
+
+/* A hint under a row, for the sentence that stops a dial being a mystery. */
+.st-hint {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  color: var(--color-ash);
+  font-size: var(--text-label);
+  line-height: var(--leading-body);
+}
+
+/* ---- Provenance ----------------------------------------------------------
+   THE FENCE, made visible. A studio hands the artist the power to invent
+   numbers, so it must also make clear which numbers were measured and which
+   were made up. Never let an invented value wear a sourced value's clothes. */
+.st-prov {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-mono);
+  white-space: nowrap;
+}
+.st-prov::before { content: ''; width: 5px; height: 5px; border-radius: 50%; }
+/* Traced to a paper, with the card that carries it. */
+.st-prov.is-cited { color: var(--color-pulse-green); box-shadow: inset 0 0 0 1px var(--color-pulse-green); }
+.st-prov.is-cited::before { background: var(--color-pulse-green); }
+/* Reasoning, not a finding. Bench it before trusting it. */
+.st-prov.is-unverified { color: var(--color-coral-red); box-shadow: inset 0 0 0 1px var(--color-coral-red); }
+.st-prov.is-unverified::before { background: var(--color-coral-red); }
+/* The artist's own value. Honest about being a choice rather than a fact. */
+.st-prov.is-yours { color: var(--color-iris-violet); box-shadow: inset 0 0 0 1px var(--color-iris-violet); }
+.st-prov.is-yours::before { background: var(--color-iris-violet); }
+
+/* ---- Choice --------------------------------------------------------------
+   For settings with two or three answers, where a dropdown would hide the
+   options behind a tap. Selection is a ring, never a fill. */
+.st-choice {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--control-bg);
+  border-radius: var(--radius-control);
+}
+.st-choice button {
+  padding: 5px var(--space-12);
+  min-height: 30px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-badge);
+  color: var(--color-fog);
+  font: var(--weight-regular) var(--text-label)/1 var(--font-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.st-choice button:hover { color: var(--color-paper); background: var(--control-bg-hover); }
+.st-choice button[aria-pressed="true"] {
+  color: var(--color-paper);
+  background: var(--control-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-primary);
+}
+.st-choice button:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+
+/* ---- Text and number fields --------------------------------------------- */
+.st-input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px var(--space-8);
+  background: var(--card-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-control);
+  color: var(--color-mist);
+  font: var(--weight-regular) var(--text-body)/var(--leading-ui) var(--font-ui);
+}
+.st-input:hover { border-color: var(--color-smoke); }
+.st-input:focus-visible { border-color: var(--color-mist); outline: none; }
+.st-input.is-mono {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Table ---------------------------------------------------------------
+   For lists the artist composes: pigments and their parts, layers, stops. */
+.st-table { width: 100%; border-collapse: collapse; font-size: var(--text-label); }
+.st-table th {
+  padding: 0 var(--space-8) var(--space-4);
+  color: var(--color-ash);
+  font-weight: var(--weight-regular);
+  text-align: left;
+  letter-spacing: 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+.st-table th:last-child, .st-table td:last-child { text-align: right; }
+.st-table td {
+  padding: 6px var(--space-8);
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--color-mist);
+}
+.st-table tr:last-child td { border-bottom: 0; }
+.st-table .st-num {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* A pigment's own colour is imagery, not chrome — it keeps its real hue. */
+.st-dot {
+  display: inline-block;
+  width: 11px; height: 11px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* ---- Curve ---------------------------------------------------------------
+   Response curves — pressure to width, tilt to spread, speed to breakup. A
+   studio needs these to be dragged and seen, not typed as coefficients. */
+.st-curve {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--radius-control);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-hair);
+  touch-action: none;
+  cursor: crosshair;
+}
+.st-curve canvas { display: block; width: 100%; height: 100%; border-radius: var(--radius-control); }
+.st-curve-axes {
+  display: flex;
+  justify-content: space-between;
+  padding-top: var(--space-4);
+  color: var(--color-ash);
+  font-size: var(--text-micro);
+}
+
+/* ---- Buttons ------------------------------------------------------------- */
+.st-btn {
+  padding: 7px var(--space-12);
+  min-height: 32px;
+  background: transparent;
+  color: var(--color-mist);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-control);
+  font: var(--weight-regular) var(--text-label)/1 var(--font-ui);
+  letter-spacing: var(--tracking-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.st-btn:hover { color: var(--color-paper); border-color: var(--color-smoke); background: var(--control-bg); }
+.st-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+/* The one committing action in the view, and there is only ever one. */
+.st-btn.is-primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--color-void);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-primary);
+}
+.st-btn.is-primary:hover { background: var(--accent-primary); filter: brightness(1.05); color: var(--color-void); }
+.st-btn.is-quiet { border-color: transparent; color: var(--color-fog); }
+
+/* ---- Preview -------------------------------------------------------------
+   D13: a studio must show what its artifact DOES. The ground truth for a
+   material is the mark it makes, so this panel holds a real mark made by the
+   real engine — never a drawing of one. */
+.st-preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--color-ash);
+  font-size: var(--text-label);
+}
+.st-preview-head .st-btn { margin-left: auto; }
+.st-preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-16);
+}
+.st-preview-stage canvas,
+.st-preview-sheet {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-badge);
+  box-shadow: var(--shadow-sm);
+}
+.st-preview-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border-top: 1px solid var(--panel-border);
+  color: var(--color-fog);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-mono);
+}
+
+/* A finger is not a mouse pointer. */
+@media (pointer: coarse) {
+  .st-row { min-height: 40px; }
+  .st-slider { height: 30px; }
+  .st-btn { min-height: 40px; padding: 10px var(--space-16); }
+  .st-choice button { min-height: 38px; }
+  .st-input { padding: 10px var(--space-8); }
+}
