@@ -9,6 +9,8 @@ import { PointerInput, type StylusSample } from './input/pointer';
 import { StrokeEngine } from './input/stroke';
 import { Palette } from './ui/palette';
 import { Rail } from './ui/rail';
+import { MediumStudio } from './studio/medium-studio';
+import './studio/studio.css';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
@@ -227,6 +229,33 @@ async function main() {
   leftRail.addToggle({
     id: 'paints', label: 'Paints', title: 'Show or hide the paint box', on: true,
     onChange: (on) => palette.setPanSetVisible(on),
+  });
+
+  // ---- Medium studio -------------------------------------------------------
+  // Opens as a panel down the left and leaves the sheet beside it live, so the
+  // paint being edited can be tested with the real engine rather than previewed.
+  const mediumStudio = new MediumStudio(document.body, WATERCOLOR, {
+    onApply(medium) {
+      engine.setWetMedium(medium);
+      requestFrame();
+    },
+    onPickColour(slug) {
+      // Straight onto the brush, replacing whatever was loaded — a test colour
+      // is meant to be a clean read of the medium, not a mix.
+      palette.clear();
+      palette.add(slug);
+    },
+    onClearSheet() {
+      engine.clear();
+      engine.setMix(palette.recipe);
+      stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
+      requestFrame();
+    },
+  });
+  leftRail.addToggle({
+    id: 'medium', label: 'Medium', title: 'Build and adjust the paint itself',
+    on: false,
+    onChange: (on) => mediumStudio.setVisible(on),
   });
 
   // Two discriminators for a slow frame, reported into the Performance card.

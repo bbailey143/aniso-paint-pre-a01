@@ -24,6 +24,9 @@ export interface DialOptions {
   defaultValue?: number;
   /** Suffix for the readout — 'x', '°', 'µm'. Bare numbers otherwise. */
   unit?: string;
+  /** Digits in the readout. Some material settings are genuinely small and
+   *  rounding them to two would show every value on the dial as 0.00. */
+  decimals?: number;
   /**
    * Fill the arc outward from the centre rather than from the left end. For
    * settings whose zero is the middle and whose sign means something — a value
@@ -54,7 +57,9 @@ function arcPath(cx: number, cy: number, r: number, from: number, to: number) {
 
 export class Dial {
   readonly root: HTMLElement;
-  private opts: Required<Omit<DialOptions, 'onChange' | 'unit' | 'bipolar'>> & DialOptions;
+  // Only the four the constructor actually resolves are Required here; the
+  // genuinely optional ones stay optional or every new option becomes mandatory.
+  private opts: Required<Omit<DialOptions, 'onChange' | 'unit' | 'bipolar' | 'decimals'>> & DialOptions;
   private val: number;
   private fillEl!: SVGPathElement;
   private needleEl!: SVGLineElement;
@@ -158,7 +163,7 @@ export class Dial {
     this.needleEl.setAttribute('x2', tip.x.toFixed(2));
     this.needleEl.setAttribute('y2', tip.y.toFixed(2));
 
-    const shown = this.val.toFixed(this.opts.step >= 1 ? 0 : 2);
+    const shown = this.val.toFixed(this.opts.decimals ?? (this.opts.step >= 1 ? 0 : 2));
     this.valueEl.textContent = unit ? `${shown}${unit}` : shown;
 
     const edited = Math.abs(this.val - defaultValue) > 1e-9;

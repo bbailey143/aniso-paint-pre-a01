@@ -88,6 +88,122 @@
   background: var(--color-carbon);
 }
 
+/* ---- Panel form ----------------------------------------------------------
+   The medium studio does NOT take over the screen. It sits down the left and
+   leaves the real sheet showing, because the honest test of a paint is the
+   mark it makes with the actual engine — not a picture of one (D13). The area
+   to its right is live canvas: paint on it while the dials are open. */
+.st-panel {
+  position: fixed;
+  z-index: 60;
+  left: 48px;
+  top: 0;
+  bottom: 0;
+  width: min(430px, calc(100vw - 60px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  border-right: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-mist);
+  font: var(--weight-regular) var(--text-ui)/var(--leading-ui) var(--font-ui);
+}
+.st-panel[hidden] { display: none; }
+
+/* The test colours, floating over the free part of the sheet rather than
+   buried in the panel — the testing area should feel like a place. */
+.st-testbar {
+  position: fixed;
+  z-index: 59;
+  bottom: var(--space-16);
+  left: calc(48px + min(430px, calc(100vw - 60px)));
+  right: 60px;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - var(--space-24));
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  box-shadow: var(--shadow-panel);
+}
+.st-testbar[hidden] { display: none; }
+.st-testbar-label { color: var(--color-ash); font-size: var(--text-label); }
+/* A test colour is real pigment, so the swatch is its real colour. */
+.st-swatch {
+  width: 34px; height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  touch-action: manipulation;
+}
+.st-swatch.on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-primary); }
+.st-swatch:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 3px; }
+
+/* ---- Popover -------------------------------------------------------------
+   Plain words for the settings that need them, one group at a time, so an
+   explanation never costs a trip out of the studio. */
+.st-pop {
+  position: fixed;
+  z-index: 70;
+  width: min(340px, calc(100vw - var(--space-24)));
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-12);
+  border-radius: var(--radius-panel);
+  background: var(--color-carbon);
+  box-shadow: var(--shadow-panel), rgba(0, 0, 0, 0.5) 0 8px 24px;
+}
+.st-pop h4 {
+  margin: 0 0 var(--space-8);
+  color: var(--color-paper);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+.st-pop dl { margin: 0; display: grid; gap: var(--space-8); }
+.st-pop dt {
+  color: var(--color-mist);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+}
+.st-pop dd {
+  margin: 2px 0 0;
+  color: var(--color-fog);
+  font-size: var(--text-label);
+  line-height: var(--leading-body);
+}
+/* The engine's own number, kept visible. A studio that hides what it is
+   really setting cannot be used to write a value into a card afterwards. */
+.st-pop code {
+  color: var(--color-ash);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: var(--tracking-mono);
+}
+.st-help {
+  width: 20px; height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  color: var(--color-fog);
+  font: var(--text-label)/1 var(--font-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.st-help:hover { color: var(--color-paper); border-color: var(--color-smoke); background: var(--control-bg); }
+.st-help:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
 /* ---- Sections ------------------------------------------------------------
    A section is a group of settings that belong to one physical idea — how it
    flows, how it dries, what it is made of. Named for the behaviour, not the
