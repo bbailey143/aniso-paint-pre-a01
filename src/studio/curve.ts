@@ -12,9 +12,7 @@
 //   * Grab the line anywhere and bend it. A point appears where you took hold,
 //     already following your finger, so there is no separate "add" step.
 //   * Grab an existing point and move it.
-//   * Drag a point clear off the top or bottom to throw it away. The curve
-//     redraws without it while you are still holding it, so you can see what
-//     you are about to get before you commit to it.
+//   * Double-tap a point to remove it.
 //
 // The two ends are pinned and cannot be removed. A response curve with no value
 // at no-pressure is not a curve, it is a hole.
@@ -34,31 +32,82 @@ export interface CurveOptions {
 /** How near the line counts as grabbing it, in CSS pixels. Generous: this is
  *  aimed at with a fingertip, not a mouse. */
 const GRAB_PX = 22;
-/** Dragged this far past the top or bottom edge, a point is being thrown away,
- *  as a fraction of the box height. Far enough that it cannot happen while
- *  someone is simply pushing a value hard against its limit. */
-const DISCARD_MARGIN = 0.22;
+/** Two taps closer together than this on the same point removes it. */
+const DOUBLE_TAP_MS = 320;
+/** Movement past this many pixels makes an interaction a drag, not a tap, so
+ *  adjusting a point and grabbing it again cannot delete it by accident. */
+const TAP_SLOP_PX = 4;
 /** Interior points keep this much room either side, so the curve can never fold
  *  back on itself and a new point can never land exactly on an old one. */
 const MIN_GAP = 0.02;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-/** Sample a set of points. Free-standing so the drag can preview the shape a
- *  discard would leave without disturbing the live set. */
-function sample(points: CurvePoint[], x: number): number {
-  const t = clamp01(x);
-  for (let i = 0; i < points.length - 1; i++) {
-    if (t >= points[i].x && t <= points[i + 1].x) {
-      const span = Math.max(1e-6, points[i + 1].x - points[i].x);
-      const u = (t - points[i].x) / span;
-      // Smoothstep between neighbours: continuous slope at the joins without
-      // the overshoot a spline would give, which on a response curve would mean
-      // a value the artist never asked for.
-      return points[i].y + (points[i + 1].y - points[i].y) * (u * u * (3 - 2 * u));
+/**
+ * Tangents for a monotone cubic (Fritsch-Carlson).
+ *
+ * The obvious smooth interpolations are both wrong here. A smoothstep between
+ * each neighbouring pair flattens the slope at EVERY point, which is what gives
+ * a lumpy, stepped-looking line. Catmull-Rom is properly smooth but overshoots:
+ * it will swing above or below the points on its way between them, and on a
+ * response curve an overshoot is a value the artist never asked for — a brush
+ * that gets wider than full pressure ever requested.
+ *
+ * Monotone cubic is the one that does both. It passes through every point with
+ * a continuous slope, so it reads as auto-smoothed, and it provably cannot
+ * overshoot between two points.
+ */
+function tangents(p: CurvePoint[]): number[] {
+  const n = p.length;
+  if (n < 2) return [0];
+  const secant: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    secant.push((p[i + 1].y - p[i].y) / Math.max(1e-6, p[i + 1].x - p[i].x));
+  }
+  const m: number[] = new Array(n);
+  m[0] = secant[0];
+  m[n - 1] = secant[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    // A turning point stays a turning point: flat here, or the curve bulges
+    // past the peak the artist placed.
+    m[i] = secant[i - 1] * secant[i] <= 0 ? 0 : (secant[i - 1] + secant[i]) / 2;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (secant[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / secant[i];
+    const b = m[i + 1] / secant[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[i] = t * a * secant[i];
+      m[i + 1] = t * b * secant[i];
     }
   }
-  return points[points.length - 1].y;
+  return m;
+}
+
+/** Cubic Hermite through the points, using those tangents. */
+function sampleSpline(p: CurvePoint[], m: number[], x: number): number {
+  const n = p.length;
+  if (n === 0) return 0;
+  if (n === 1) return p[0].y;
+  const t = clamp01(x);
+  if (t <= p[0].x) return clamp01(p[0].y);
+  if (t >= p[n - 1].x) return clamp01(p[n - 1].y);
+  let k = 0;
+  while (k < n - 2 && t > p[k + 1].x) k++;
+  const h = Math.max(1e-6, p[k + 1].x - p[k].x);
+  const s = (t - p[k].x) / h;
+  const s2 = s * s;
+  const s3 = s2 * s;
+  const y =
+    (2 * s3 - 3 * s2 + 1) * p[k].y +
+    (s3 - 2 * s2 + s) * h * m[k] +
+    (-2 * s3 + 3 * s2) * p[k + 1].y +
+    (s3 - s2) * h * m[k + 1];
+  // Monotone cubic cannot overshoot between two points, so this only ever
+  // guards against a caller handing in points outside the range.
+  return clamp01(y);
 }
 
 export class ResponseCurve {
@@ -66,10 +115,14 @@ export class ResponseCurve {
   private ctx: CanvasRenderingContext2D;
   private points: CurvePoint[];
   private dragging = -1;
-  /** True while the held point is outside the box and would be discarded. */
-  private discarding = false;
   private opts: CurveOptions;
   private ro?: ResizeObserver;
+  /** Double-tap bookkeeping. The POINT is remembered rather than its index,
+   *  because inserting or removing shifts every index after it. */
+  private lastTapPoint: CurvePoint | null = null;
+  private lastTapEnd = 0;
+  private movedPx = 0;
+  private downAt = { x: 0, y: 0 };
 
   constructor(mount: HTMLElement, opts: CurveOptions = {}) {
     this.opts = opts;
@@ -93,22 +146,14 @@ export class ResponseCurve {
     mount.addEventListener('pointermove', this.onMove);
     mount.addEventListener('pointerup', this.onUp);
     mount.addEventListener('pointercancel', this.onUp);
-  }
-
-  /**
-   * The curve as it currently READS — which, while a point is held out for
-   * discard, is the curve without it. What is drawn and what is sampled have
-   * to be the same thing, or a studio live-previewing a material would show a
-   * mark that does not match the line the artist is looking at.
-   */
-  private active(): CurvePoint[] {
-    return this.discarding ? this.points.filter((_, i) => i !== this.dragging) : this.points;
+    // A double-tap on a touch screen otherwise zooms the page.
+    mount.addEventListener('dblclick', (e) => e.preventDefault());
   }
 
   /** Sample the curve. This is what a studio feeds into a material row. */
-  valueAt(x: number): number { return sample(this.active(), x); }
+  valueAt(x: number): number { return sampleSpline(this.points, tangents(this.points), x); }
 
-  get value(): CurvePoint[] { return this.active().map((p) => ({ ...p })); }
+  get value(): CurvePoint[] { return this.points.map((p) => ({ ...p })); }
 
   set value(next: CurvePoint[]) {
     this.points = next.map((p) => ({ ...p }));
@@ -125,9 +170,6 @@ export class ResponseCurve {
     this.draw();
   }
 
-  /** Pointer position in curve space. Deliberately NOT clamped: a drag that
-   *  has left the box is how a point gets thrown away, so the raw value has to
-   *  survive as far as the caller. */
   private toLocal(ev: PointerEvent) {
     const r = this.canvas.getBoundingClientRect();
     return {
@@ -138,25 +180,49 @@ export class ResponseCurve {
     };
   }
 
-  private onDown = (ev: PointerEvent) => {
-    ev.preventDefault();
-    const { x, y, w, h } = this.toLocal(ev);
-
-    // An existing point wins over the line, so grabbing a point you can see
-    // never silently spawns a second one on top of it.
+  /** Nearest point within reach, measured in pixels — the box is not square,
+   *  so doing this in curve units makes the target an ellipse and the line
+   *  harder to hit from above than from the side. */
+  private pointNear(x: number, y: number, w: number, h: number) {
     let hit = -1;
     let best = GRAB_PX;
     this.points.forEach((p, i) => {
       const d = Math.hypot((p.x - x) * w, (p.y - y) * h);
       if (d < best) { best = d; hit = i; }
     });
+    return hit;
+  }
 
-    if (hit < 0) {
+  private onDown = (ev: PointerEvent) => {
+    ev.preventDefault();
+    const { x, y, w, h } = this.toLocal(ev);
+    this.movedPx = 0;
+    this.downAt = { x: ev.clientX, y: ev.clientY };
+
+    // An existing point wins over the line, so grabbing a point you can see
+    // never silently spawns a second one on top of it.
+    let hit = this.pointNear(x, y, w, h);
+
+    if (hit >= 0) {
+      const interior = hit > 0 && hit < this.points.length - 1;
+      // Double-tap removes. It must be two TAPS on the SAME point: firing on
+      // timing alone would mean nudging a point and grabbing it again — an
+      // ordinary thing to do — silently deleted it.
+      if (interior
+        && this.points[hit] === this.lastTapPoint
+        && ev.timeStamp - this.lastTapEnd < DOUBLE_TAP_MS) {
+        this.points.splice(hit, 1);
+        this.lastTapPoint = null;
+        this.dragging = -1;
+        this.draw();
+        this.opts.onChange?.(this.value, true);
+        return;
+      }
+    } else {
       // Not on a point — is it on the line? Compare against the curve's own
       // height at this x, in pixels, so the target is the same thickness
       // wherever the curve happens to be steep.
-      const onCurve = sample(this.points, clamp01(x));
-      if (Math.abs(onCurve - y) * h > GRAB_PX) return;
+      if (Math.abs(this.valueAt(clamp01(x)) - y) * h > GRAB_PX) return;
       if (x <= MIN_GAP || x >= 1 - MIN_GAP) return;   // the ends are already there
 
       // Take hold of the line by putting a point exactly where it already is,
@@ -166,12 +232,11 @@ export class ResponseCurve {
       const left = this.points[at - 1];
       const right = this.points[at];
       if (x - left.x < MIN_GAP || right.x - x < MIN_GAP) return;
-      this.points.splice(at, 0, { x, y: onCurve });
+      this.points.splice(at, 0, { x, y: this.valueAt(clamp01(x)) });
       hit = at;
     }
 
     this.dragging = hit;
-    this.discarding = false;
     try { this.canvas.parentElement!.setPointerCapture(ev.pointerId); } catch { /* keep dragging */ }
     this.draw();
   };
@@ -179,18 +244,17 @@ export class ResponseCurve {
   private onMove = (ev: PointerEvent) => {
     if (this.dragging < 0) return;
     ev.preventDefault();
+    this.movedPx = Math.max(
+      this.movedPx,
+      Math.hypot(ev.clientX - this.downAt.x, ev.clientY - this.downAt.y),
+    );
     const { x, y } = this.toLocal(ev);
     const i = this.dragging;
-    const interior = i > 0 && i < this.points.length - 1;
-
-    // Only interior points can be thrown away, and only once the drag is a
-    // clear distance outside the box rather than merely pressed against its
-    // edge — otherwise pushing a value to full would start deleting things.
-    this.discarding = interior && (y > 1 + DISCARD_MARGIN || y < -DISCARD_MARGIN);
-
     const p = this.points[i];
     p.y = clamp01(y);
-    if (interior) {
+    // The ends stay at the ends, and interior points keep their order, so the
+    // curve can never fold back on itself.
+    if (i > 0 && i < this.points.length - 1) {
       p.x = Math.min(this.points[i + 1].x - MIN_GAP, Math.max(this.points[i - 1].x + MIN_GAP, x));
     }
     this.draw();
@@ -199,11 +263,12 @@ export class ResponseCurve {
 
   private onUp = (ev: PointerEvent) => {
     if (this.dragging < 0) return;
-    if (this.discarding) this.points.splice(this.dragging, 1);
+    const held = this.points[this.dragging];
     this.dragging = -1;
-    this.discarding = false;
+    // Only a genuine tap arms the double-tap. A drag does not.
+    this.lastTapPoint = this.movedPx <= TAP_SLOP_PX ? held : null;
+    this.lastTapEnd = ev.timeStamp;
     try { this.canvas.parentElement!.releasePointerCapture(ev.pointerId); } catch { /* already gone */ }
-    this.draw();
     this.opts.onChange?.(this.value, true);
   };
 
@@ -216,7 +281,6 @@ export class ResponseCurve {
     const grid = css('--color-graphite', '#23252a');
     const line = css('--accent-primary', '#e4f222');
     const dot = css('--color-mist', '#d0d6e0');
-    const doomed = css('--color-coral-red', '#eb5757');
 
     ctx.clearRect(0, 0, w, h);
 
@@ -232,37 +296,28 @@ export class ResponseCurve {
     }
     ctx.stroke();
 
-    // While a point is being thrown away, draw the shape its absence leaves —
-    // seeing the result before letting go is the whole point of the gesture.
-    const shown = this.active();
-
+    // Sampled rather than approximated, so what is drawn is exactly what
+    // `valueAt` returns. Tangents once for the whole line, not per sample.
+    const m = tangents(this.points);
     ctx.strokeStyle = line;
     ctx.lineWidth = Math.max(1.5, w / 320);
+    ctx.lineJoin = 'round';
     ctx.beginPath();
-    const steps = 96;
+    const steps = 160;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const px = t * w;
-      const py = h - sample(shown, t) * h;
+      const py = h - sampleSpline(this.points, m, t) * h;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
 
     const r = Math.max(3, w / 120);
     this.points.forEach((p, i) => {
-      const held = i === this.dragging;
-      const going = held && this.discarding;
       ctx.beginPath();
-      ctx.arc(p.x * w, h - p.y * h, going ? r * 1.15 : r, 0, Math.PI * 2);
-      if (going) {
-        // Hollow and coral: about to be gone, and not pretending otherwise.
-        ctx.strokeStyle = doomed;
-        ctx.lineWidth = Math.max(1.5, w / 340);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = held ? line : dot;
-        ctx.fill();
-      }
+      ctx.arc(p.x * w, h - p.y * h, r, 0, Math.PI * 2);
+      ctx.fillStyle = i === this.dragging ? line : dot;
+      ctx.fill();
     });
   }
 }
