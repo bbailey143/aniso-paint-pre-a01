@@ -152,8 +152,11 @@
           <section class="st-section">
             <div class="st-section-head"><span class="st-section-title">Response</span></div>
             <p class="st-section-note">
-              Some settings are not a number but a relationship. Grab the curve and
-              bend it — these are points on the line itself, not handles.
+              Some settings are not a number but a relationship. <b>Grab the line
+              anywhere</b> and bend it — a point appears where you took hold. Drag
+              a point clear off the top or bottom to throw it away; the curve
+              shows you the shape you would be left with while you are still
+              holding it.
             </p>
             <div class="st-card">
               <div class="st-curve" id="g-curve"></div>
@@ -264,6 +267,9 @@
         onChange: () => { mid.textContent = curve.valueAt(0.5).toFixed(2); },
       });
       mid.textContent = curve.valueAt(0.5).toFixed(2);
+      // Dev aid, same habit as __engine in main.ts: lets the curve's point set
+      // be checked from outside without adding a readout nobody wants to see.
+      window.__curve = curve;
     </script>
   </body>
 </html>
