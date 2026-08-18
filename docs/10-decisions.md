@@ -19,6 +19,10 @@ it, or because a decision here justifies it.
 | **D10** | **Brush solver in CPU TypeScript**, every frame; **two spines maximum**; stroke path **resampled** to ≤1 cell/step. | ~16 numbers of state — a pocket calculator. Two spines cover round + flat (VL); resampling stops strokes beading into dots. |
 | **D11** | **Pen input via Pointer Events**: pressure, tiltX/tiltY, twist where available; velocity derived; `getCoalescedEvents()` for high-frequency sampling. | Web-native full-tilt/pressure/velocity; coalesced events feed the resampler. No plugin, works on the Huion and on iPad. |
 | **D12** | **First build scope:** round + flat sable, watercolour + full water fluid cycle + KM mixing, graphite pencil, ballpoint, and 3 papers (hot/cold press, rough). Everything else is a documented row for later. | A vertical slice that exercises every engine once, so the rest is adding rows. |
+| **D13** | **Every material is authored in a studio, and studios share a harness.** Brushes, media, dry media, papers and pigments each get a studio; a studio is how the artist BUILDS their materials, not a developer inspector. | Carried forward from the `3D-brush` branch so the two do not hold different D13s. Implemented on this branch 2026-08-13: `studio-guide.html` fixes the shared visual language, `src/studio/medium-studio.ts` is the first studio built from it. Bartford: *"the ability to create everything you will be making art with"*. |
+| **D14** | **Paint may refuse to move until it is pushed hard enough** — a Bingham yield term in `update_velocities.wgsl`, per medium, `0` for every water medium. | Oil bled outward indefinitely, found by painting (2026-08-13). The engine's only route from moving to still was DRYING, and oil's defining property is that it does not dry. Yield is the missing brake — and the same mechanism lets a loaded stroke hold a ridge, so it replaces the separately-planned impasto work rather than sitting beside it. `docs/01-architecture.md` already listed oil as needing "slow cure, impasto". `[UNVERIFIED]`: the Bingham form is standard; using the solver's acceleration as the stress proxy is a discretisation choice, and every non-zero value is a guess. |
+| **D15** | **A medium reaches the brush, not only the paper.** `brushGive` scales how much paint leaves the brush per unit travelled, on top of the brush's own rate. | Bartford, on the first oil preset: *"it doesn't feel thick or thin — it just paints kind of generically."* `src/input/stroke.ts` had no reference to the medium at all, so every paint was APPLIED identically and differed only in what it did afterwards. A medium is now a property of the moment of contact as well as of the flow. Watercolour is `1` and unchanged. |
+| **D16** | **A studio shows only settings that reach the paint.** A field declared on the schema but unread by the engine gets no dial, and the studio says so in as many words. | A dial that does nothing is worse than no dial: the artist turns it, sees no change, and cannot tell whether the setting is broken, their eye is, or the paint does not work that way. That is the plausible-but-wrong failure the fence exists to stop, wearing better clothes. Twelve of a wet medium's ~35 settings qualified at the time of writing. |
 
 ## Open items (not blocking)
 
@@ -43,3 +47,13 @@ it, or because a decision here justifies it.
 - **Precision on iPad.** D6's wet band is f32 at 512². Re-check the memory and
   format support on target hardware before the native/iPad pass.
 - **Native iPad path.** Deferred under D1; re-scope after the browser build proves out.
+- **Impasto — paint standing off the surface.** `hasBody` and `bodyShrink` are on the
+  schema with ZERO readers. D14's yield term is the foundation, but nothing yet gives a
+  stroke visible height. This is one of the two things still between oil and oil.
+- **The other is pickup**, already listed above as the P5 deferral. Confirmed still
+  blocked 2026-08-13: `reservoir.ts` marks `upRate` `[DEFERRED — P6]` and it needs the
+  GPU→CPU readback. It is what makes oil drag colour through colour.
+- **The repository holds two unrelated histories.** `main` and `ui/frontend-0alpha` share
+  NO common ancestor (verified 2026-08-13) and carry differently-organised copies of the
+  physics documents. There is no single rulebook right now. `3D-brush` and this branch DO
+  share history, which is why D13 above is carried rather than renumbered.

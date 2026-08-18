@@ -133,10 +133,68 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-08-11 (PIGMENTS mixing-slab side drawer implementation underway)
-**By:** Codex, continuing the shared relay
+**Last updated:** 2026-08-13 (medium studio steps 1-3 landed; oil is heavy but not yet oil)
+**By:** Claude, continuing the shared relay
 
-## IN FLIGHT — PIGMENTS mixing-slab side drawer (Codex, 2026-08-11)
+## THE LIVE NEXT STEP
+
+**Nothing is half-finished.** Everything below is committed and pushed on
+`ui/frontend-0alpha`. Pick any of these up cold.
+
+The artist's direction is **studios** (D13): the app's purpose is that the artist
+builds their own materials. The medium studio is the first one and is three steps in.
+
+**Next, in the order I would do it:**
+
+1. **Impasto — give a stroke visible height.** `hasBody`/`bodyShrink` have zero
+   readers. D14's yield term is the foundation; nothing yet makes a loaded stroke
+   stand off the surface. This is the larger of the two things between "heavy" and
+   "oil", and Bartford has already judged the current oil as *"heavy is accurate...
+   not there yet."*
+2. **Canvas → brush pickup.** Needs the GPU→CPU readback (P5/P6 deferral, still
+   open). It is what makes oil drag colour through colour.
+3. **Medium studio step 4** — compare two paints on one sheet, and export a paint
+   as a file.
+
+**Do not start by tuning numbers.** Both remaining oil problems are missing
+mechanisms, not wrong values. Today proved that twice.
+
+## WHAT LANDED 2026-08-13
+
+- **Chrome folded into edge rails.** Nothing sits on the paper by default; the
+  studio panel is split into five drawers. Touch: one finger pans, two pinch to
+  zoom, **fingers never paint** — only the Pencil does, because a pinch always
+  starts with one finger and would otherwise mark the sheet every time.
+- **Performance.** The paper tooth is read from the baked `inkPaperTex` instead of
+  being recomputed per fragment (10x fewer dropped frames on iPad); the colour pass
+  can run at reduced resolution while the grain stays sharp (`colourScale`).
+- **Medium studio**, steps 1-3: live dials over the real sheet, save/name/copy with
+  the shipped paint never overwritten only shadowed, and starting points for
+  gouache, acrylic and oil.
+- **D14 yield stress** and **D15 medium-reaches-the-brush** — see `10-decisions.md`.
+- **The viscosity ≤ 0.25 ceiling** — see `05-fluid.md`. Read that before touching
+  thickness anywhere.
+
+## TRAPS THAT COST TIME TODAY
+
+- **Vite serves a STALE transform of an edited module.** Cost an hour twice — once
+  on a `?raw` WGSL import, once on a plain `.ts`. The page loads, no error appears,
+  and the old behaviour persists so your new code looks broken. Verify by fetching
+  the module and grepping for an identifier you just added (NOT a comment — Vite
+  strips those). Fix: restart the dev server with `node_modules/.vite` removed.
+- **WebGPU validation failures surface as `warn`, not `error`.** A bind group
+  carrying an entry its pipeline's layout does not declare is rejected whole, the
+  pass draws nothing, and the sheet renders BLACK with a clean-looking error log.
+  Bindings are per ENTRY POINT: a second entry point that does not touch a texture
+  will not have it in its auto-layout.
+- **`engine.clear()` called directly leaves the brush uncharged** and every
+  subsequent stroke lays nothing. Use the same path `onClear` does.
+- **Synthetic PointerEvents cannot exercise the paint path** except on a pointerId
+  the browser already owns — `setPointerCapture` throws for an invented id and
+  aborts the stroke before it starts. It looks exactly like "the pen stopped
+  working". Verify by eye.
+
+## DONE EARLIER — PIGMENTS mixing-slab side drawer (Codex, 2026-08-11)
 
 **Artist request.** The current compact PIGMENTS palette (the soft-grey rounded
 panel, pan grid, load area, and rinse controls) keeps its look. Move only its

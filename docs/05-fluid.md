@@ -123,3 +123,44 @@ That is the whole implementation. [C97 §4.7]
 `main` bench measured 3.78 ms/frame at 1024² on an RX 570 (iPad-class) with adaptive
 relaxation — PASS against a 16.7 ms budget. `[UNVERIFIED]` iPad ≈ 4–8× slower than
 that laptop; 1024² is in reach, 2048² a stretch. Verify on hardware.
+
+
+---
+
+## Stability ceiling: viscosity ≤ 0.25 (found 2026-08-13)
+
+`update_velocities.wgsl` diffuses velocity **explicitly** on the five-point stencil:
+
+```
+du += viscosity * (uL + uR + uU + uD - 4*centre)
+nu  = (centre + dt*du) * (1 - drag)
+```
+
+Explicit diffusion is stable only while `coefficient * dt / dx² ≤ 1/4`. `dx` is one
+cell and `dt` is `1.0`, so **the ceiling is `viscosity = 0.25`.** Watercolour ships at
+`0.10`.
+
+**Past it, the grid shows through.** Each step overcorrects, neighbours flip past each
+other, and error grows along the four stencil directions — visible as axis-aligned
+stippling, needles and repeated cell bands. Bartford photographed it while turning up
+thickness in the medium studio.
+
+**It hides from every gauge**, which is what makes it expensive to find. `nu`/`nv` are
+clamped to one cell per step, so what should be a blow-up becomes a STANDING
+CHECKERBOARD instead. Nothing is created or destroyed, so water and pigment stay
+conserved, `mean |div|` stays under `tau`, and the adaptive relaxation sees no reason
+to work harder. Readings: `mean |div| 0.00489`, `relax 12` of a possible `50` — the
+controller was winding effort *down* while the picture was visibly wrong.
+
+**A hypothesis that was wrong, recorded so it is not retried:** that the divergence
+gauge was averaging away a localised fault, fixable with a peak-divergence readout.
+Plausible, and false. The fault is not divergence at all.
+
+**The coefficient is clamped in the shader, not the artist's dial.** Thickness above
+the ceiling still thickens the paint through the other route — `flux_compute` resists
+flow by `viscosity * drag`, which is not a diffusion term and is stable at any value.
+So a heavy medium is built by **resisting flow**, not by cranking thickness past what
+the maths can integrate. Every preset in `studio/medium-presets.ts` obeys this.
+
+Same symptom family as E8 in `13-water-paper-behavior-log.md` — the water field driven
+hard at cell scale — reached by a different route.
