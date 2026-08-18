@@ -61,8 +61,25 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let vU = select(0.0, textureLoad(wet0_in, u_, 0).w, !oob(u_, n));
   let vD = select(0.0, textureLoad(wet0_in, d_, 0).w, !oob(d_, n));
 
-  du = du + P.viscosity * (uL + uR + uU + uD - 4.0 * w0.z);
-  dv = dv + P.viscosity * (vL + vR + vU + vD - 4.0 * w0.w);
+  // Viscous diffusion, explicit, on the five-point stencil. That scheme is only
+  // stable while coefficient * dt / dx^2 <= 1/4; dx is one cell and dt is 1, so
+  // the ceiling is 0.25. Past it every step overcorrects, neighbouring cells
+  // flip past each other, and the error grows along the four stencil directions.
+  //
+  // It does not blow up, which is what makes it nasty to find: nu/nv are clamped
+  // to one cell per step just below, so what would be an explosion becomes a
+  // STANDING CHECKERBOARD — axis-aligned stippling and needles on screen, while
+  // every conservation gauge stays healthy because nothing is created or lost.
+  // Reported by Bartford as "the grid showing" when thickness is turned up.
+  //
+  // The coefficient is clamped here rather than the artist's dial, because
+  // thickness above this still thickens the paint by the OTHER route: the flow
+  // resistance in flux_compute is `viscosity * drag`, which is not a diffusion
+  // term and is stable at any value. A thick medium keeps behaving thick; it
+  // just stops adding internal drag the solver cannot integrate.
+  let viscStable = min(P.viscosity, 0.25 / max(P.dt, WET_EPS));
+  du = du + viscStable * (uL + uR + uU + uD - 4.0 * w0.z);
+  dv = dv + viscStable * (vL + vR + vU + vD - 4.0 * w0.w);
 
   // A fresh film does not skate over an existing damp wash as though the lower
   // layer were absent. The local wet load includes liquid already absorbed by

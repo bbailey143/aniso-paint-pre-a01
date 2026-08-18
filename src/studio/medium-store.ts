@@ -12,11 +12,21 @@
 
 import type { WetMedium } from '../media/types';
 import { WATERCOLOR } from '../media/library';
+import { PRESETS, STARTING_POINTS } from './medium-presets';
 
 const KEY = 'aniso-paint.media.v1';
 
-/** The paints that ship with the app. Step 3 adds gouache, acrylic and oil. */
-export const BUILT_IN: WetMedium[] = [WATERCOLOR];
+/**
+ * The paints that ship. Watercolour is the measured one; the other three are
+ * starting points to pull apart — see medium-presets.ts for what is evidence
+ * and what is reasoning in each.
+ */
+export const BUILT_IN: WetMedium[] = [WATERCOLOR, ...PRESETS];
+
+/** True for a shipped skeleton rather than a calibrated material. */
+export function isStartingPoint(slug: string): boolean {
+  return STARTING_POINTS.includes(slug);
+}
 
 export function isBuiltIn(slug: string): boolean {
   return BUILT_IN.some((m) => m.slug === slug);

@@ -20,7 +20,9 @@
 
 import type { WetMedium } from '../media/types';
 import { Dial } from './dial';
-import { forgetMedium, isBuiltIn, isEdited, listMedia, saveMedium, slugFor } from './medium-store';
+import {
+  forgetMedium, isBuiltIn, isEdited, isStartingPoint, listMedia, saveMedium, slugFor,
+} from './medium-store';
 
 export interface MediumStudioEvents {
   /** Push the edited medium at the engine. Safe to call on every drag. */
@@ -224,9 +226,16 @@ export class MediumStudio {
     name.addEventListener('input', () => { this.medium.name = name.value; });
     const sub = document.createElement('span');
     sub.className = 'st-subtitle';
-    sub.textContent = isBuiltIn(this.medium.slug) && !isEdited(this.medium.slug)
-      ? 'A paint that came with the app — save to keep your changes'
-      : 'Your paint';
+    // Say plainly which of the three a paint is. A starting point is reasoning
+    // dressed as a material, and the artist has to know that before trusting
+    // how it behaves.
+    sub.textContent = isEdited(this.medium.slug)
+      ? 'Your paint'
+      : isStartingPoint(this.medium.slug)
+        ? 'A starting point, not a finished paint — pull it apart and save it as your own'
+        : isBuiltIn(this.medium.slug)
+          ? 'A paint that came with the app — save to keep your changes'
+          : 'Your paint';
     titleWrap.append(name, sub);
     head.appendChild(titleWrap);
     this.root.appendChild(head);
