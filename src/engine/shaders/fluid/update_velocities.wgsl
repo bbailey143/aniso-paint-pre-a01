@@ -91,6 +91,34 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let wetLoad = select(0.0, clamp((sat + h) / paperCell.y, 0.0, 1.0),
                        paperCell.y > WET_EPS);
   let localDrag = clamp(P.drag + P.wetLayerDrag * wetLoad, 0.0, 0.95);
+  // ---- Yield stress (Bingham) ----------------------------------------------
+  //
+  // Thick paint does not flow until it is pushed hard enough. Below the
+  // threshold it holds its shape; above it, only the EXCESS over the threshold
+  // drives flow. This is what makes a brushmark in oil keep its ridge instead of
+  // levelling into a puddle, and it is the brake oil has otherwise been missing:
+  // watercolour stops because it dries, and oil's defining property is that it
+  // does not.
+  //
+  // Applied to the NET push — surface gradient, paper tooth, board gravity and
+  // neighbour shear together — because "did anything push this hard enough to
+  // move it" is a question about the total, not about any one term.
+  //
+  // Existing motion is not zeroed here. It does not need to be: with the drive
+  // removed, the damping below decays it away within a few steps, so paint
+  // already travelling comes to rest rather than stopping dead.
+  //
+  // [UNVERIFIED] The Bingham form is standard, but using the solver's
+  // acceleration as the stress proxy is a discretisation choice, not a result
+  // from a paper. Zero is exact; every non-zero value wants benching.
+  if (P.yieldStress > 0.0) {
+    let drive = length(vec2f(du, dv));
+    let excess = max(drive - P.yieldStress, 0.0);
+    let keep = select(0.0, excess / max(drive, WET_EPS), drive > WET_EPS);
+    du = du * keep;
+    dv = dv * keep;
+  }
+
   var nu = (w0.z + P.dt * du) * (1.0 - localDrag);
   var nv = (w0.w + P.dt * dv) * (1.0 - localDrag);
   nu = clamp(nu, -1.0, 1.0);   // never move more than one cell per step

@@ -54,6 +54,7 @@ export const GOUACHE: WetMedium = {
   valueShift: 0.24,         // [UNVERIFIED] gouache is famous for drying lighter
   kInstrument: 1,           // [CARDED] fully matte, as watercolour
   reactivatable: true,      // [UNVERIFIED] gouache does re-wet
+  yieldStress: 0.004,       // [UNVERIFIED] just enough to sit rather than creep
 };
 
 /**
@@ -79,6 +80,7 @@ export const ACRYLIC: WetMedium = {
   kInstrument: 0.55,        // [UNVERIFIED] satin, between matte and gloss
   reactivatable: false,     // [UNVERIFIED] dried acrylic does not come back
   oneWayDoor: true,         // [UNVERIFIED] the defining property
+  yieldStress: 0.010,       // [UNVERIFIED] holds a mark; heavy body holds more
 };
 
 /**
@@ -106,6 +108,9 @@ export const OIL: WetMedium = {
   valueShift: 0,            // [CODED] shaders/composite.wgsl: "oil uses zero"
   kInstrument: 0.3,         // [UNVERIFIED] the wet-looking sheen oil is known for
   reactivatable: true,      // [UNVERIFIED] stays workable for days
+  // The brake. Oil never dries, so without this it creeps outward forever under
+  // its own surface gradient — the bleeding Bartford found on 2026-08-13.
+  yieldStress: 0.030,       // [UNVERIFIED] bench it; this is a first guess
 };
 
 export const PRESETS: WetMedium[] = [GOUACHE, ACRYLIC, OIL];

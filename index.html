@@ -66,6 +66,10 @@
             <span>paper relief</span>
             <input id="p-relief" type="checkbox" checked />
           </label>
+          <label class="perf-row" title="Whether paint refuses to move until it is pushed hard enough. Off forces it to nothing for every paint, which is exactly how the solver behaved before this existed — lay the same stroke both ways to judge it. Water media set it to nothing anyway; oil is where it earns its place.">
+            <span>holds its shape</span>
+            <input id="p-yield" type="checkbox" checked />
+          </label>
           <button id="p-reset" class="pal-btn" type="button" title="Clear the worst-frame and missed-frame counters before a fresh measurement">reset counters</button>
         </section>
 

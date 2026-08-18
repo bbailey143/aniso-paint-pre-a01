@@ -326,6 +326,13 @@ async function main() {
     engine.reliefEnabled = reliefToggle.checked;
     requestFrame();
   });
+  // Bypass for the yield term, so one stroke can be laid with it on and off
+  // without losing the value off the paint's own dial.
+  const yieldToggle = document.getElementById('p-yield') as HTMLInputElement;
+  yieldToggle.addEventListener('change', () => {
+    engine.setYieldEnabled(yieldToggle.checked);
+    requestFrame();
+  });
   document.getElementById('p-reset')!.addEventListener('click', () => {
     worstFrame = 0; missedFrames = 0; runFrames = 0; smoothFrame = 0; smoothCpu = 0;
   });

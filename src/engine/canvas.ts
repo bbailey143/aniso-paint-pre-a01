@@ -241,8 +241,23 @@ export class CanvasEngine {
 
   setFluid(p: Partial<FluidParams>) { this.fluid.setParams(p); }
   /** Select a wet material by feeding its data row into the shared solver. */
+  /**
+   * Diagnostic bypass for the yield term, so one paint can be laid down with it
+   * on and off without losing the value off the dial. Off forces zero, which is
+   * exactly how the solver behaved before yield existed.
+   */
+  yieldEnabled = true;
+  private lastWetMedium: WetMedium | null = null;
+
+  setYieldEnabled(on: boolean) {
+    this.yieldEnabled = on;
+    if (this.lastWetMedium) this.setWetMedium(this.lastWetMedium);
+  }
+
   setWetMedium(m: WetMedium) {
+    this.lastWetMedium = m;
     this.fluid.setParams({
+      yieldStress: this.yieldEnabled ? (m.yieldStress ?? 0) : 0,
       viscosity: m.viscosity,
       drag: m.drag,
       gravityResponse: m.gravityResponse,

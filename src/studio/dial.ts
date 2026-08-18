@@ -5,12 +5,18 @@
 // decoration: a dial is compact enough that eight of them fit where four
 // sliders would, so a whole material's handling can sit in one glance.
 //
-// THE INTERACTION IS NOT CIRCULAR. It looks like a knob and it drags like a
-// fader — up to raise, down to lower. Tracking a finger around a circle sounds
-// right and is horrible in practice: the value leaps the moment the finger
-// crosses the centre, and near the middle a tiny movement swings the angle
-// wildly. Every audio tool worth using settled on vertical drag decades ago.
-// The circle is the readout; the drag is a straight line.
+// IT TURNS UNDER YOUR FINGER. Bartford tried the vertical-fader version and
+// called it awkward and guessy, which it was — a knob that does not rotate asks
+// you to remember which way to pull.
+//
+// The two real problems with rotary tracking are avoided rather than accepted:
+//
+//   * It follows the CHANGE in angle, never the absolute angle. So taking hold
+//     of a knob never snaps its value to wherever your finger happens to land;
+//     it turns by exactly as far as you turn it.
+//   * There is a dead zone at the centre. Angle is meaningless within a few
+//     pixels of the middle — a hair of movement swings it wildly — so inside
+//     that radius the value simply holds.
 //
 // Hold shift for fine adjustment. Double-tap to put it back where it started.
 
@@ -38,7 +44,11 @@ export interface DialOptions {
 
 const SWEEP = 270;        // degrees of travel, gap at the bottom like a real knob
 const START = -135;       // from twelve o'clock, clockwise positive
-const DRAG_FULL_PX = 190; // vertical pixels for the whole range
+/** Degrees of finger rotation for the whole range — the same 270 the face
+ *  shows, so a turn of the knob matches the turn of your hand. */
+const DRAG_FULL_DEG = SWEEP;
+/** Inside this radius the angle is noise, so the value holds. */
+const DEAD_ZONE_PX = 12;
 
 /** Polar to SVG, with 0 degrees at twelve o'clock. */
 function point(cx: number, cy: number, r: number, deg: number) {
@@ -64,7 +74,8 @@ export class Dial {
   private fillEl!: SVGPathElement;
   private needleEl!: SVGLineElement;
   private valueEl!: HTMLElement;
-  private dragFrom: { y: number; value: number } | null = null;
+  private dragging = false;
+  private lastAngle = 0;
   /** End of the last interaction, and whether it was a tap rather than a drag.
    *  Both are needed: a double-tap is two quick TAPS, and timing alone would
    *  make a second quick grab-and-adjust throw the first adjustment away. */
@@ -187,26 +198,42 @@ export class Dial {
       return;
     }
     this.moved = false;
-    this.dragFrom = { y: ev.clientY, value: this.val };
+    this.dragging = true;
+    this.lastAngle = this.angleOf(ev).deg;
     this.root.focus();
     try { this.root.setPointerCapture(ev.pointerId); } catch { /* drag still tracks */ }
   };
 
+  /** Finger angle about the face centre, degrees, zero at twelve o'clock. */
+  private angleOf(ev: PointerEvent) {
+    const face = this.root.querySelector('.st-dial-face')!.getBoundingClientRect();
+    const dx = ev.clientX - (face.left + face.width / 2);
+    const dy = ev.clientY - (face.top + face.height / 2);
+    return { deg: Math.atan2(dx, -dy) * 180 / Math.PI, r: Math.hypot(dx, dy) };
+  }
+
   private onMove = (ev: PointerEvent) => {
-    if (!this.dragFrom) return;
+    if (!this.dragging) return;
     ev.preventDefault();
     const { min, max } = this.opts;
+    const now = this.angleOf(ev);
+    // Wrap the difference into -180..180 so crossing twelve o'clock is a small
+    // step forward, not a whole turn backwards.
+    let step = now.deg - this.lastAngle;
+    if (step > 180) step -= 360;
+    if (step < -180) step += 360;
+    this.lastAngle = now.deg;
+    // Near the middle the angle is noise. Hold the value, but keep tracking the
+    // angle, so leaving the dead zone does not jump.
+    if (now.r < DEAD_ZONE_PX) return;
+    if (Math.abs(step) > 1.5) this.moved = true;
     const fine = ev.shiftKey ? 0.25 : 1;
-    const dy = this.dragFrom.y - ev.clientY;
-    // A few pixels of slop, so a tap that trembles still counts as a tap.
-    if (Math.abs(dy) > 3) this.moved = true;
-    const delta = (dy / DRAG_FULL_PX) * (max - min) * fine;
-    this.setValue(this.dragFrom.value + delta, false);
+    this.setValue(this.val + (step / DRAG_FULL_DEG) * (max - min) * fine, false);
   };
 
   private onUp = (ev: PointerEvent) => {
-    if (!this.dragFrom) return;
-    this.dragFrom = null;
+    if (!this.dragging) return;
+    this.dragging = false;
     this.lastEnd = ev.timeStamp;
     this.lastWasTap = !this.moved;
     try { this.root.releasePointerCapture(ev.pointerId); } catch { /* already released */ }

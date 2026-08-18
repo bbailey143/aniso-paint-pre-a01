@@ -26,6 +26,7 @@ export const WATERCOLOR: WetMedium = {
   rimMigration: 0, rimReach: 2.0, edgeEvaporation: 0,
   evapRate: 0.0015,
   absorptionCoupling: 0.0001, pigmentBoost: 1,
+  yieldStress: 0,          // watercolour holds nothing; it stops by drying
 };
 
 function physics(

@@ -39,7 +39,13 @@ struct Params {
   /** How much faster the film evaporates at its pinned edge than in its
    * interior. This is the Deegan mechanism itself, not a model of its result. */
   edgeEvaporation: f32,
-  _mediumPad4: f32,
+  /**
+   * Yield stress (Bingham). How hard the paint must be pushed before it moves
+   * at all. Below it the paint holds its shape; above it only the EXCESS drives
+   * flow. Zero reproduces the previous behaviour exactly, which is what every
+   * water medium keeps. Takes the old pad slot, so the buffer is unchanged.
+   */
+  yieldStress: f32,
   _mediumPad5: f32,
 
   // Pigment library for the 8 active slots: (rho density, omega staining,

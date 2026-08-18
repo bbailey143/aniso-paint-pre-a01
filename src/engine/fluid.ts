@@ -98,6 +98,9 @@ export interface FluidParams {
    * visually, but nothing can be glazed over dry paint and nothing re-wets.
    */
   handoffEnabled: boolean;
+  /** Bingham yield: how hard the paint must be pushed before it moves at all.
+   *  0 is exactly the previous behaviour. */
+  yieldStress: number;
 }
 
 export const DEFAULT_FLUID: FluidParams = {
@@ -122,6 +125,7 @@ export const DEFAULT_FLUID: FluidParams = {
   rimReach: 2.0,
   edgeEvaporation: 0.0,
   handoffEnabled: true,
+  yieldStress: 0,          // water media hold nothing; oil is where this earns its place
 };
 
 export interface Gauges {
@@ -524,6 +528,8 @@ export class FluidEngine {
     dv.setFloat32(76, p.rimMigration, true);
     dv.setFloat32(80, p.rimReach, true);
     dv.setFloat32(84, p.edgeEvaporation, true);
+    // Offset 88 was _mediumPad4, so the buffer size is unchanged.
+    dv.setFloat32(88, p.yieldStress, true);
     // 88, 92 are _mediumPad4..5 — the tail of that 16-byte group.
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {

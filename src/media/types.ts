@@ -139,6 +139,16 @@ export interface WetMedium extends Medium {
   absorptionCoupling: number;
   /** A26 zeta — weight incoming pigment over resident. */
   pigmentBoost: number;
+  /**
+   * How hard this paint must be pushed before it moves at all. Below it the
+   * paint holds its shape; above it only the excess drives flow.
+   *
+   * 0 for every water medium — they stop by drying. Oil does not dry, so this
+   * is the only thing that can bring it to rest, and it is the same mechanism
+   * that lets a loaded stroke keep its ridge instead of levelling out.
+   * [UNVERIFIED] — the form is standard, the values are not measured.
+   */
+  yieldStress: number;
 }
 
 /**

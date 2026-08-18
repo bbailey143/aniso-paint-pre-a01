@@ -76,6 +76,12 @@ const GROUPS: Group[] = [
         key: 'viscosity', label: 'thickness', min: 0, max: 1, step: 0.01,
         help: 'How stiff the paint is. Thin paint floods across the sheet and keeps travelling; thick paint stays close to where the brush put it. Watercolour is very thin. This is the first dial to move when building a bodied paint like acrylic or oil.',
       },
+      {
+        key: 'yieldStress', label: 'holds its shape', min: 0, max: 100, step: 1, decimals: 0,
+        toEngine: (v) => v * 0.0006,
+        fromEngine: (v) => v / 0.0006,
+        help: 'How hard the paint has to be pushed before it moves at all. At nothing, the paint always flows a little — which is right for watercolour, because it stops by drying instead. Turn it up and the paint sits where you put it: a stroke keeps its edge rather than slowly spreading, and a tilted board will not make it run. This is what stops oil bleeding, since oil never dries.',
+      },
     ],
   },
   {
