@@ -24,6 +24,16 @@ export class Reservoir {
   /** Per-cell capacity — the belly/tip profile. */
   capacity: Float32Array;
   private def: ReservoirDef;
+  /**
+   * How much more paint this MEDIUM gives up than watercolour does, on top of
+   * whatever the brush itself does. 1 leaves the brush exactly as it was.
+   *
+   * This is the only medium property that reaches the moment of contact. A
+   * loaded oil brush unloads far more per stroke than a watercolour brush, and
+   * without this every paint is applied identically and differs only in what it
+   * does afterwards — which reads, correctly, as generic.
+   */
+  mediumGive = 1;
 
   constructor(def: ReservoirDef, bristles: number, segments: number) {
     this.def = def;
@@ -178,7 +188,7 @@ export class Reservoir {
     // to zero — it just stops being what drives the transfer.
     const STILL = 0.25;
     const dist = Math.max(STILL, travel);
-    const rate = Math.min(1, this.def.downRate * dist)
+    const rate = Math.min(1, this.def.downRate * this.mediumGive * dist)
                * Math.max(0, Math.min(1, contactFrac));
     const w = this.water[cell] * rate;
     this.water[cell] -= w;

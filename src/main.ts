@@ -238,6 +238,9 @@ async function main() {
   // paint being edited can be tested with the real engine rather than previewed.
   // The paint currently in the pot. The Paint drawer picks it, the studio
   // shapes it, and both must always mean the same row.
+  // Whether the medium is allowed to reach the brush at all. Off pins the give
+  // to 1, which is exactly how every paint was applied before this existed.
+  let brushFeelOn = true;
   const mediumSelect = document.getElementById('medium-select') as HTMLSelectElement;
   let currentMedium: WetMedium = listMedia()[0];
 
@@ -260,6 +263,7 @@ async function main() {
     onApply(medium) {
       currentMedium = medium;
       engine.setWetMedium(medium);
+      stroke.setMediumFeel(medium.brushGive ?? 1, brushFeelOn);
       requestFrame();
     },
     onPickColour(slug) {
@@ -282,6 +286,7 @@ async function main() {
     if (!picked) return;
     currentMedium = picked;
     engine.setWetMedium(picked);
+    stroke.setMediumFeel(picked.brushGive ?? 1, brushFeelOn);
     // The studio always shapes whatever is in the pot, so there is never a
     // question of which paint a dial is editing.
     mediumStudio.setMedium(picked);
@@ -328,6 +333,11 @@ async function main() {
   });
   // Bypass for the yield term, so one stroke can be laid with it on and off
   // without losing the value off the paint's own dial.
+  const feelToggle = document.getElementById('p-brushfeel') as HTMLInputElement;
+  feelToggle.addEventListener('change', () => {
+    brushFeelOn = feelToggle.checked;
+    stroke.setMediumFeel(currentMedium.brushGive ?? 1, brushFeelOn);
+  });
   const yieldToggle = document.getElementById('p-yield') as HTMLInputElement;
   yieldToggle.addEventListener('change', () => {
     engine.setYieldEnabled(yieldToggle.checked);
@@ -348,6 +358,7 @@ async function main() {
   // Whatever is in the pot, which on a return visit is the artist's own saved
   // version rather than the paint that shipped.
   engine.setWetMedium(currentMedium);
+  stroke.setMediumFeel(currentMedium.brushGive ?? 1, brushFeelOn);
   engine.setMix(palette.recipe);
 
   // Start with a usable colour so the first stroke shows something.

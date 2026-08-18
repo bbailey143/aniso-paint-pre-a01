@@ -149,6 +149,16 @@ export interface WetMedium extends Medium {
    * [UNVERIFIED] — the form is standard, the values are not measured.
    */
   yieldStress: number;
+  /**
+   * How much more paint this medium gives up to the paper than watercolour
+   * does, per unit of brush travel. 1 is watercolour and changes nothing.
+   *
+   * The medium's own `downRate`/`upRate` above are still unread: `upRate`
+   * (lifting paint back off the canvas — the thing that makes oil drag colour
+   * through colour) is blocked on the GPU-to-CPU readback marked [DEFERRED - P6]
+   * in brush/reservoir.ts, and cannot be switched on from here.
+   */
+  brushGive: number;
 }
 
 /**

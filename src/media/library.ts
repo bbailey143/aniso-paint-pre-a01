@@ -27,6 +27,7 @@ export const WATERCOLOR: WetMedium = {
   evapRate: 0.0015,
   absorptionCoupling: 0.0001, pigmentBoost: 1,
   yieldStress: 0,          // watercolour holds nothing; it stops by drying
+  brushGive: 1,            // the reference: every other medium is relative to this
 };
 
 function physics(

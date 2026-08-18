@@ -85,6 +85,16 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: 'In the brush',
+    note: 'What happens at the moment of contact, before the paper has any say.',
+    fields: [
+      {
+        key: 'brushGive', label: 'gives up paint', min: 0.2, max: 5, step: 0.1, decimals: 1, unit: 'x',
+        help: 'How much paint leaves the brush as you draw, compared with watercolour. A loaded oil brush unloads heavily and covers what is underneath; a thin wash gives up very little and lets the paper show through. This is the one setting that acts as the brush touches the paper — everything else in this studio decides what the paint does afterwards.',
+      },
+    ],
+  },
+  {
     title: 'How it travels',
     note: 'What happens once it is on the paper and still wet.',
     fields: [

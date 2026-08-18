@@ -58,10 +58,23 @@ export class StrokeEngine {
 
   get current(): Brush { return this.brush; }
 
+  /**
+   * The medium's contribution to the moment of contact. Kept on the engine
+   * rather than the brush, because it must survive changing brushes: picking up
+   * a different brush does not change which paint is in the pot.
+   */
+  private mediumGive = 1;
+  /** `enabled` false pins it to 1 — exactly how the brush behaved before. */
+  setMediumFeel(give: number, enabled = true) {
+    this.mediumGive = enabled ? give : 1;
+    this.brush.reservoir.mediumGive = this.mediumGive;
+  }
+
   setBrush(def: BrushDef, size = this.size) {
     this.size = size;
     this.dry = null;                       // back to a wet tool
     this.brush = new Brush(def, size);
+    this.brush.reservoir.mediumGive = this.mediumGive;
     this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
   }
 

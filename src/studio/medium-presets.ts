@@ -55,6 +55,7 @@ export const GOUACHE: WetMedium = {
   kInstrument: 1,           // [CARDED] fully matte, as watercolour
   reactivatable: true,      // [UNVERIFIED] gouache does re-wet
   yieldStress: 0.004,       // [UNVERIFIED] just enough to sit rather than creep
+  brushGive: 1.6,          // [UNVERIFIED] bodied, leaves the brush readily
 };
 
 /**
@@ -81,6 +82,7 @@ export const ACRYLIC: WetMedium = {
   reactivatable: false,     // [UNVERIFIED] dried acrylic does not come back
   oneWayDoor: true,         // [UNVERIFIED] the defining property
   yieldStress: 0.010,       // [UNVERIFIED] holds a mark; heavy body holds more
+  brushGive: 2.0,          // [UNVERIFIED] loaded and covering
 };
 
 /**
@@ -111,6 +113,7 @@ export const OIL: WetMedium = {
   // The brake. Oil never dries, so without this it creeps outward forever under
   // its own surface gradient — the bleeding Bartford found on 2026-08-13.
   yieldStress: 0.030,       // [UNVERIFIED] bench it; this is a first guess
+  brushGive: 2.8,          // [UNVERIFIED] a loaded oil brush unloads heavily
 };
 
 export const PRESETS: WetMedium[] = [GOUACHE, ACRYLIC, OIL];
