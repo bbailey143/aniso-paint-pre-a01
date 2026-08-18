@@ -101,7 +101,8 @@
   bottom: 0;
   width: min(430px, calc(100vw - 60px));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* header, action bar, then the dials taking whatever is left */
+  grid-template-rows: auto auto minmax(0, 1fr);
   background: var(--panel-bg);
   backdrop-filter: var(--panel-blur);
   -webkit-backdrop-filter: var(--panel-blur);
@@ -111,6 +112,24 @@
   font: var(--weight-regular) var(--text-ui)/var(--leading-ui) var(--font-ui);
 }
 .st-panel[hidden] { display: none; }
+
+.st-name {
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-lg);
+}
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  border-bottom: 1px solid var(--panel-border);
+}
+.st-status {
+  color: var(--color-pulse-green);
+  font-size: var(--text-label);
+}
 
 /* The test colours, floating over the free part of the sheet rather than
    buried in the panel — the testing area should feel like a place. */

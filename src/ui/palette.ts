@@ -667,6 +667,12 @@ export class Palette {
       </section>
 
       <section class="studio-part" data-part="paint" data-label="Paint">
+        <!-- Which paint is in the pot. Populated by main.ts because the list
+             grows as the artist builds their own in the medium studio. -->
+        <div class="pal-sub">medium</div>
+        <div id="medium-picker" class="linked-picker" aria-label="Medium picker">
+          <select id="medium-select" aria-label="Medium"></select>
+        </div>
         <label class="loading-row">
           <span>load</span>
           <input id="loading" type="range" min="0.02" max="1" step="0.02" />

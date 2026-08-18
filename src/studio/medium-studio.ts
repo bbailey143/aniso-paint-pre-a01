@@ -20,6 +20,7 @@
 
 import type { WetMedium } from '../media/types';
 import { Dial } from './dial';
+import { forgetMedium, isBuiltIn, isEdited, listMedia, saveMedium, slugFor } from './medium-store';
 
 export interface MediumStudioEvents {
   /** Push the edited medium at the engine. Safe to call on every drag. */
@@ -27,6 +28,8 @@ export interface MediumStudioEvents {
   /** Load one test pigment onto the brush. */
   onPickColour(slug: string): void;
   onClearSheet(): void;
+  /** A paint was saved, copied or deleted — the app's picker needs rebuilding. */
+  onLibraryChanged(selectSlug: string): void;
 }
 
 /** One artist-facing control over one engine value. */
@@ -157,12 +160,13 @@ export class MediumStudio {
   readonly root: HTMLElement;
   private testbar: HTMLElement;
   private medium: WetMedium;
-  /** The values this medium shipped with. Revert reads from here, so it has to
-   *  be taken before the first edit and never written to again. */
-  private readonly shipped: WetMedium;
+  /** Where Revert goes back to: the values this paint had when it was opened,
+   *  or when it was last saved. Never written by a dial. */
+  private shipped: WetMedium;
   private events: MediumStudioEvents;
   private pop: HTMLElement | null = null;
   private swatches: HTMLButtonElement[] = [];
+  private status!: HTMLElement;
 
   constructor(mount: HTMLElement, medium: WetMedium, events: MediumStudioEvents) {
     // A working copy. Editing the library row in place would quietly rewrite
@@ -195,22 +199,84 @@ export class MediumStudio {
   /** The edited row. Step 2 will be able to name and keep this. */
   get value(): WetMedium { return { ...this.medium }; }
 
+  /** Edit a different paint. The dials rebuild around it. */
+  setMedium(medium: WetMedium) {
+    this.medium = { ...medium, physics: { ...medium.physics } };
+    this.shipped = { ...medium, physics: { ...medium.physics } };
+    this.root.replaceChildren();
+    this.build();
+    this.events.onApply(this.medium);
+  }
+
   private build() {
     const head = document.createElement('header');
     head.className = 'st-head';
-    head.innerHTML = `
-      <div class="st-head-title">
-        <span class="st-title">${this.medium.name}</span>
-        <span class="st-subtitle">Turn a dial, then paint on the sheet beside it</span>
-      </div>`;
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'st-head-title';
+    // The name is the artist's, so it is an editable field rather than a
+    // heading. Typing here renames the paint; saving is what keeps it.
+    const name = document.createElement('input');
+    name.className = 'st-input st-name';
+    name.type = 'text';
+    name.value = this.medium.name;
+    name.setAttribute('aria-label', 'Paint name');
+    name.addEventListener('input', () => { this.medium.name = name.value; });
+    const sub = document.createElement('span');
+    sub.className = 'st-subtitle';
+    sub.textContent = isBuiltIn(this.medium.slug) && !isEdited(this.medium.slug)
+      ? 'A paint that came with the app — save to keep your changes'
+      : 'Your paint';
+    titleWrap.append(name, sub);
+    head.appendChild(titleWrap);
+    this.root.appendChild(head);
+
+    const bar = document.createElement('div');
+    bar.className = 'st-actions';
+
+    const save = document.createElement('button');
+    save.className = 'st-btn is-primary';
+    save.type = 'button';
+    save.textContent = 'Save';
+    save.title = 'Keep this paint. It appears in the Paint drawer and survives a reload.';
+    save.addEventListener('click', () => this.save());
+
+    const copy = document.createElement('button');
+    copy.className = 'st-btn';
+    copy.type = 'button';
+    copy.textContent = 'Save as new';
+    copy.title = 'Keep this as a separate paint, leaving the original alone';
+    copy.addEventListener('click', () => this.saveAsNew());
+
     const revert = document.createElement('button');
     revert.className = 'st-btn is-quiet';
     revert.type = 'button';
-    revert.textContent = 'Revert all';
-    revert.title = 'Put every dial back to the value this medium shipped with';
+    revert.textContent = 'Revert';
+    revert.title = 'Put every dial back to where this paint started';
     revert.addEventListener('click', () => this.revertAll());
-    head.appendChild(revert);
-    this.root.appendChild(head);
+
+    bar.append(save, copy, revert);
+
+    // Only the artist's own versions can be removed, and removing one uncovers
+    // the shipped paint underneath rather than leaving a gap.
+    if (isEdited(this.medium.slug)) {
+      const del = document.createElement('button');
+      del.className = 'st-btn is-quiet';
+      del.type = 'button';
+      del.textContent = isBuiltIn(this.medium.slug) ? 'Undo my changes' : 'Delete';
+      del.title = isBuiltIn(this.medium.slug)
+        ? 'Throw away your saved version and go back to the paint that shipped'
+        : 'Delete this paint for good';
+      del.addEventListener('click', () => this.remove());
+      bar.appendChild(del);
+    }
+
+    const status = document.createElement('span');
+    status.className = 'st-status';
+    bar.appendChild(status);
+    this.status = status;
+
+    this.root.appendChild(bar);
 
     const body = document.createElement('div');
     body.className = 'st-controls';
@@ -275,6 +341,53 @@ export class MediumStudio {
     const engineValue = f.toEngine ? f.toEngine(shown) : shown;
     (this.medium as unknown as Record<string, number>)[f.key as string] = engineValue;
     this.events.onApply(this.medium);
+  }
+
+  private say(message: string) {
+    this.status.textContent = message;
+    window.setTimeout(() => {
+      if (this.status.textContent === message) this.status.textContent = '';
+    }, 2600);
+  }
+
+  private save() {
+    const ok = saveMedium(this.medium);
+    if (!ok) { this.say('Could not save — storage is unavailable'); return; }
+    // What is on the dials becomes the new starting point, so Revert goes back
+    // to what was kept rather than to a version that no longer exists.
+    this.shipped = { ...this.medium, physics: { ...this.medium.physics } };
+    this.root.replaceChildren();
+    this.build();
+    this.say('Saved');
+    this.events.onLibraryChanged(this.medium.slug);
+  }
+
+  private saveAsNew() {
+    const taken = listMedia().map((m) => m.slug);
+    const base = this.medium.name.trim();
+    // A copy that keeps the original's name would be indistinguishable from it
+    // in the Paint drawer, which is the one place it has to be picked out.
+    const name = taken.includes(slugFor(base, [])) ? `${base} copy` : base;
+    const slug = slugFor(name, taken);
+    this.medium = { ...this.medium, name, slug };
+    const ok = saveMedium(this.medium);
+    if (!ok) { this.say('Could not save — storage is unavailable'); return; }
+    this.shipped = { ...this.medium, physics: { ...this.medium.physics } };
+    this.root.replaceChildren();
+    this.build();
+    this.say('Saved as a new paint');
+    this.events.onLibraryChanged(slug);
+  }
+
+  private remove() {
+    const slug = this.medium.slug;
+    forgetMedium(slug);
+    // A shipped paint reappears from underneath; the artist's own is gone, so
+    // fall back to the first paint still standing.
+    const next = listMedia().find((m) => m.slug === slug) ?? listMedia()[0];
+    this.setMedium(next);
+    this.say(isBuiltIn(slug) ? 'Back to the paint that shipped' : 'Deleted');
+    this.events.onLibraryChanged(next.slug);
   }
 
   private revertAll() {

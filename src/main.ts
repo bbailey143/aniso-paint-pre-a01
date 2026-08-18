@@ -10,6 +10,8 @@ import { StrokeEngine } from './input/stroke';
 import { Palette } from './ui/palette';
 import { Rail } from './ui/rail';
 import { MediumStudio } from './studio/medium-studio';
+import { findMedium, isBuiltIn, isEdited, listMedia } from './studio/medium-store';
+import type { WetMedium } from './media/types';
 import './studio/studio.css';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
@@ -234,8 +236,29 @@ async function main() {
   // ---- Medium studio -------------------------------------------------------
   // Opens as a panel down the left and leaves the sheet beside it live, so the
   // paint being edited can be tested with the real engine rather than previewed.
-  const mediumStudio = new MediumStudio(document.body, WATERCOLOR, {
+  // The paint currently in the pot. The Paint drawer picks it, the studio
+  // shapes it, and both must always mean the same row.
+  const mediumSelect = document.getElementById('medium-select') as HTMLSelectElement;
+  let currentMedium: WetMedium = listMedia()[0];
+
+  const refreshMediumList = (selectSlug: string) => {
+    const media = listMedia();
+    mediumSelect.replaceChildren(...media.map((m) => {
+      const option = document.createElement('option');
+      option.value = m.slug;
+      // A shipped paint the artist has saved over says so, or the list gives
+      // no clue which "Watercolour" is being painted with.
+      option.textContent = isBuiltIn(m.slug) && isEdited(m.slug) ? `${m.name} (yours)` : m.name;
+      return option;
+    }));
+    const found = media.find((m) => m.slug === selectSlug) ?? media[0];
+    mediumSelect.value = found.slug;
+    currentMedium = found;
+  };
+
+  const mediumStudio = new MediumStudio(document.body, listMedia()[0], {
     onApply(medium) {
+      currentMedium = medium;
       engine.setWetMedium(medium);
       requestFrame();
     },
@@ -251,7 +274,21 @@ async function main() {
       stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
       requestFrame();
     },
+    onLibraryChanged(slug) { refreshMediumList(slug); },
   });
+
+  mediumSelect.addEventListener('change', () => {
+    const picked = findMedium(mediumSelect.value);
+    if (!picked) return;
+    currentMedium = picked;
+    engine.setWetMedium(picked);
+    // The studio always shapes whatever is in the pot, so there is never a
+    // question of which paint a dial is editing.
+    mediumStudio.setMedium(picked);
+    requestFrame();
+  });
+  refreshMediumList(currentMedium.slug);
+
   leftRail.addToggle({
     id: 'medium', label: 'Medium', title: 'Build and adjust the paint itself',
     on: false,
@@ -301,7 +338,9 @@ async function main() {
   });
 
   engine.setPaper(PAPERS[1]);              // cold press default
-  engine.setWetMedium(WATERCOLOR);
+  // Whatever is in the pot, which on a return visit is the artist's own saved
+  // version rather than the paint that shipped.
+  engine.setWetMedium(currentMedium);
   engine.setMix(palette.recipe);
 
   // Start with a usable colour so the first stroke shows something.
