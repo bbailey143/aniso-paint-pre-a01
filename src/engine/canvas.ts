@@ -277,6 +277,8 @@ export class CanvasEngine {
       rimReach: m.rimReach,
       edgeEvaporation: m.edgeEvaporation,
       yieldStress: m.yieldStress,
+      // Absent means true: every water medium behaves exactly as it did.
+      hasCurrent: m.hasCurrent ?? true,
       teflonMin: m.teflonMin,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,

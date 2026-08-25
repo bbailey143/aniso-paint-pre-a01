@@ -62,6 +62,28 @@ export interface Medium {
   /** Saunderson surface-reflection constants. */
   k1: number;
   k2: number;
+  /**
+   * Does this material carry CURRENTS?
+   *
+   * A wash does. Water runs across a sheet, carries pigment with it, blooms
+   * backwards into a damp edge — it has a velocity field and a pressure that
+   * evens it out. Oil does not. A load of oil paint has no current in it; it
+   * sits where it is put and moves by slumping under its own weight and by
+   * being shoved with a brush.
+   *
+   * This decides which solver the material gets. It is a property of the
+   * MATERIAL and must never be inferred from where a dial happens to sit.
+   *
+   * [MEASURED, docs/15 E4] It used to be inferred exactly that way — the engine
+   * asked `yieldStress > 0`, so sliding Body to zero silently moved oil onto
+   * the water solver mid-painting. Identical strokes one notch apart: at Body
+   * 0.004 a soft oil mark, at Body 0 a right-angled circuit-board pattern.
+   * That is the artefact the artist had been reporting for a week.
+   *
+   * Absent means true, which is the behaviour every water medium already had.
+   */
+  hasCurrent?: boolean;
+
   /** Gloss dial, 0 glossy .. 1 matte. Per medium, never per pigment. */
   kInstrument: number;
   /**

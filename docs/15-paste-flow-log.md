@@ -152,3 +152,80 @@ flow no longer stalling.
 **What it does NOT prove.** Conservation was checked for the paste path only.
 Water takes the other branch, which was not touched, and was not re-measured.
 And no artist judgement has been given on any of this.
+
+---
+
+### E4 — The Body dial was a solver switch (2026-08-25)
+
+**Purpose.** E3 fixed the paste flow and the artist reported the artefact
+reduced but still present. I could not reproduce it: thirty-two passes of
+build-up, Body almost off, heavy settling — nothing, every time. He then sent an
+uncropped screenshot.
+
+**What the screenshot said.** `BODY: runs freely`. The dial's own format is
+`v <= 0 ? 'runs freely'`, so Body was **exactly zero**. Every test I had run
+used 0.004.
+
+**The mechanism, from the code.** `fluid.ts` chose the solver with
+
+```ts
+const paste = this.params.yieldStress > 0;
+```
+
+At Body 0 that is false, so oil was handed to the WATER solver: the velocity
+field and pressure relaxation switched on, and `flux_compute` took its `else`
+branch — the original four-face code, which E3 never touched. So the fix was
+being skipped entirely at the one setting the artist was using.
+
+**Raw result.** Identical stacked strokes, oil, flat hog, one notch of Body
+apart, same sheet, same session:
+
+```
+Body 0.004   soft brush marks, no grid          (paste solver)
+Body 0       right-angled circuit-board pattern (water solver)
+```
+
+Both photographed. The 0 case reproduces the artist's image; the 0.004 case is
+clean. This is the artefact that has been reported on and off for a week.
+
+**What it proves.** Which solver a material gets was being decided by where a
+dial sat. Sliding Body to the bottom did not make oil looser — it made oil
+*water*, mid-painting, with no indication that anything had changed. And the
+water solver's four-face flux prints a grid into paint that has no current to
+smooth it out.
+
+**The fix.** `WetMedium.hasCurrent`, a material row: does this stuff carry
+currents? A wash does — it runs, blooms, backruns, and that is most of what
+watercolour is. Oil does not; it sits where it is put and moves by slumping and
+by the brush. The solver now reads that, and no dial can overrule it:
+
+```ts
+const paste = !this.params.hasCurrent || this.params.yieldStress > 0;
+```
+
+Absent means `true`, so every water medium is untouched.
+
+**Verified.** Same stacked strokes at Body 0 on the fixed code: no grid, brush
+marks only. Conservation on the newly-reachable path — oil at Body 0, now
+slumping — 800 steps, nothing evaporating: water **0.0000%**, pigment
+**0.0000%**.
+
+**What it does NOT prove, and a new problem it exposes.** "Runs freely" now does
+not run. At Body 0 the paint did not move into a single new cell across 3000
+idle steps, because the slump rate is throttled by `CREEP` (0.02) whatever the
+yield is. Before this change the bottom of the dial did something dramatic — it
+was just doing it by switching solvers. So the dial's bottom end is now honest
+about the physics and dishonest about its label, and one of the two has to give:
+either the label says "no body" and means it, or `CREEP` stops throttling a
+material that has no yield left to creep against. Not chosen unilaterally; it is
+a feel question.
+
+**Method note for the log.** Three instruments lied during this investigation
+before the screenshot settled it: a shape metric that was measuring the woven
+canvas rather than the paint, a claimed calibration value for a circle that was
+wrong by a factor of two (a thresholded outline is pixel stair-steps — a circle
+reads 0.547, not the 0.22 I asserted), and a dark-mark counter that was scoring
+a dense blob against its own pale halo. Each was caught by testing the
+instrument on something with a known answer. **The thing that actually solved
+this was an uncropped screenshot of the artist's settings**, which cost one
+message and would have saved several hours had I asked for it first.

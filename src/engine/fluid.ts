@@ -91,9 +91,14 @@ export interface FluidParams {
   /** How much faster a film dries at its pinned edge than in its interior
    * (log 13, E11). 0 = evenly, the pre-E11 behaviour. */
   edgeEvaporation: number;
-  /** Stress a face must clear before the material moves. 0 = water, and the
-   * flux pass exits early, so every water medium is bit-identical. */
+  /** Stress a face must clear before the material moves. 0 means nothing holds
+   * it back, NOT that it is water — which solver runs is `hasCurrent`. */
   yieldStress: number;
+  /** False for a material with no velocity field of its own: it slumps and is
+   *  pushed, and the velocity and pressure passes are skipped. See
+   *  WetMedium.hasCurrent, and docs/15 E4 for what deciding this from the
+   *  yield stress cost. */
+  hasCurrent: boolean;
   /** Film the brush cannot shove off the sheet however hard it scrubs. */
   teflonMin: number;
   /** How hard the brush shoves the paint already down. 1 is the lab's share. */
@@ -113,6 +118,7 @@ export const DEFAULT_FLUID: FluidParams = {
   drag: 0.01,            // C97 kappa
   dryRate: 0.0015,
   evapRate: 0.0,         // off by default so conservation can be checked
+  hasCurrent: true,      // a blank engine is water, as it always was
   gravityX: 0,
   gravityY: 0,
   cosAlpha: 1.0,
@@ -780,7 +786,12 @@ export class FluidEngine {
        are skipped rather than computed and ignored, which is both the honest
        statement of the model and, as it happens, the removal of the two most
        expensive passes in the frame. */
-    const paste = this.params.yieldStress > 0;
+    /* Which solver, decided by what the MATERIAL is and not by where a dial
+       sits. ~~`yieldStress > 0`~~ RETRACTED 2026-08-25: that made Body a
+       solver switch as well as a stiffness, so sliding it to zero moved oil
+       onto the water path in the middle of a painting and printed a
+       right-angled grid into the paint. docs/15 E4. */
+    const paste = !this.params.hasCurrent || this.params.yieldStress > 0;
 
     // 2 — UpdateVelocities
     if (!paste) run('vel', () => {

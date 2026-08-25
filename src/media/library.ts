@@ -15,6 +15,8 @@ export const WATERCOLOR: WetMedium = {
     shearRate: 0.35, adhesionStrength: 0.45, compressiveYield: 1,
     specularPotential: 0.18, microReflectance: 0.35, refractiveIndex: 0.62,
   },
+  // A wash runs, blooms and backruns. Currents are most of what watercolour IS.
+  hasCurrent: true,
   k1: 0.03, k2: 0.65, kInstrument: 1,
   // A standing wash IS a puddle, and it is gone in ninety seconds. Unchanged.
   filmGloss: 1,
@@ -70,6 +72,12 @@ export const OIL: WetMedium = {
     specularPotential: 0.86, microReflectance: 0.42, refractiveIndex: 0.72,
   },
   k1: 0.03, k2: 0.65,
+  /* No currents. A load of oil has none: it sits where it is put and moves by
+     slumping and by the brush. Which is what the flux pass already assumed for
+     a yielding material — but it worked that out from `yieldStress > 0`, so
+     turning Body down to zero handed oil to the water solver. Now the material
+     says what it is and the dial cannot overrule it. */
+  hasCurrent: false,
   // Wet oil is glossy. Watercolour sits at 1, fully matte; this is the other end.
   kInstrument: 0.25,
   /* An oil film never leaves within a session, and it IS the paint rather than
