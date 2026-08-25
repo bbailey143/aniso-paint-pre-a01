@@ -80,6 +80,10 @@ export function HudWindows({ tools = [], stickInHand = false, readoutsOn = false
       found.push({ id: el.id, title: spec.title, el });
     }
     setPanels(found);
+    /* They are ours now, so they may be seen. Until this line they are hidden
+       by style.css — see the note there about the old app appearing to flash
+       up and be replaced. */
+    document.body.classList.add('studio-ready');
   }, []);
 
   useEffect(() => {

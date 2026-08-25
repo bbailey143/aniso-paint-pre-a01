@@ -77,6 +77,30 @@ html, body {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 
+/* THE FLASH OF THE OLD APP.
+ *
+ * These readouts live in index.html so the studio can ADOPT them at startup —
+ * pick them up and re-home them into its own windows. But the browser paints
+ * whatever is in the HTML as soon as this stylesheet lands, which is long
+ * before any of the app has loaded:
+ *
+ *   [MEASURED 2026-08-25]  this stylesheet ready   96 ms   <- they paint here
+ *                          studio stylesheets     182 ms
+ *                          app code finished      211 ms   <- adopted here
+ *
+ * So they sat on screen in the old styling for about a tenth of a second and
+ * then vanished, because the studio keeps readouts off until asked. That reads
+ * as the old app loading and being replaced, which is what the artist saw.
+ *
+ * Hidden until the studio says it has them. `visibility`, not `display`, so
+ * they still have a size to be measured and placed with. The fatal WebGPU
+ * message is a `.panel` with no id and is deliberately not covered by this. */
+body:not(.studio-ready) #hud,
+body:not(.studio-ready) #stylus,
+body:not(.studio-ready) #gauges {
+  visibility: hidden;
+}
+
 #hud {
   top: 12px;
   left: 12px;
