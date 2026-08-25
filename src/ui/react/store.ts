@@ -125,6 +125,14 @@ export class StudioStore {
 
   setValue(id: string, v: number) {
     this.values.set(id, v);
+    /* A macro dial writes the ones underneath it. It does not LOCK them: move
+       one of those by hand afterwards and it stays where it is put, until a
+       macro is moved again. */
+    const control = RAIL_CONTROLS.find((c) => c.id === id);
+    if (control?.writes) {
+      const written = control.writes(v, (k) => this.value(k));
+      for (const key of Object.keys(written)) this.values.set(key, written[key]);
+    }
     this.pushControls();
     this.changed();
   }

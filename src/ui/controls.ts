@@ -35,6 +35,31 @@ export interface ToolContext {
   wet?: WetMedium;
 }
 
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/* THE TWO MACROS, WRITTEN OUT ONCE.
+ *
+ * Every number below is CHOSEN [UNVERIFIED]. They come from reading a set of
+ * impasto photographs the artist sent, not from measuring them - the images
+ * were pasted into a conversation and never reached a file, so nothing could
+ * be run over their pixels. What the reading gives is the SHAPE: which
+ * quantities travel together and which do not. The constants themselves are a
+ * first guess, and the dials exist so they can be found by eye.
+ *
+ * Anchored on what oil already does, so the macros open sitting exactly where
+ * the material rows put them: oil's relief of 26 inverts to a depth of 0.69,
+ * and 0.69 maps back to 26.
+ */
+export const reliefFor = (d: number) => 40 * Math.pow(clamp01(d), 1.15);
+export const depthFromRelief = (r: number) => Math.pow(clamp01(r / 40), 1 / 1.15);
+/** Thicker paint ploughs harder through what is already down. */
+export const smearFor = (d: number) => 0.40 + 1.40 * clamp01(d);
+/** Matte is a rough surface and scatters broadly; gloss narrows it to a point. */
+export const widthFor = (g: number) => 0.92 - 0.62 * clamp01(g);
+/** Shine needs something to shine off, so this takes both. */
+export const sheenFor = (g: number, d: number) =>
+  clamp01(g) * (0.25 + 0.95 * clamp01(d));
+
 export interface RailControl {
   /** Stable key. Values are remembered per id across tool changes. */
   id: string;
@@ -71,6 +96,18 @@ export interface RailControl {
    * tool. Nothing here asks what the medium is called.
    */
   belongsTo: 'tool' | 'paint';
+
+  /**
+   * A MACRO dial: moving it rewrites these other dials.
+   *
+   * Returns whatever it wants to set, by id. `get` reads the current value of
+   * any other dial, which is how a term depending on two macros at once (Sheen
+   * needs both depth and gloss) stays right whichever one was moved.
+   *
+   * A macro writes; it never locks. Move one of the dials underneath by hand
+   * afterwards and it stays where it is put, until a macro is moved again.
+   */
+  writes?(v: number, get: (id: string) => number): Record<string, number>;
   /** Does this dial mean anything for the tool in hand? */
   appliesTo(tool: ToolContext): boolean;
   /** One line on what it drives, for whoever reads this next. */
@@ -195,6 +232,80 @@ export const RAIL_CONTROLS: RailControl[] = [
     // stain and reads 0; anything with body gets the dial by saying so.
     appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
     drives: 'Comp.paintRelief in composite.wgsl — the paint film lights as its own surface.',
+  },
+  {
+    /* HOW THICK THE PAINT SITS.
+     *
+     * A macro over Relief and Smear. Rebelle carries two dials for oil -
+     * Impasto Depth and Glossiness - and the artist's judgement on 2026-08-25
+     * was that this is the right shape, with the five underneath as the
+     * detail. Agreed, and the reference set he sent is the reason it is TWO
+     * dials and not one.
+     *
+     * [READ, NOT MEASURED - the references were pasted into a conversation and
+     * could not be put through any instrument, so this is careful looking.]
+     * Across nineteen photographs of real impasto, thickness and shine do not
+     * travel together: the heaviest slabs in the set are among the mattest,
+     * while the wettest, most specular one is not especially thick. If they
+     * were one axis every thick painting would gleam, and they do not. That is
+     * the whole argument for two dials.
+     *
+     * What DOES travel with thickness is how much the brush ploughs colour
+     * into what is already there. In the thin scumbles the strokes sit over
+     * each other without mixing; in the heavy ones the colours are visibly
+     * dragged through one another. So Smear rides here.
+     */
+    id: 'impasto',
+    label: 'Impasto Depth',
+    belongsTo: 'paint',
+    min: 0,
+    max: 1,
+    initial: 0,
+    // Starts wherever the material's own rows already sit, so opening a
+    // medium changes nothing until this is actually moved.
+    initialFor: (t) => depthFromRelief(t.wet?.relief ?? 0),
+    format: (v) => (v <= 0.02 ? 'flat' : v.toFixed(2)),
+    appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
+    writes: (v, get) => ({
+      relief: reliefFor(v),
+      smear: smearFor(v),
+      sheen: sheenFor(get('glossiness'), v),
+    }),
+    drives: 'Relief and Smear, and half of Sheen. See reliefFor/smearFor.',
+  },
+  {
+    /* HOW MUCH IT SHINES.
+     *
+     * The other macro. Gloss is how wet the surface reads; Sheen Width is how
+     * broad the glint on a ridge is; and the two move together in the
+     * references, because they are two consequences of one thing - how smooth
+     * the surface is at a scale far below a brush hair.
+     *
+     * [READ, NOT MEASURED] In the matte examples the light on a ridge is broad
+     * and soft, the whole crest lit at once. In the glossy ones it narrows to
+     * hot spots, and in the wettest to hard little points. So the width tracks
+     * the shine and NOT the thickness.
+     *
+     * Sheen amount needs both, and the reference set shows why: the smooth
+     * portrait in it is glossy paint with almost no specular anywhere, because
+     * there is no ridge standing up to catch anything. Shine with nothing to
+     * shine off is nothing.
+     */
+    id: 'glossiness',
+    label: 'Glossiness',
+    belongsTo: 'paint',
+    min: 0,
+    max: 1,
+    initial: 0,
+    initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
+    format: (v) => (v <= 0.02 ? 'matte' : v >= 0.98 ? 'wet' : v.toFixed(2)),
+    appliesTo: () => true,
+    writes: (v, get) => ({
+      gloss: v,
+      sheenWidth: widthFor(v),
+      sheen: sheenFor(v, get('impasto')),
+    }),
+    drives: 'Gloss and Sheen Width, and half of Sheen. See widthFor/sheenFor.',
   },
   {
     /* HOW WET THE SURFACE LOOKS.
