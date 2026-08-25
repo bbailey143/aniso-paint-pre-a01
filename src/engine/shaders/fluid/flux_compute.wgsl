@@ -55,10 +55,22 @@ fn height_at(c: vec2<i32>, n: i32) -> f32 {
  * downhill face easier to clear and the uphill face harder, by the same amount,
  * so the pair stays exactly antisymmetric and nothing is created or lost.
  */
-fn slump(hHere: f32, hThere: f32, bias: f32) -> f32 {
-  let excess = (hHere - hThere + bias) - P.yieldStress;
-  if (excess <= 0.0) { return 0.0; }
-  return min(hHere * 0.2, excess * P.dt * 0.5 / max(P.viscosity, 0.05)) * CREEP;
+/**
+ * Never let one face give away more than would drop this cell BELOW the
+ * neighbour it is giving to. Crossing over inverts the slope and the pair then
+ * push paint back and forth forever.
+ *
+ * This is all that is left of the old per-face `slump`. It used to decide the
+ * AMOUNT as well, which is what locked the flow to the grid: each of the four
+ * faces asked its own neighbour "am I taller than you by more than the yield?"
+ * and answered yes or no on its own. A pile trying to run north-east could
+ * only go north, then east, then north — and that staircase is exactly the
+ * right-angled maze the artist photographed on 2026-08-24. How much moves is
+ * now decided once, from the real direction of steepest descent; this only
+ * stops it overshooting.
+ */
+fn face_cap(want: f32, hHere: f32, hThere: f32, bias: f32) -> f32 {
+  return min(want, max(0.0, (hHere - hThere + bias) * 0.5));
 }
 
 /**
@@ -79,6 +91,23 @@ fn slump(hHere: f32, hThere: f32, bias: f32) -> f32 {
  * Everything else that moves paint is the brush, which is the point.
  */
 const CREEP: f32 = 0.02;
+
+/**
+ * How wide a band the yield gate opens over, as a fraction of the yield.
+ *
+ * A hard threshold says every scrap of this paint gives way at exactly the same
+ * steepness. Real paste does not: it is a suspension, and its yield is a spread
+ * of values, so the shallow end of a pile creeps while the middle still holds.
+ * A hard gate also freezes into connected threads — a cell tips, hands paint to
+ * its neighbour, and both drop under the line, which leaves the thin filaments
+ * running through the artist's photograph.
+ *
+ * [UNVERIFIED] Chosen, and the absolute floor below it likewise: with Body
+ * turned nearly off the fraction alone would be far smaller than a cell's own
+ * film height and the gate would be a hard line again.
+ */
+const YIELD_BAND: f32 = 0.35;
+const YIELD_FLOOR: f32 = 0.002;
 
 fn face_response(h1: f32, h2: f32) -> f32 {
   let mean_h = 0.5 * (h1 + h2);
@@ -106,16 +135,62 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var o = vec4<f32>(0.0);
 
   if (P.yieldStress > 0.0) {
-    // A PASTE. It has no velocity field and reads none: `update_velocities` and
-    // the pressure relaxation are skipped outright for a yielding material (see
-    // fluid.ts), because a pile of paste is moved by its own steepness and by
-    // the brush, and by nothing else.
+    /* A PASTE. It has no velocity field and reads none: `update_velocities` and
+       the pressure relaxation are skipped outright for a yielding material (see
+       fluid.ts), because a pile of paste is moved by its own steepness and by
+       the brush, and by nothing else.
+
+       Those two skipped passes are also what hides the grid for water. Water
+       builds a flow direction and then smooths it; paste does neither, so
+       whatever direction this pass picks is the only direction paint has, and
+       for a long time that was one of four. A round pile slumped into a
+       RECTANGLE with square corners — reproduced 2026-08-24 before this was
+       changed, and visible across a whole painting the artist sent in as a
+       right-angled circuit-board pattern.
+
+       So the direction is taken once, from all eight neighbours, and the amount
+       is split across the four faces this pass owns. The conservation
+       bookkeeping is untouched: a cell still gives away exactly the sum of its
+       own four faces and its four neighbours still receive exactly those, which
+       is what flux_apply_water and flux_apply_pigment add up. */
     let g = P.gravityResponse * P.cosAlpha;
+    let hR = height_at(r, n);
+    let hL = height_at(l, n);
+    let hD = height_at(dn, n);
+    let hU = height_at(up, n);
+    let hRU = height_at(vec2<i32>(c.x + 1, c.y - 1), n);
+    let hLU = height_at(vec2<i32>(c.x - 1, c.y - 1), n);
+    let hRD = height_at(vec2<i32>(c.x + 1, c.y + 1), n);
+    let hLD = height_at(vec2<i32>(c.x - 1, c.y + 1), n);
+
+    /* Which way the pile is actually steepest. Sobel over the 3x3, which for a
+       straight ramp returns the same magnitude the old one-sided difference
+       did — so Body still means what it meant and the dial does not have to be
+       relearned. */
+    let gx = ((hR - hL) * 2.0 + (hRU - hLU) + (hRD - hLD)) * 0.125;
+    let gy = ((hD - hU) * 2.0 + (hRD - hRU) + (hLD - hLU)) * 0.125;
+
+    // Downhill, with gravity as a body force rather than a per-face fudge.
+    let fx = -gx + g * P.gravityX;
+    let fy = -gy + g * P.gravityY;
+    let slope = sqrt(fx * fx + fy * fy);
+
+    let band = max(YIELD_FLOOR, P.yieldStress * YIELD_BAND);
+    let over = slope - P.yieldStress;
+    let open = smoothstep(-band, band, over);
+    let give = min(h * 0.2,
+                   max(over + band, 0.0) * P.dt * 0.5 / max(P.viscosity, 0.05))
+               * CREEP * open;
+
+    /* Split what it gives between the four faces it has, by direction. A pile
+       running north-east now gives half north and half east in the same step,
+       instead of stepping around the corner over two. */
+    let inv = 1.0 / max(abs(fx) + abs(fy), 1.0e-6);
     o = vec4<f32>(
-      slump(h, height_at(r, n),   g * P.gravityX),
-      slump(h, height_at(l, n),  -g * P.gravityX),
-      slump(h, height_at(dn, n),  g * P.gravityY),
-      slump(h, height_at(up, n), -g * P.gravityY),
+      face_cap(give * max( fx, 0.0) * inv, h, hR,  g * P.gravityX),
+      face_cap(give * max(-fx, 0.0) * inv, h, hL, -g * P.gravityX),
+      face_cap(give * max( fy, 0.0) * inv, h, hD,  g * P.gravityY),
+      face_cap(give * max(-fy, 0.0) * inv, h, hU, -g * P.gravityY),
     );
   } else {
     // WATER, exactly as before. Not near enough — the same instructions in the
