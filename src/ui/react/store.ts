@@ -135,16 +135,37 @@ export class StudioStore {
 
   setValue(id: string, v: number) {
     this.values.set(id, v);
-    /* A macro dial writes the ones underneath it. It does not LOCK them: move
-       one of those by hand afterwards and it stays where it is put, until a
-       macro is moved again. */
-    const control = RAIL_CONTROLS.find((c) => c.id === id);
-    if (control?.writes) {
-      const written = control.writes(v, (k) => this.value(k));
-      for (const key of Object.keys(written)) this.values.set(key, written[key]);
-    }
+    // Moving a macro sweeps everything under it. Moving anything else is just
+    // that one dial, and it stays where it is put until a macro moves again.
+    if (RAIL_CONTROLS.find((c) => c.id === id)?.macro) this.applyMacros();
     this.pushControls();
     this.changed();
+  }
+
+  /**
+   * Put every property under a macro where its macro says, between the two ends
+   * of its own range.
+   *
+   * A property under TWO macros is swept by both multiplied together. That is
+   * not arithmetic convenience — it is what the artist's own reference set
+   * showed: the smooth portrait in it is glossy paint with almost no shine
+   * anywhere, because nothing stands up to catch light. Shine needs a surface
+   * AND a ridge, so either one at zero means nothing, which is what a product
+   * does and an average does not.
+   */
+  private applyMacros() {
+    for (const c of RAIL_CONTROLS) {
+      if (!c.under?.length) continue;
+      let t = 1;
+      for (const id of c.under) {
+        const m = RAIL_CONTROLS.find((k) => k.id === id);
+        if (!m) continue;
+        const span = (m.max - m.min) || 1;
+        t *= (this.value(id) - m.min) / span;
+      }
+      const [lo, hi] = this.range(c.id);
+      this.values.set(c.id, lo + (hi - lo) * Math.max(0, Math.min(1, t)));
+    }
   }
 
   setEvap(rate: number) {
@@ -179,6 +200,11 @@ export class StudioStore {
 
   setRange(id: string, low: number, high: number) {
     this.ranges.set(id, [Math.min(low, high), Math.max(low, high)]);
+    // Narrowing a range moves the property, because where it sits is a position
+    // ALONG that range. Without this the number on screen would go on claiming
+    // a value its own range no longer allows.
+    this.applyMacros();
+    this.pushControls();
     this.changed();
   }
   setMixing(on: boolean) { this.mixing = on; this.changed(); }

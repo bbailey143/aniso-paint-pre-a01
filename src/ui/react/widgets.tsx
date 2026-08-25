@@ -352,44 +352,35 @@ export function RangeSlider(props: {
 /* ------------------------------------------------------------------ drawer */
 
 /**
- * A drawer that comes in from the right.
+ * A drawer that comes in from the right, and does NOT block the painting.
  *
- * The same dialog machinery as the bottom sheet: focus trapped while it is
- * open, focus restored to whatever opened it, Escape closes, announced as a
- * dialog. It differs only in where it comes from and in being tall rather than
- * wide, which is what a column of properties wants.
+ * It was a modal to begin with, at the artist's first request, and he changed
+ * his mind for a good reason: "when I adjust the sliders I still need to see
+ * them working live on the canvas." A modal puts a scrim over the sheet, traps
+ * the keyboard, and swallows the very thing being tuned. So this is a plain
+ * panel — no scrim, nothing dimmed, the canvas live and paintable the whole
+ * time it is open.
+ *
+ * What is kept from the dialog version: Escape closes it, it has a close
+ * button, and it is announced by name to anything reading the page aloud. What
+ * is dropped is everything that would have stood between him and the paint.
  */
 export function Drawer({ isOpen, onClose, title, children }: {
   isOpen: boolean; onClose(): void; title: string; children: ReactNode;
 }) {
-  const state = useOverlayTriggerState({ isOpen, onOpenChange: (o) => { if (!o) onClose(); } });
-  if (!state.isOpen) return null;
+  if (!isOpen) return null;
   return (
-    <Overlay>
-      <DrawerBody state={state} title={title}>{children}</DrawerBody>
-    </Overlay>
-  );
-}
-
-function DrawerBody({ state, title, children }: {
-  state: ReturnType<typeof useOverlayTriggerState>; title: string; children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const { modalProps, underlayProps } = useModalOverlay({ isDismissable: true }, state, ref);
-  const titleId = useId();
-  const { dialogProps } = useDialog({ 'aria-labelledby': titleId }, ref);
-  return (
-    <div {...underlayProps} className="st-scrim open">
-      <FocusScope contain restoreFocus autoFocus>
-        <div {...mergeProps(modalProps, dialogProps)} ref={ref} className="st-drawer open">
-          <div className="st-head">
-            <h2 id={titleId}>{title}</h2>
-            <span className="st-spacer" />
-            <Btn className="st-icon" aria-label="Close" onPress={() => state.close()}>&#10005;</Btn>
-          </div>
-          <div className="st-body">{children}</div>
-        </div>
-      </FocusScope>
-    </div>
+    <aside
+      className="st-drawer open"
+      aria-label={title}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
+    >
+      <div className="st-head">
+        <h2>{title}</h2>
+        <span className="st-spacer" />
+        <Btn className="st-icon" aria-label="Close" onPress={onClose}>&#10005;</Btn>
+      </div>
+      <div className="st-body">{children}</div>
+    </aside>
   );
 }

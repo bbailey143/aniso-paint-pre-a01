@@ -429,7 +429,7 @@ function PaintProperties({ store }: { store: StudioStore }) {
         <section key={g.macro.id} className="pp-group">
           <div className="pp-head">
             {value(g.macro)}
-            {!g.macro.writes && <span className="pp-parked">not connected yet</span>}
+            <span className="pp-parked">sweeps the ranges below</span>
           </div>
           <div className="pp-under">{g.under.map(property)}</div>
         </section>
