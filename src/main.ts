@@ -93,6 +93,11 @@ async function main() {
     onSmearChange(smearStrength) { engine.setFluid({ smearStrength }); },
     onCoverChange(cover) { engine.setCover(cover); requestFrame(); },
     onReliefChange(relief) { engine.setRelief(relief); requestFrame(); },
+    // The dial reads 0 matte .. 1 wet; the material rows are written the other
+    // way round, so it is turned over on the way in.
+    onGlossChange(gloss) { engine.setGloss(1 - gloss); requestFrame(); },
+    onSheenChange(sheen) { engine.setSheen(sheen); requestFrame(); },
+    onSheenWidthChange(width) { engine.setSheenWidth(width); requestFrame(); },
     onCapacityChange(scale) { stroke.setCapacity(scale); },
     onFlowChange(scale) { stroke.setFlow(scale); },
     onWaterChange(nextWaterCharge) { waterCharge = nextWaterCharge; stroke.charge(engine.mixWeights, palette.loading, waterCharge); },

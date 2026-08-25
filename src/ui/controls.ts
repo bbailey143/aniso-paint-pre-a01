@@ -197,6 +197,61 @@ export const RAIL_CONTROLS: RailControl[] = [
     drives: 'Comp.paintRelief in composite.wgsl — the paint film lights as its own surface.',
   },
   {
+    /* HOW WET THE SURFACE LOOKS.
+       Not how shiny the highlight is - that is Sheen below. This is whether the
+       surface reads as a wet film at all: deep and saturated at the top of the
+       range, chalky and dry at the bottom. It is the same control that makes a
+       watercolour wash darken while it is wet and lift as it dries. */
+    id: 'gloss',
+    label: 'Gloss',
+    belongsTo: 'paint',
+    min: 0,
+    max: 1,
+    initial: 0,
+    // Material rows are written 0 glossy .. 1 matte; the dial reads the way a
+    // painter would say it, so it is turned over here rather than in the head.
+    initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
+    format: (v) => (v <= 0.02 ? 'matte' : v >= 0.98 ? 'wet' : v.toFixed(2)),
+    // Every material has a surface, so every material answers this.
+    appliesTo: () => true,
+    drives: 'CanvasEngine.setGloss -> Comp.kInstrument, the Saunderson gloss term.',
+  },
+  {
+    /* THE GLINT ON A RIDGE OF PAINT.
+       Thick paint catches a highlight along the crest of a brush ridge, and in
+       a photograph of a painting that highlight is most of how the eye reads
+       thickness. Rides on Relief: a material with no body has no ridge to
+       catch anything, and this is zero for it however it is set. */
+    id: 'sheen',
+    label: 'Sheen',
+    belongsTo: 'paint',
+    min: 0,
+    max: 1.5,
+    initial: 0.55,
+    format: (v) => (v <= 0.01 ? 'none' : v.toFixed(2)),
+    appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
+    drives: 'CanvasEngine.setSheen -> Comp.sheenStrength in composite.wgsl.',
+  },
+  {
+    /* HOW BROAD THAT GLINT IS.
+       [ARTIST REPORT 2026-08-24] "it shines like jelly and looks like plastic."
+       This is the plastic half. The highlight was a hard, small hot spot, which
+       is what a polished plane gives. A paint surface is not a polished plane -
+       up close it is full of hair furrows scattering the light - so its
+       highlight is broad and soft. Wide reads as oil; narrow reads as varnish. */
+    id: 'sheenWidth',
+    label: 'Sheen Width',
+    belongsTo: 'paint',
+    min: 0,
+    max: 1,
+    // Reproduces the tightness that used to be hard-coded, so an untouched
+    // dial changes nothing at all.
+    initial: 0.632,
+    format: (v) => (v <= 0.05 ? 'tight' : v >= 0.95 ? 'broad' : v.toFixed(2)),
+    appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
+    drives: 'CanvasEngine.setSheenWidth -> Comp.sheenWidth, the highlight exponent.',
+  },
+  {
     /* How completely the paint hides the ground. Two loaded strokes should end
        the canvas; if they do not, this is the number, and it is quicker to
        find on a slider than through me. */

@@ -64,6 +64,21 @@ export interface Medium {
   k2: number;
   /** Gloss dial, 0 glossy .. 1 matte. Per medium, never per pigment. */
   kInstrument: number;
+  /**
+   * How far a STANDING FILM of this material's own vehicle drags it toward
+   * mirror-wet, 0..1. Absent means 1, which is what every material did before
+   * this row existed.
+   *
+   * A puddle of water is genuinely glassy, so a water medium belongs at 1 —
+   * and its film is gone in ninety seconds, so the effect expires on its own.
+   * An oil film does not leave: real oil cures by oxidation over days rather
+   * than drying, so the row says openTime 48 hours and an evaporation rate
+   * 1920x slower than watercolour's. The consequence was that oil sat pinned
+   * at maximum gloss for the whole session and its own kInstrument was never
+   * read at all. An oil film is the PAINT, not a layer of solvent lying on it,
+   * so it should not be treated as a wet puddle in the first place.
+   */
+  filmGloss?: number;
 
   // ---- body ----------------------------------------------------------------
   /**

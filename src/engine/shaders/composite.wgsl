@@ -52,12 +52,46 @@ struct Comp {
   /** How far the paint film stands off the sheet. 0 = a stain, and the relief
    * below reduces to exactly the paper tooth it always was. */
   paintRelief: f32,
+  /** How far a STANDING FILM of this material's own vehicle drags it toward
+   * mirror-wet, 0..1.
+   *
+   * A puddle of water really is glassy, so watercolour sits at 1 and behaves
+   * exactly as it always did — and its film is gone in ninety seconds, so the
+   * effect expires on its own.
+   *
+   * Oil is the case this exists for: its film leaves 1920x slower than
+   * watercolour's, because real oil cures rather than dries, so the override
+   * never lifts on its own. And an oil film IS the paint, not a layer of
+   * solvent lying on top of it, so reading it as a wet puddle is wrong in
+   * principle whatever it measures.
+   *
+   * ~~That is the "shines like jelly" the artist reported.~~ **RETRACTED
+   * 2026-08-24, the same day, before it was believed.** Measured on a real oil
+   * stroke the film averages 0.018 per wet cell, so filmWetness comes out
+   * around 0.11 - nowhere near the 1.0 that would pin the gloss. Turning this
+   * row from 1 to 0.15 changed the painted result by ONE unit of blue in 255
+   * and nothing else. The jelly is the SHEEN below, not this. Kept because the
+   * principle is right and it will matter for a flooded film; do not credit it
+   * with fixing anything.
+   */
+  filmGloss: f32,
+  /** How bright the highlight on a ridge of paint is. */
+  sheenStrength: f32,
+  /** How broad it is. 0 is a tight hot spot — varnish, or plastic. 1 is a wide
+   * soft one, which is what an oil surface gives, because up close it is full
+   * of hair furrows scattering the light rather than a polished plane. */
+  sheenWidth: f32,
   // Separate floats, NOT a vec3f. A vec3f aligns to 16 in WGSL, so it would
-  // land at 128 rather than 116 and make this struct 144 bytes against a
-  // 128-byte buffer — the bind group is then invalid and the sheet does not
-  // draw at all. Scalars align to 4 and pack where they are put.
+  // land at 128 rather than 116 and make this struct larger than the buffer —
+  // the bind group is then invalid and the sheet does not draw at all, with no
+  // error thrown. Scalars align to 4 and pack where they are put.
+  //
+  // Buffer is 144 bytes now; canvas.ts must agree. A uniform struct is rounded
+  // up to a multiple of 16, so these three pads are not optional: without them
+  // WGSL still reports 144 but there is nothing saying so out loud.
   _pad3: f32,
   _pad4: f32,
+  _pad5: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -435,7 +469,9 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let filmWetness = clamp(w0v.y * 6.0, 0.0, 1.0);
   let fibreDamp = clamp(w5v.x / max(pap.y, 1.0e-4), 0.0, 1.0);
   let wetness = max(filmWetness, fibreDamp * 0.22);
-  let kIns = mix(C.kInstrument, 0.0, filmWetness);
+  // A standing film pulls the surface toward mirror-wet, but only as far as
+  // the material says it should. See Comp.filmGloss.
+  let kIns = mix(C.kInstrument, 0.0, filmWetness * clamp(C.filmGloss, 0.0, 1.0));
   let Rpaper = baseRpaper * mix(1.0, 0.94, fibreDamp);
 
   // ---- Water view -----------------------------------------------------------
@@ -646,7 +682,27 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   var sheen = 0.0;
   if (gloss > 0.0) {
     let half = normalize(lightDir + vec3f(0.0, 0.0, 1.0));
-    sheen = pow(clamp(dot(ns, half), 0.0, 1.0), 48.0) * gloss * 0.55;
+    /* Tightness of the highlight. This was a hard 48, which is a small hot spot
+       and is most of why thick paint read as plastic: a polished plane gives a
+       tight glint, a paint surface full of brush furrows gives a broad soft
+       one. 6 at the wide end is a sheen you can see across a ridge; 120 at the
+       narrow end is varnish. The default width reproduces the old 48 exactly,
+       so nothing changes until the dial is moved. */
+    let tight = mix(120.0, 6.0, clamp(C.sheenWidth, 0.0, 1.0));
+    /* Broadening a highlight spreads the same shine over far more surface, so
+       without this the Width dial floods the picture instead of softening it.
+       [MEASURED 2026-08-24] at full strength, winding Width from tight to broad
+       took the share of blown-out white pixels in an oil stroke from 7% to 86%
+       - worse, not softer, and the artist would rightly have said the dial was
+       broken. A cos^n lobe carries energy proportional to 1/(n+1), so holding
+       the total steady means scaling by (n+1). Broad now DIMS as it widens,
+       which is what a rough surface does, and Sheen keeps meaning "how much
+       shine" whatever shape it is.
+
+       Normalised against 48, the tightness this replaced, so the default dials
+       reproduce the old picture exactly. */
+    let norm = (tight + 1.0) / 49.0;
+    sheen = pow(clamp(dot(ns, half), 0.0, 1.0), tight) * gloss * max(C.sheenStrength, 0.0) * norm;
   }
 
   // The sheet is something you see THROUGH the paint, so how much of it reaches

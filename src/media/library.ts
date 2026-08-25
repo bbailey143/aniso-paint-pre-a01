@@ -16,6 +16,8 @@ export const WATERCOLOR: WetMedium = {
     specularPotential: 0.18, microReflectance: 0.35, refractiveIndex: 0.62,
   },
   k1: 0.03, k2: 0.65, kInstrument: 1,
+  // A standing wash IS a puddle, and it is gone in ninety seconds. Unchanged.
+  filmGloss: 1,
   // A stain. However many washes go down, the sheet is still what you are
   // looking at - which is why watercolour is painted on white paper.
   relief: 0, bodyShrink: 0, hidesGround: 0,
@@ -70,6 +72,18 @@ export const OIL: WetMedium = {
   k1: 0.03, k2: 0.65,
   // Wet oil is glossy. Watercolour sits at 1, fully matte; this is the other end.
   kInstrument: 0.25,
+  /* An oil film never leaves within a session, and it IS the paint rather than
+     a layer of solvent lying on it, so it should not be read as a wet puddle.
+     Low but not zero: fresh oil is genuinely wetter-looking than cured oil.
+
+     [MEASURED 2026-08-24] Worth recording what this did NOT do. It was built on
+     the guess that the wet-film override was pinning oil at full gloss. It was
+     not: a real oil stroke carries about 0.018 of film per wet cell, so the
+     override was only ever pulling about a tenth of the way, and turning this
+     row from 1 to 0.15 moved the painted result by one unit of blue in 255.
+     The jelly was the sheen. Right in principle, idle in practice.
+     [UNVERIFIED] */
+  filmGloss: 0.15,
   // Truthfully declared and currently unread — see the note above. bodyShrink is
   // the spec's shrinkage on cure: a ridge sinks a little as the oil oxidises.
   relief: 26, bodyShrink: 0.85,

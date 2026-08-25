@@ -109,3 +109,91 @@ scattering.** Wet fills gaps between fibres → less internal scattering → dee
 more saturated; drying returns air → scattering rises → value lifts. Acrylic runs
 opposite (binder milky → clear). Oil neither absorbs nor evaporates → no shift.
 Gouache's inversion does **not** fall out of this cleanly and needs bench measurement.
+
+---
+
+## Surface shine — the three rows behind "it looks like plastic" (2026-08-24)
+
+**The report.** "The oil's biggest weakness now is that it shines like jelly and
+looks like plastic." Two complaints, and they turned out to have one cause, not
+the two I first claimed.
+
+**What was there.** Every material already carried `kInstrument`, a gloss value
+from 0 (mirror) to 1 (matte) — watercolour at 1, oil at 0.25. Nothing in the UI
+reached it, and `CanvasEngine.setGloss` existed and was called by nothing.
+
+### The wrong diagnosis, recorded because it was wrong
+
+The composite has a line that says: however matte a paint claims to be, if a wet
+film is standing on it, drag it toward mirror-wet.
+
+```wgsl
+let kIns = mix(C.kInstrument, 0.0, filmWetness);
+```
+
+That is right for watercolour and expires on its own, because a watercolour film
+is gone in ninety seconds. I reasoned that oil's film leaves 1920x slower
+(`evapRate 0.0015/1920`, `openTime` 48 hours against 90 seconds) so the override
+never lifts, oil is pinned at maximum gloss forever, and its own 0.25 is never
+consulted. Built a `filmGloss` row to bound it, per medium.
+
+**Then measured it.** A real oil stroke carries **0.018 of film per wet cell**,
+and `filmWetness = clamp(film * 6, 0, 1)` — so the term sits around **0.11**, not
+1. Turning the new row from 1 to 0.15 changed the painted result from
+`(189, 203, 213)` to `(189, 203, 214)`: **one unit of blue in 255.**
+
+The row is kept, because reading an oil film as a puddle of solvent is wrong in
+principle and will matter for a flooded film. It is marked in the code as having
+fixed nothing. It should not be cited as the cause of anything.
+
+### The actual cause
+
+The highlight on a ridge of paint:
+
+```wgsl
+sheen = pow(dot(ns, half), 48.0) * gloss * 0.55;
+```
+
+A tightness of 48 is a small hard hot spot, which is what a polished plane gives.
+A paint surface is not a polished plane — up close it is full of hair furrows
+scattering light — so its highlight is broad and soft. That hard glint, added as
+flat white over a strongly relieved oil surface, is the plastic.
+
+### What was built
+
+Three dials in the paint strip, all `belongsTo: 'paint'`, all live:
+
+| dial | what it is | row it drives |
+|---|---|---|
+| **Gloss** | how wet the surface reads | `kInstrument`, inverted for the dial |
+| **Sheen** | how bright the glint on a ridge is | `sheenStrength` |
+| **Sheen Width** | broad and soft, or tight and hard | `sheenWidth` |
+
+Plus `filmGloss` as a material row (not a dial), described above.
+
+Defaults reproduce the previous picture exactly: `sheenStrength` 0.55, and a
+`sheenWidth` of 0.632 maps back to the tightness of 48 it replaced. Nothing
+changes until a dial moves.
+
+### The Width dial floods unless the energy is held
+
+First version had Width and Sheen fully independent, which is wrong: broadening a
+highlight spreads the same shine over far more surface. **[MEASURED]** at Sheen
+0.55, winding Width from tight to broad took the share of blown-out white pixels
+in an oil stroke from **7% to 86%** — the dial made it worse, not softer, and
+would have read as broken.
+
+A `cos^n` lobe carries energy proportional to `1/(n+1)`, so holding the total
+steady means scaling by `(n+1)`, normalised against 48 so the default is
+untouched. Broad now dims as it widens, which is what a rough surface does.
+After the fix, across the whole range of both dials — including Sheen pushed to
+1.2 with Width fully broad — **blown-out pixels stayed at 0%**.
+
+Caveat on those two numbers: the 7%/86% pair is one painting compared with
+itself and is solid. The post-fix 0% is a different painting, so it is evidence
+that the flooding is gone rather than an exact before/after of the same pixels.
+
+**What none of this settles.** Where oil should actually sit. The dials exist so
+Bartford can find that by eye; every value in the rows is `[UNVERIFIED]`. And
+the oil strokes still read pale, which is a covering-and-density question, not a
+shine one.

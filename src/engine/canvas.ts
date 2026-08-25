@@ -76,6 +76,14 @@ export class CanvasEngine {
   private dryWeights_: Float32Array<ArrayBuffer> = new Float32Array(8);
   private thickScale = 5.0;
   private kInstrument = 1.0;
+  /** How far a standing film of this material drags it toward mirror-wet.
+   *  1 is the old behaviour, and is right for a water medium. */
+  private filmGloss = 1.0;
+  /** How bright the highlight on a ridge of paint is. */
+  private sheenStrength = 0.55;
+  /** How broad it is. 0.632 reproduces the hard-coded tightness of 48 that this
+   *  replaced, so an untouched dial changes nothing. */
+  private sheenWidth = 0.632;
   private valueShift = 0.0;
   /**
    * Debug display: show where the water is instead of the colour. Purely a
@@ -209,7 +217,7 @@ export class CanvasEngine {
       // 128, not 112: covering power added an eighth 16-byte group. This size,
       // the ArrayBuffer in writeCompParams, and `struct Comp` in composite.wgsl
       // must agree — an overflowing write is rejected whole and silently.
-      size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
+      size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
     });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
@@ -275,11 +283,21 @@ export class CanvasEngine {
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
     });
     this.kInstrument = m.kInstrument;
+    // Absent means 1, which is the behaviour every material had before the row
+    // existed: a standing film reads as a wet puddle.
+    this.filmGloss = m.filmGloss ?? 1;
     this.valueShift = m.valueShift;
     this.hidesGround = m.hidesGround;
     this.paintRelief = m.relief;
   }
-  setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
+  /** 0 glossy .. 1 matte, as the material rows are written. */
+  setGloss(kInstrument: number) { this.kInstrument = Math.max(0, Math.min(1, kInstrument)); }
+  /** How far a standing film of this material's own vehicle glosses it up. */
+  setFilmGloss(v: number) { this.filmGloss = Math.max(0, Math.min(1, v)); }
+  /** Strength of the highlight on a ridge of paint. */
+  setSheen(v: number) { this.sheenStrength = Math.max(0, v); }
+  /** 0 = a tight hot spot, 1 = a wide soft one. */
+  setSheenWidth(v: number) { this.sheenWidth = Math.max(0, Math.min(1, v)); }
   /** How completely the material covers the sheet. Drives the same row
    *  `setWetMedium` sets; the dial simply lets the artist find it faster. */
   setCover(v: number) { this.hidesGround = Math.max(0, v); }
@@ -406,7 +424,7 @@ export class CanvasEngine {
     // 128 bytes = 8 groups of 16. Must match `struct Comp` in composite.wgsl and
     // the createBuffer size above. An overflowing uniform write is rejected
     // whole and silently; this has cost time twice already.
-    const buf = new ArrayBuffer(128);
+    const buf = new ArrayBuffer(144);
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
@@ -436,6 +454,9 @@ export class CanvasEngine {
     dv.setFloat32(108, this.rot, true);
     dv.setFloat32(112, this.hidesGround, true);
     dv.setFloat32(116, this.paintRelief, true);
+    dv.setFloat32(120, this.filmGloss, true);
+    dv.setFloat32(124, this.sheenStrength, true);
+    dv.setFloat32(128, this.sheenWidth, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

@@ -41,6 +41,12 @@ export interface StudioEvents {
   onCoverChange?(cover: number): void;
   /** How far the paint stands off the sheet. */
   onReliefChange?(relief: number): void;
+  /** How wet the surface looks, 0 matte .. 1 wet. */
+  onGlossChange?(gloss: number): void;
+  /** How bright the glint on a ridge is. */
+  onSheenChange?(sheen: number): void;
+  /** How broad that glint is, 0 tight .. 1 broad. */
+  onSheenWidthChange?(width: number): void;
   /** How much the tuft holds, as a multiple of the brush's own row. */
   onCapacityChange?(scale: number): void;
   /** How fast it gives that load up. */
@@ -265,6 +271,9 @@ export class StudioStore {
     this.events.onSmearChange?.(this.value('smear'));
     this.events.onCoverChange?.(this.value('cover'));
     this.events.onReliefChange?.(this.value('relief'));
+    this.events.onGlossChange?.(this.value('gloss'));
+    this.events.onSheenChange?.(this.value('sheen'));
+    this.events.onSheenWidthChange?.(this.value('sheenWidth'));
     this.events.onBrushChange?.(this.brush, this.brushSize);
     // After the brush, not before: picking one rebuilds the tuft from its row.
     this.events.onCapacityChange?.(this.value('capacity'));
