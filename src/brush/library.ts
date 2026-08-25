@@ -27,7 +27,23 @@ export const BRUSHES: BrushDef[] = [
     stiffness: 0.62,      // sable is springy
     stiffnessTaper: 0.62, // ...but the tip is soft, so it can draw a hairline
     friction: { mu: 0.55, cEta: 0.85, k: 2.0 },
-    bristles: 28,
+    /* 96 hairs through a filled disc, where there used to be 28 on a ring.
+       [MEASURED, docs/14 E4] The share of the mark with paint in it went from
+       26% to 88% at working pressure. The count is not what did that -- where
+       the roots sit is; the count buys how fine the striations are. */
+    bristles: 96,
+    tuft: {
+      section: 2,            // a circle
+      thickRatio: 1,         // round: the two axes are the same
+      convW: 0.10, convT: 0.10,   // it points, which is what a round is for
+      bulge: 1.18, bellyAt: 0.33, // a sable's belly sits well below the ferrule
+      rootJitter: 0.55,
+      lenVar: 0.10,          // dressed hair: nearly all the same length
+      bendVar: 0.18,
+      convVar: 0.20,
+      strayFrac: 0.05, strayAmt: 0.55,
+      seed: 0x5AB1E,
+    },
     splayFromPressure: 0.55,
     reservoir: {
       capacityBelly: 2.6,   // the belly holds far more than the tip
@@ -61,7 +77,24 @@ export const BRUSHES: BrushDef[] = [
     stiffness: 0.72,
     stiffnessTaper: 0.68,
     friction: { mu: 0.6, cEta: 0.8, k: 2.4 },
-    bristles: 34,
+    /* 120 hairs through a chisel section, where there used to be 34 strung
+       along one line two rows deep. [MEASURED, docs/14 E2] those 34 laid tracks
+       with 0% variation in their spacing -- a comb, exactly even, every stroke
+       forever, which is a good way to print a repeating pattern into paint. */
+    bristles: 120,
+    tuft: {
+      section: 3,            // rounded rectangle: full thickness across, corners eased
+      thickRatio: 0.18,      // a chisel is thin, but it is not a ribbon
+      convW: 0.92,           // a flat keeps its width to the very edge
+      convT: 0.12,           // ...and comes to a chisel edge through its thickness
+      bulge: 1.06, bellyAt: 0.30,
+      rootJitter: 0.55,
+      lenVar: 0.10,
+      bendVar: 0.18,
+      convVar: 0.20,
+      strayFrac: 0.05, strayAmt: 0.50,
+      seed: 0xF1A7,
+    },
     splayFromPressure: 0.75,
     reservoir: {
       capacityBelly: 2.3,
@@ -122,7 +155,21 @@ export const BRUSHES: BrushDef[] = [
     // than slicing cleanly along one. Lower cEta and a wider cone is what makes
     // it drag paint sideways instead of gliding over it.
     friction: { mu: 0.92, cEta: 0.62, k: 1.7 },
-    bristles: 22,         // fewer, thicker hairs than a sable
+    // Fewer and thicker than a sable, and far less evenly dressed.
+    bristles: 72,
+    tuft: {
+      section: 3,
+      thickRatio: 0.30,      // bristle is fatter; a hog is a chunky tool
+      convW: 0.98,
+      convT: 0.55,           // cut blunt, not dressed to an edge
+      bulge: 1.02, bellyAt: 0.30,
+      rootJitter: 0.70,      // coarse hair is not laid in neatly
+      lenVar: 0.26,          // and it is not all the same length either
+      bendVar: 0.30,
+      convVar: 0.30,
+      strayFrac: 0.12, strayAmt: 0.60,   // hogs have stray bristles
+      seed: 0xB0A2,
+    },
     // Lean on it and it opens into a rake. This is the mark a hog is chosen for.
     splayFromPressure: 1.15,
     reservoir: {

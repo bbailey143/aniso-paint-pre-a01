@@ -12,6 +12,10 @@
 import { Spine } from './spine';
 import { Reservoir } from './reservoir';
 import type { BrushDef, BrushInput } from './types';
+import {
+  DEFAULT_TUFT, drawTuft, bundleRadius, hairPoint, tuftHalfWidth,
+  type Hair, type HairPoint, type TuftDef,
+} from './tuft';
 import { SEG_FLOATS } from '../engine/fluid';
 
 /** Height of the contact slab in cells — the thin band, just below the paper
@@ -78,6 +82,13 @@ export class Brush {
   /** False until a stroke has one step behind it. */
   private trailValid = false;
   private spines: Spine[];
+  /** The hairs, drawn once. A brush does not rearrange its own hairs. */
+  private hairs: Hair[];
+  private tuftDef: TuftDef;
+  /** How thick one drawn hair is, in cells — set by the packing, not the count. */
+  private hairR: number;
+  /** Scratch for one hair position, so the footprint loop allocates nothing. */
+  private hp: HairPoint = { x: 0, y: 0, z: 0 };
   /** Where each spine sits across the blade, -1..+1. See the constructor. */
   private spineU: number[];
   /** Each spine's own previous contact point, xy. */
@@ -106,6 +117,15 @@ export class Brush {
        or a barrel roll they do not, and that difference is the entire reason a
        flat brush has a leading corner. */
     this.lastC = new Float32Array(count * 2);
+
+    /* The tuft, drawn once. Everything about which hair is where, how long it
+       is and how stiff it is comes out of this and then never changes for the
+       life of the brush. */
+    this.tuftDef = def.tuft ?? DEFAULT_TUFT;
+    this.hairs = drawTuft(this.tuftDef, def.bristles);
+    this.hairR = Math.max(
+      0.45, bundleRadius(this.tuftDef, def.bristles, tuftHalfWidth(def, def.length * size)));
+
     this.reservoir = new Reservoir(def.reservoir, def.bristles, def.segments + 1);
     /* Where every hair point was on the previous solve step. A hair's mark is
        the ground it has covered, and that cannot be known from one instant. */
@@ -282,15 +302,17 @@ export class Brush {
       (n, s) => n + s.joints.filter((j) => j.contact).length, 0);
     const splay = 1 + def.splayFromPressure * (contactCount / (this.spines.length * J));
 
-    // A bristle is thin. Keep it at least half a cell so it registers on the grid.
-    const hairR = Math.max(0.45, (def.widthRatio * this.tuftLength) / B * 0.5);
+    /* A drawn hair stands for a bundle, so its thickness follows the packing.
+       Kept at least half a cell so it still registers on the grid. */
+    const hairR = this.hairR;
+    const halfWidth = tuftHalfWidth(def, this.tuftLength);
 
     for (let b = 0; b < B && count < maxSegs; b++) {
-      // Cross-section parameter for this bristle.
-      const u = B === 1 ? 0.5 : b / (B - 1);
+      const hair = this.hairs[b];
 
       for (let s = 0; s < J && count < maxSegs; s++) {
-        const p = this.bristlePoint(b, u, s, splay);
+        const p = this.hp;
+        hairPoint(this.spines, hair, this.tuftDef, halfWidth, s, J - 1, splay, p);
         const inSlab = p.z <= SLAB;
 
         // A single joint in the slab is the very tip touching down. It still
@@ -362,67 +384,19 @@ export class Brush {
   }
 
   /**
-   * The deformation lattice. A bristle's position at spine station `s` is the
-   * spine there, plus an offset in the local frame, scaled by the tuft's radius
-   * profile. When the spines move apart the offsets stretch with them, so the
-   * mesh inherits whatever the spines do.
+   * Where one hair is, right now.
+   *
+   * Kept as a thin pass-through to `tuft.ts` because the bench and the viewer
+   * both reach in for it by name. The lattice idea is unchanged — hairs are
+   * geometry riding the solved spines and are never themselves simulated. What
+   * changed is that they now fill the tuft's section instead of sitting on its
+   * rim, and that each one differs from its neighbours.
    */
-  private bristlePoint(b: number, u: number, s: number, splay: number) {
-    const J = this.def.segments;
-    const t = s / J;                       // 0 at ferrule, 1 at tip
-    // Radius profile: full at the belly, tapering to a point at the tip. This
-    // is what lets a big round brush draw a hairline with its very tip.
-    const profile = Math.sin(Math.PI * Math.min(1, 0.15 + t * 0.85)) * (1 - t * 0.75);
-    const r = 0.5 * this.def.widthRatio * this.tuftLength * profile * splay;
-
-    if (this.spines.length >= 2) {
-      /* Flat: interpolate across the blade, then add a little thickness so the
-         blade is not infinitely thin. With more than two spines the hair lands
-         between whichever neighbouring pair it falls between, so the middle of
-         the blade follows the middle of the fan instead of the average of the
-         two edges. That is the whole point of a third spine: a bowed blade is
-         drawn bowed. */
-      const n = this.spines.length;
-      const f = u * (n - 1);
-      const k = Math.min(n - 2, Math.floor(f));
-      const uu = f - k;
-      const a = this.spines[k].joints[s];
-      const c = this.spines[k + 1].joints[s];
-      const thick = ((b % 2) - 0.5) * r * 0.35;
-      // Perpendicular to the line joining the spines, in-plane.
-      let nx = c.y - a.y, ny = -(c.x - a.x);
-      const nl = Math.hypot(nx, ny) || 1;
-      nx /= nl; ny /= nl;
-      return {
-        x: a.x + (c.x - a.x) * uu + nx * thick,
-        y: a.y + (c.y - a.y) * uu + ny * thick,
-        z: a.z + (c.z - a.z) * uu,
-      };
-    }
-
-    // Round: bristles ringed about the single spine.
-    const j = this.spines[0].joints[s];
-    const ang = u * Math.PI * 2;
-    // Local frame from the spine's own direction, so the ring stays
-    // perpendicular to the tuft rather than to the page.
-    const prev = this.spines[0].joints[Math.max(0, s - 1)];
-    let dx = j.x - prev.x, dy = j.y - prev.y, dz = j.z - prev.z;
-    const dl = Math.hypot(dx, dy, dz) || 1;
-    dx /= dl; dy /= dl; dz /= dl;
-    // Any vector perpendicular to the spine direction.
-    let ex = -dy, ey = dx, ez = 0;
-    const el = Math.hypot(ex, ey, ez);
-    if (el < 1e-4) { ex = 1; ey = 0; ez = 0; } else { ex /= el; ey /= el; }
-    // Second perpendicular = d x e.
-    const fx = dy * ez - dz * ey;
-    const fy = dz * ex - dx * ez;
-    const fz = dx * ey - dy * ex;
-    const ca = Math.cos(ang) * r, sa = Math.sin(ang) * r;
-    return {
-      x: j.x + ex * ca + fx * sa,
-      y: j.y + ey * ca + fy * sa,
-      z: j.z + ez * ca + fz * sa,
-    };
+  bristlePoint(b: number, _u: number, s: number, splay: number): HairPoint {
+    const out = { x: 0, y: 0, z: 0 };
+    hairPoint(this.spines, this.hairs[b], this.tuftDef,
+      tuftHalfWidth(this.def, this.tuftLength), s, this.def.segments, splay, out);
+    return out;
   }
 
   /** Debug/UI: how much of the tuft is touching the paper right now. */

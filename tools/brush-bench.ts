@@ -22,7 +22,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -1013,4 +1013,123 @@ if (MODE === 'drive') {
       '   cost ' + (base.bristles * (segs + 1)) + ' segs/step');
   }
   console.log('');
+}
+
+/* ------------------------------------------------------------------- fill --
+ * The two claims the tuft rebuild was sold on, measured on the SHIPPED brush
+ * rather than on the prototype in tools/tuft/.
+ *
+ *   1. how much of a mark's own area actually has paint in it
+ *   2. how evenly the hair tracks are spaced across the blade
+ *
+ * Both are read straight off the footprint the deposit pass is handed, so this
+ * is the engine answering, not a model of it.
+ */
+if (MODE === 'fill') {
+  const fpose2 = (o: Record<string, number>) =>
+    ({ x: 0, y: 0, pressure: 0.75, tiltAngle: 0, tiltAzimuth: 0, twist: 0, dx: 0, dy: 0, ...o });
+
+  const hull2 = (pts: number[][]) => {
+    if (pts.length < 3) return pts;
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o: number[], a: number[], b: number[]) =>
+      (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo: number[][] = [], up: number[][] = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) {
+      const q = p[i];
+      while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+      up.push(q);
+    }
+    lo.pop(); up.pop();
+    return lo.concat(up);
+  };
+  const areaOf = (h: number[][]) => {
+    let a = 0;
+    for (let i = 0; i < h.length; i++) { const j = (i + 1) % h.length; a += h[i][0] * h[j][1] - h[j][0] * h[i][1]; }
+    return Math.abs(a) / 2;
+  };
+
+  console.log('Of the area each mark covers, how much actually has paint in it,');
+  console.log('and how even the hair tracks are across the blade.');
+  console.log('A comb reads 0% variation. A real tuft does not.\n');
+
+  /* Optional hair-count multiplier: `node tools/brush-bench.mjs fill 0.5`.
+     The cost of the fill is linear in the count and the quality of it is very
+     nearly flat, so the two want measuring together before anyone pays. */
+  const mult = Number(process.argv[3]) > 0 ? Number(process.argv[3]) : 1;
+  for (const slug5 of ['round-sable', 'flat-sable', 'flat-hog']) {
+    const base5 = BRUSH_BY_SLUG.get(slug5)!;
+    const d5 = mult === 1 ? base5
+      : { ...base5, bristles: Math.max(8, Math.round(base5.bristles * mult)) };
+    console.log(`${d5.name}  ${d5.bristles} hairs`);
+    console.log('    pressure   paint in the mark   tracks   spacing variation');
+    for (const pr of [0.25, 0.5, 0.75, 1.0]) {
+      const st = new StrokeEngine(d5, 1.0);
+      const m = new Float32Array(8); m[0] = 1;
+      st.charge(m, 1.0, 0);
+      const b: any = (st as any).brush;
+      b.begin(fpose2({ pressure: 0 }));
+      let x = 0;
+      for (let i = 1; i <= 10; i++) b.solve(fpose2({ x, pressure: (i / 10) * pr }));
+      const buf = new Float32Array(8192 * 8);
+      let n = 0;
+      for (let i = 0; i < 6; i++) {
+        x += 0.9;
+        b.solve(fpose2({ x, dx: 0.9, pressure: pr }));
+        n = b.emitFootprint(buf, 0, 8192);
+      }
+      const r = b.hairR ?? 0.5;
+
+      // Ink every footprint point, then count only what lands inside the mark's
+      // own outline -- the band a disc paints outside the edge otherwise reads
+      // as more than a full mark and measures the rim, not the middle.
+      const pts: number[][] = [];
+      for (let i = 0; i < n; i++) { const o = i * 8; pts.push([buf[o], buf[o + 1]], [buf[o + 2], buf[o + 3]]); }
+      let frac = 0;
+      if (pts.length >= 3) {
+        const C = 0.15;
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+        x0 -= r + C; x1 += r + C; y0 -= r + C; y1 += r + C;
+        const W = Math.ceil((x1 - x0) / C), H = Math.ceil((y1 - y0) / C);
+        const g = new Uint8Array(W * H), rc = Math.ceil(r / C);
+        for (const p of pts) {
+          const cx = Math.round((p[0] - x0) / C), cy = Math.round((p[1] - y0) / C);
+          for (let dy = -rc; dy <= rc; dy++) for (let dx = -rc; dx <= rc; dx++) {
+            if (dx * dx + dy * dy > rc * rc) continue;
+            const gx = cx + dx, gy = cy + dy;
+            if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
+            g[gy * W + gx] = 1;
+          }
+        }
+        const h = hull2(pts), A = areaOf(h);
+        let on = 0;
+        for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
+          if (!g[gy * W + gx]) continue;
+          const px = x0 + gx * C, py = y0 + gy * C;
+          let inside = false;
+          for (let i = 0, j = h.length - 1; i < h.length; j = i++) {
+            if ((h[i][1] > py) !== (h[j][1] > py) &&
+                px < ((h[j][0] - h[i][0]) * (py - h[i][1])) / (h[j][1] - h[i][1]) + h[i][0]) inside = !inside;
+          }
+          if (inside) on++;
+        }
+        frac = A > 0 ? (on * C * C) / A : 0;
+      }
+
+      // Spacing between neighbouring tracks across the stroke.
+      const ys = [...new Set(pts.map((p) => +p[1].toFixed(4)))].sort((a, b2) => a - b2);
+      const gaps: number[] = [];
+      for (let i = 1; i < ys.length; i++) gaps.push(ys[i] - ys[i - 1]);
+      let cv = 0;
+      if (gaps.length > 1) {
+        const mu2 = gaps.reduce((a, b2) => a + b2, 0) / gaps.length;
+        cv = Math.sqrt(gaps.reduce((a, b2) => a + (b2 - mu2) * (b2 - mu2), 0) / gaps.length) / (mu2 || 1);
+      }
+      console.log(`    ${pr.toFixed(2)}          ${(frac * 100).toFixed(0).padStart(3)}%` +
+        `            ${String(ys.length).padStart(4)}        ${(cv * 100).toFixed(0).padStart(3)}%`);
+    }
+    console.log('');
+  }
 }

@@ -36,6 +36,8 @@ export interface ReservoirDef {
   upRate: number;
 }
 
+import type { TuftDef } from './tuft';
+
 export interface BrushDef {
   name: string;
   slug: string;
@@ -90,8 +92,16 @@ export interface BrushDef {
 
   friction: FrictionLobe;
 
-  /** Bristle count — geometry only, never simulated (VL). */
+  /** How many hairs are drawn. Each stands for a BUNDLE of real ones, so this
+   *  is a cost-and-fineness choice: [MEASURED, docs/14 E4] the share of a mark
+   *  with paint in it barely moved between 40 hairs and 180, because the drawn
+   *  thickness follows the packing. Geometry only, never simulated. */
   bristles: number;
+
+  /** Where those hairs sit and how they differ from one another. Absent means
+   *  the round default in `tuft.ts` — which is a filled bundle, not the ring
+   *  every brush used to have. */
+  tuft?: TuftDef;
   /** How much the tuft spreads as it is pressed. The FFD lattice stretching;
    * splay is geometric, not emergent (the documented ceiling). */
   splayFromPressure: number;

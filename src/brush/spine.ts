@@ -29,6 +29,11 @@ export class Spine {
   stiffness: number[] = [];
   /** Per-segment rest bend, mutated by plasticity as the tuft remembers splay. */
   restBend: number[] = [];
+  /** The shape the solver started from this step, kept so hairs can be placed
+   *  between it and the solved chain. A stiff hair does not get all the way to
+   *  where the spine ended up; a soft one goes past it. Without the starting
+   *  shape there is nothing to be short of. */
+  rest: { x: number; y: number; z: number }[] = [];
 
 
   constructor(def: BrushDef, scale: number) {
@@ -60,6 +65,7 @@ export class Spine {
 
     for (let i = 0; i <= n; i++) {
       this.joints.push({ x: 0, y: 0, z: 0, contact: false });
+      this.rest.push({ x: 0, y: 0, z: 0 });
     }
   }
 
@@ -122,6 +128,9 @@ export class Spine {
       j[i + 1].y = j[i].y + dy * L;
       j[i + 1].z = Math.max(0, j[i].z + dz * L);
       j[i + 1].contact = false;
+    }
+    for (let i = 0; i < j.length; i++) {
+      this.rest[i].x = j[i].x; this.rest[i].y = j[i].y; this.rest[i].z = j[i].z;
     }
   }
 

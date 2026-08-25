@@ -1,5 +1,12 @@
 # Tuft geometry bench
 
+> **STALE AS A MODEL OF THE ENGINE, 2026-08-24.** The filled tuft shipped -- see
+> docs/14 E10 and `src/brush/tuft.ts`. What is here is now a BEFORE-AND-AFTER
+> exhibit: `nowHair` mirrors a `bristlePoint` that no longer exists, and the
+> "now" side of every comparison is the old hollow brush. Keep it for the
+> comparison; do not read it as current. To measure the brush as it actually is,
+> use `node tools/brush-bench.mjs fill`.
+
 A place to redesign the tuft **without touching the paint engine**. Nothing in this
 folder is imported by `src/`. Painting behaves exactly as it did.
 

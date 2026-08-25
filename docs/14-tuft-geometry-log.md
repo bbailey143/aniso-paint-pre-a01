@@ -503,3 +503,82 @@ them. Also: none of this shows the marks are better. And `SPLAY_OUT = 0.45`, the
 strength of the outward lean in the lay direction, is chosen, not measured
 `[UNVERIFIED]` — it now does the job `splayFromPressure` has been faking with a
 multiplier on the section, and the two want reconciling.
+
+---
+
+### E10 — The filled tuft, wired into the engine (2026-08-24, branch `tuft-fill`)
+
+**Purpose.** E4 measured the fill on a prototype riding recorded spines. Bartford:
+"I think we need to build in the first stage we discussed regards building the
+tufts. That's the only real way we'll know if any of this is worth it." So: put
+it in the engine and re-measure everything on the shipped brush.
+
+**Method.** New `src/brush/tuft.ts` carries the manufactured shape of a tuft as
+a data row (`BrushDef.tuft`) and places hairs on the solved spines.
+`Spine` now keeps the shape it was solved from, because a hair is placed by
+blending that rest line toward the solved chain by its own stiffness and there
+is nothing to fall short of without it. `Brush.bristlePoint` is a thin
+pass-through; the ring-and-comb placement is gone. Hair counts raised from
+28/34/22 to 96/120/72, and hair thickness now follows the packing rather than
+the count.
+
+Then measured on the ENGINE's own footprint — the buffer the deposit pass is
+handed — with `node tools/brush-bench.mjs fill`. Not on a model of it.
+
+**Raw result.** Share of each mark's own area that actually has paint in it, and
+how evenly the hair tracks are spaced across the stroke:
+
+```
+                     paint in the mark            spacing variation
+                   before        after          before        after
+Round Sable          26%       83 - 100%          72%       134 - 212%
+Flat Sable           30%        75 -  89%          0%        94 - 124%
+Flat Hog             39%        45 -  70%          0%       139 - 174%
+```
+
+Cost, measured live in the running app, brush CPU only, per frame of 8 stylus
+samples:
+
+```
+              hairs   footprint segments/frame   ms/frame
+Round Sable      96            3120               1.96
+Flat Sable      120            3344               3.54
+Flat Hog         72            1328               2.27
+```
+
+That is about 3.4x the old hair count and, being linear in it, about 3.4x the
+old brush cost.
+
+**What it proves.** Both claims E4 made on the prototype survive the move into
+the engine, on all three brushes. The flats' perfectly even comb is gone: 0%
+variation was not "nearly even", it was exactly even to the last decimal on
+every stroke, and it is now 94-124%. And a round sable's mark is no longer
+mostly hole.
+
+E4's most useful finding also survives: re-running the same measurement at half
+and a third of the hair count gives 79-84% and 80-92% — statistically the same
+fill for a third of the cost. The count buys how FINE the striations are (488
+distinct tracks against 163), not whether the brush is hollow. So the cost above
+is a dial, not a bill.
+
+**A harness artefact, caught before it was reported.** The first painted hog
+stroke came out with regular gaps across it — exactly the "stamping" pattern
+that started this whole line of work. It was the synthetic pointer input:
+the test dispatched four samples then yielded, and the gaps sat at that period.
+Repainting the identical stroke yielding after every sample gave a continuous
+band with no gaps at all. **Any banding seen in a scripted stroke must be
+re-run at a different input cadence before it is believed.**
+
+**What it does NOT prove.** No judgement that the marks are BETTER; that is
+Bartford's, and it has not been given. The tuft rows are chosen, not measured
+`[UNVERIFIED]`, the same standing as the rest of the brush library. Three
+specific things are known to be unfinished:
+
+- `splayFromPressure` still multiplies the section, and the lay-over direction
+  in `Brush.solve` now opens the tuft outward as well. Two mechanisms doing one
+  job; they want reconciling.
+- The hog's fill is the weakest of the three at a light touch (45%), which is
+  its own long hairs and heavy stray fraction deliberately scattering it. That
+  may be right for a hog or may be too much; it has not been judged.
+- The prototype in `tools/tuft/` is now a BEFORE-AND-AFTER exhibit, not a
+  current model: its `nowHair` mirrors a `bristlePoint` that no longer exists.
