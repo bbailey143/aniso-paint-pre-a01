@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>aniso-paint</title>
     <link rel="stylesheet" href="/src/style.css" />
-    <link rel="stylesheet" href="/src/ui/window-manager.css" />
     <link rel="stylesheet" href="/src/ui/command-palette.css" />
   </head>
   <body>
-    <canvas id="stage" touch-action="none"></canvas>
+    <!-- tabindex so a press on the paper can take the keyboard back from the UI. -->
+    <canvas id="stage" touch-action="none" tabindex="-1"></canvas>
     <div id="hud" class="panel">
       <span class="hud-title">aniso-paint</span>
       <span id="hud-gpu" class="hud-line">webgpu: …</span>
@@ -24,10 +24,12 @@
     </div>
     <div id="gauges" class="panel">
       <span class="hud-title">conservation</span>
-      <div class="stylus-row"><span>water</span><b id="g-water">—</b></div>
+      <div class="stylus-row"><span>solvent</span><b id="g-water">—</b></div>
       <div class="stylus-row"><span>pigment</span><b id="g-pigment">—</b></div>
       <div class="stylus-row"><span>ink/graphite</span><b id="g-ink">—</b></div>
       <div class="stylus-row"><span>wet cells</span><b id="g-wet">—</b></div>
+      <div class="stylus-row"><span>pigment/cell</span><b id="g-density">—</b></div>
+      <div class="stylus-row"><span>strokes</span><b id="g-strokes">—</b></div>
       <div class="stylus-row"><span>mean |div|</span><b id="g-div">—</b></div>
       <div class="stylus-row"><span>relax</span><b id="g-relax">—</b></div>
     </div>
@@ -37,6 +39,24 @@
       <div class="conte-readout"><span>tilt <b id="conte-tilt">0 deg</b></span><span>azimuth <b id="conte-azimuth">0 deg</b></span><span>twist <b id="conte-twist">0 deg</b></span></div>
       <label class="conte-flat" title="Lay Flat"><input id="conte-lay-flat" type="checkbox" /><span>Lay Flat</span></label>
     </aside>
+    <script>
+      /* ?frames=timer — drive the render loop from a timer instead of the
+         compositor.
+
+         requestAnimationFrame does not fire in a browser that is not painting:
+         a headless run, a hidden pane, a backgrounded tab. The app then boots,
+         reports no error, and never draws a frame — which has meant every
+         judgement about how the paint LOOKS had to go through the artist, one
+         round trip at a time. With this flag the engine steps and renders
+         normally and the canvas can be read back and measured.
+
+         Must run before the module below, so the patch is in place when the
+         first frame is requested. Off unless asked for, and it changes nothing
+         about the engine — only who asks it for the next frame. */
+      if (location.search.includes('frames=timer')) {
+        window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 8);
+      }
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

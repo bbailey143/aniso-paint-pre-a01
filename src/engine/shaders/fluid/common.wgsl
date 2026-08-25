@@ -39,8 +39,11 @@ struct Params {
   /** How much faster the film evaporates at its pinned edge than in its
    * interior. This is the Deegan mechanism itself, not a model of its result. */
   edgeEvaporation: f32,
-  _mediumPad4: f32,
-  _mediumPad5: f32,
+  /** Stress a face must clear before this material moves at all. 0 = water. */
+  yieldStress: f32,
+  /** Film that adheres and cannot be shoved off, however hard the brush
+   * scrubs. `Medium.teflonMin` — "minimum left behind by advection/pickup". */
+  teflonMin: f32,
 
   // Pigment library for the 8 active slots: (rho density, omega staining,
   // gamma granulation, pad) — Card 3. Cells store amounts; library stores

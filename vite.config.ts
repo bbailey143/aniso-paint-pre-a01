@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 // WGSL shaders are imported as raw strings via `?raw`.
 export default defineConfig({
+  plugins: [react()],
   server: {
     host: true,
     port: 5173,

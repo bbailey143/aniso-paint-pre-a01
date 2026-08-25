@@ -39,6 +39,11 @@ export class StrokeEngine {
   /** Null while a wet tool is selected. */
   private dry: DryTool | null = null;
   private last: { x: number; y: number; s: StylusSample } | null = null;
+  /** How far the brush travelled this frame, in grid cells. The smear needs a
+   *  direction, and a footprint segment runs ALONG a hair rather than along the
+   *  stroke, so it cannot be read back out of the footprint. */
+  private travelX = 0;
+  private travelY = 0;
   private brush: Brush;
   private size: number;
   /** The mix currently on the brush, and how heavily it was charged. */
@@ -46,6 +51,12 @@ export class StrokeEngine {
   private loading = 0.6;
   /** Extra clean water added to the colour charge, 0..1. */
   private waterCharge = 0;
+  /** How big the tuft's reservoir is, as a multiple of the brush's own row.
+   *  Kept here rather than on the brush because a brush is rebuilt whenever it
+   *  is picked, and this must survive that. */
+  private capacityScale = 1;
+  /** How fast the tuft gives that load up, as a multiple of the brush's row. */
+  private flowScale = 1;
   private layFlat = false;
 
   /** Cells per solve step — never let the tuft jump more than this. */
@@ -62,6 +73,8 @@ export class StrokeEngine {
     this.size = size;
     this.dry = null;                       // back to a wet tool
     this.brush = new Brush(def, size);
+    this.brush.reservoir.setScale(this.capacityScale);
+    this.brush.reservoir.setFlow(this.flowScale);
     this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
   }
 
@@ -111,6 +124,20 @@ export class StrokeEngine {
     this.loading = loading;
     this.waterCharge = Math.min(1, Math.max(0, waterCharge));
     this.brush.reservoir.charge(this.mix, loading, this.waterCharge);
+  }
+
+  /** How fast the tuft gives its load up. Lower makes one dip go further. */
+  setFlow(scale: number) {
+    this.flowScale = Math.max(0.02, scale);
+    this.brush.reservoir.setFlow(this.flowScale);
+  }
+
+  /** How much the tuft holds, as a multiple of the brush's own row. */
+  setCapacity(scale: number) {
+    this.capacityScale = Math.max(0.05, scale);
+    this.brush.reservoir.setScale(this.capacityScale);
+    // Resizing an empty jug leaves it empty; top it back up to the same Load.
+    this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
   }
 
   /**
@@ -193,6 +220,8 @@ export class StrokeEngine {
         continue;
       }
       this.brush.solve(input);
+      this.travelX += input.dx;
+      this.travelY += input.dy;
       if (this.count < FRAME_SEGS) {
         this.count = this.brush.emitFootprint(this.buf, this.count, FRAME_SEGS);
       }
@@ -200,11 +229,17 @@ export class StrokeEngine {
     this.last = { x: gx, y: gy, s };
   }
 
-  /** Hand the frame's footprint to the engine and reset for the next frame. */
-  drain(): { data: Float32Array<ArrayBuffer>; count: number } {
+  /** Hand the frame's footprint to the engine and reset for the next frame.
+   *  `dx`/`dy` are the frame's net travel — one direction for the whole frame,
+   *  which is an approximation a curved flick would notice and a normal stroke
+   *  will not, since a frame covers a few cells at most. */
+  drain(): { data: Float32Array<ArrayBuffer>; count: number; dx: number; dy: number } {
     const count = this.count;
+    const dx = this.travelX, dy = this.travelY;
     this.count = 0;
-    return { data: this.buf, count };
+    this.travelX = 0;
+    this.travelY = 0;
+    return { data: this.buf, count, dx, dy };
   }
 
   /** Same, for the dry-media channel (P7). `edge` is the rim falloff the

@@ -5,3 +5,5 @@ dist/
 .vite/
 bench/canvas-spike/target/
 .env
+tools/tuft/tuft-bench.html
+tools/brush-bench.mjs

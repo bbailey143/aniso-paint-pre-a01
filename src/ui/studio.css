@@ -1,0 +1,413 @@
+/* Studio — the painting UI. iPad first.
+ *
+ * Rules this file exists to keep:
+ *   nothing lives on the right edge
+ *   nothing sits on the canvas while a stroke is happening
+ *   every target is at least 44px, because a finger is not a mouse
+ *   no hover states carry meaning
+ */
+
+:root {
+  --st-ink: #f2efeb;
+  --st-dim: #a29c95;
+  --st-glass: rgba(22, 21, 24, 0.82);
+  --st-edge: rgba(255, 255, 255, 0.12);
+  --st-accent: #d9a441;
+  --st-safe-b: env(safe-area-inset-bottom, 0px);
+  --st-safe-l: env(safe-area-inset-left, 0px);
+}
+
+.st,
+.st * {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.st {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  font: 500 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  color: var(--st-ink);
+}
+
+.st > * { pointer-events: auto; }
+
+/* Everything gets out of the way while the brush is down. */
+.st.drawing .st-rail,
+.st.drawing .st-dock { opacity: 0; transform: translateY(6px); pointer-events: none; }
+.st.drawing .st-sheet { transform: translateY(110%); }
+
+.st-rail, .st-dock, .st-sheet, .st-scrim {
+  transition: opacity .18s ease, transform .26s cubic-bezier(.22,.61,.36,1);
+}
+
+/* ------------------------------------------------ the paint, along the top */
+
+/* Stops short of the docked HUD column: 12px margin + 236px of window + a gap,
+   read off --hud-w in hud.css. Scrolls rather than squeezing, because a
+   material with six properties must not shrink the others to nothing — and a
+   HUD window dragged out of the dock can land anywhere, which is the artist's
+   arrangement to make, not this strip's to guess at. */
+.st-paints {
+  position: absolute;
+  top: calc(10px + var(--st-safe-t, 0px));
+  left: calc(84px + var(--st-safe-l));
+  right: 264px;
+  display: flex;
+  gap: 0;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 16px;
+  background: var(--st-glass);
+  border: 1px solid var(--st-edge);
+  backdrop-filter: blur(18px) saturate(1.3);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-paints::-webkit-scrollbar { display: none; }
+/* The dials share the strip evenly — one property of the paint is not more
+   important than another — but never squeeze below a width you can still read
+   a number in. Past that the strip scrolls instead. */
+.st-paints > * { flex: 1 1 0; min-width: 128px; padding: 0 13px; }
+/* A hairline between neighbours, so six dials read as six things rather than
+   one long row of knobs. Between, not around: the ends of the strip already
+   have the panel's own edge. */
+.st-paints > * + * { border-left: 1px solid var(--st-edge); }
+.st-paints > *:first-child { padding-left: 4px; }
+.st-paints > *:last-child { padding-right: 4px; }
+
+/* A horizontal dial that carries its own name and reading: name at the left,
+   value at the right, track beneath them both. */
+.st-hslider.st-hlabelled {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.st-hlabelled .st-hname {
+  font-size: 9px; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--st-dim); white-space: nowrap;
+}
+.st-hlabelled .st-hval {
+  font-size: 10px; font-variant-numeric: tabular-nums; color: var(--st-ink);
+  white-space: nowrap;
+}
+.st-hlabelled .st-htrack { grid-column: 1 / -1; }
+
+@media (max-width: 900px) {
+  /* No HUD column to dodge on a narrow screen, and the strip needs the room. */
+  .st-paints { right: calc(10px + var(--st-safe-r, 0px)); }
+}
+
+/* Out of the way while a stroke is happening, same as everything else. */
+.st.drawing .st-paints { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.st-paints { transition: opacity .18s ease, transform .26s cubic-bezier(.22,.61,.36,1); }
+
+/* ---------------------------------------------------------- left rail */
+
+.st-rail {
+  position: absolute;
+  left: calc(10px + var(--st-safe-l));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 9px;
+  border-radius: 18px;
+  background: var(--st-glass);
+  border: 1px solid var(--st-edge);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+}
+
+.st-slider { width: 44px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+.st-track {
+  position: relative;
+  width: 34px;
+  height: 148px;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, .09);
+  overflow: hidden;
+  touch-action: none;
+  cursor: ns-resize;
+}
+
+.st-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,.18));
+  pointer-events: none;
+}
+
+/* The dot marks the value so the control reads at a glance while painting.
+ *
+ * It used to be centred on the value and pushed half outside the track with a
+ * negative margin, which the track's `overflow: hidden` then sliced in half —
+ * so at either end of the travel you got a white dome bleeding out of the
+ * corner instead of a dot. The knob now travels *inside* the track: its bottom
+ * edge runs from 0 to the track height less its own size, so a full circle is
+ * always visible and nothing is ever clipped. */
+.st-knob {
+  position: absolute;
+  left: 50%;
+  width: 26px; height: 26px;
+  margin-left: -13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+  pointer-events: none;
+}
+
+.st-cap { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--st-dim); }
+.st-val { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--st-ink); }
+
+/* ---------------------------------------------------------- bottom dock */
+
+.st-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + var(--st-safe-b));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 22px;
+  background: var(--st-glass);
+  border: 1px solid var(--st-edge);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  /* Medium, tool, colour and paper is four steps before the actions. On a
+     narrow iPad that is wider than the screen, so it scrolls rather than
+     wrapping into something unusable. */
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-dock::-webkit-scrollbar { display: none; }
+.st-dock > * { flex: none; }
+
+.st-btn {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 44px;
+  padding: 0 14px 0 10px;
+  border: 0; border-radius: 15px;
+  background: transparent;
+  color: var(--st-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.st-btn:active { background: rgba(255,255,255,.10); }
+.st-btn.on { background: rgba(255,255,255,.14); }
+
+.st-btn-label { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+.st-btn-label small { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--st-dim); }
+.st-btn-label b { font-weight: 600; font-size: 13px; max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.st-chip { width: 26px; height: 26px; border-radius: 9px; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.st-chip.round { border-radius: 50%; }
+
+.st-icon {
+  width: 44px; height: 44px; padding: 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 15px;
+  background: transparent;
+  /* Brighter than the labels: these are the only things in the dock you press
+     by shape rather than by reading. */
+  color: #cdc7c0;
+  font: inherit; cursor: pointer;
+}
+.st-icon svg { display: block; }
+.st-icon:active { background: rgba(255,255,255,.10); }
+.st-icon.on { background: rgba(255,255,255,.14); color: var(--st-ink); }
+
+.st-sep { width: 1px; height: 26px; background: var(--st-edge); flex: none; }
+
+/* ---------------------------------------------------------- sheets */
+
+.st-scrim {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.32);
+  opacity: 0; pointer-events: none;
+}
+.st-scrim.open { opacity: 1; pointer-events: auto; }
+
+/* The sheet opens ABOVE the dock, not under it.
+ *
+ * It used to sit on the bottom edge of the screen with the dock floating over
+ * its lower part, which hid the first row of whatever you had just opened. The
+ * dock's height is measured and published as --st-dock-h rather than written in
+ * here, because the dock changes height with the safe area and with how many
+ * steps a medium happens to offer. */
+.st-sheet {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--st-dock-h, 62px) + 24px + var(--st-safe-b));
+  width: min(720px, calc(100vw - 24px));
+  transform: translate(-50%, calc(100% + var(--st-dock-h, 62px) + 48px));
+  max-height: min(56vh, 520px, calc(100vh - var(--st-dock-h, 62px) - 110px));
+  display: flex; flex-direction: column;
+  padding: 6px 16px 16px;
+  border-radius: 22px;
+  background: var(--st-glass);
+  border: 1px solid var(--st-edge);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow: 0 14px 50px rgba(0,0,0,.55);
+}
+.st-sheet.open { transform: translate(-50%, 0); }
+
+.st-grab { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.26); margin: 6px auto 10px; flex: none; }
+
+.st-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex: none; }
+.st-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.st-head .st-spacer { flex: 1; }
+
+.st-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+.st-group { margin-bottom: 16px; }
+.st-group:last-child { margin-bottom: 0; }
+.st-group h3 {
+  margin: 0 0 8px; font-size: 9.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--st-dim);
+}
+
+/* colour swatches */
+.st-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; }
+.st-swatch {
+  position: relative;
+  aspect-ratio: 1; min-height: 52px;
+  border: 0; border-radius: 13px; padding: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.16);
+}
+.st-swatch:active { transform: scale(.94); }
+.st-swatch.on { box-shadow: inset 0 0 0 2px #fff, 0 0 0 3px rgba(255,255,255,.28); }
+.st-swatch span {
+  position: absolute; left: 4px; right: 4px; bottom: 4px;
+  font-size: 8.5px; line-height: 1.1; text-align: center;
+  color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* list rows for brushes and papers */
+.st-list { display: flex; flex-direction: column; gap: 4px; }
+.st-row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 52px; padding: 8px 12px;
+  border: 0; border-radius: 13px;
+  background: rgba(255,255,255,.05);
+  color: var(--st-ink); font: inherit; text-align: left;
+  cursor: pointer;
+}
+.st-row:active { background: rgba(255,255,255,.12); }
+.st-row.on { background: rgba(255,255,255,.15); box-shadow: inset 0 0 0 1.5px var(--st-accent); }
+.st-row .st-row-text { display: flex; flex-direction: column; min-width: 0; }
+.st-row b { font-weight: 600; font-size: 13.5px; }
+.st-row small { color: var(--st-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-row .st-spacer { flex: 1; }
+
+/* the current mix, as removable chips */
+.st-mix { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 34px; }
+.st-mixchip {
+  display: flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 8px 0 6px;
+  border: 0; border-radius: 12px;
+  background: rgba(255,255,255,.09); color: var(--st-ink);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.st-mixchip i { width: 18px; height: 18px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+.st-mixchip u { text-decoration: none; color: var(--st-dim); font-size: 15px; line-height: 1; }
+.st-empty { color: var(--st-dim); font-size: 12px; }
+
+/* a plain toggle used for Mix and for the readouts */
+.st-toggle {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 0 12px;
+  border: 0; border-radius: 13px;
+  background: rgba(255,255,255,.06); color: var(--st-dim);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.st-toggle.on { background: rgba(217,164,65,.22); color: var(--st-ink); box-shadow: inset 0 0 0 1.5px var(--st-accent); }
+
+/* the debug panels are off unless asked for */
+body:not(.st-readouts) #hud,
+body:not(.st-readouts) #stylus,
+body:not(.st-readouts) #gauges { display: none; }
+
+/* a phone, or an iPad in a narrow split view */
+@media (max-width: 640px) {
+  .st-rail { gap: 6px; padding: 9px 7px; }
+  .st-track { height: 108px; width: 30px; }
+  .st-btn-label b { max-width: 8ch; }
+  .st-sheet { width: calc(100vw - 16px); }
+}
+
+/* short landscape — keep the rail from colliding with the dock */
+@media (max-height: 560px) {
+  .st-track { height: 84px; }
+  .st-slider .st-val { display: none; }
+}
+
+/* ------------------------------------------------------- drying and tilt */
+
+/* A horizontal slider, for the one control that reads left-to-right. */
+.st-hslider { display: flex; align-items: center; gap: 12px; }
+.st-hcap { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--st-dim); flex: none; }
+.st-htrack {
+  position: relative; flex: 1; height: 34px;
+  border-radius: 17px; background: rgba(255,255,255,.09);
+  overflow: hidden; touch-action: none; cursor: ew-resize;
+}
+.st-hfill {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.34));
+  pointer-events: none;
+}
+.st-note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--st-dim); }
+
+/* The tilt pad, inside a HUD window. */
+.st-tiltpad {
+  position: relative;
+  /* Bounded, not 100% of whatever it happens to be inside. Loose in the studio
+     root that meant the width of the screen, and aspect-ratio made it as tall. */
+  width: 100%; max-width: 200px; aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,.10) 0 60%, rgba(255,255,255,.04) 61% 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.16);
+  touch-action: none;
+  cursor: grab;
+}
+.st-tiltpad::after {
+  content: ''; position: absolute; inset: 46%;
+  border-radius: 50%; background: rgba(255,255,255,.24);
+}
+.st-tiltpuck {
+  position: absolute; left: 50%; top: 50%;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  border-radius: 50%; background: var(--st-accent);
+  box-shadow: 0 2px 10px rgba(0,0,0,.55);
+  pointer-events: none;
+}
+.st-tiltfoot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 8px;
+  font-size: 11px; color: var(--st-dim);
+}
+.st-tiltlevel {
+  min-height: 30px; padding: 0 12px;
+  border: 0; border-radius: 10px;
+  background: rgba(255,255,255,.10); color: var(--st-ink);
+  font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.st-tiltlevel:active { background: rgba(255,255,255,.18); }

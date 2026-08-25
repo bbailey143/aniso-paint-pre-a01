@@ -67,18 +67,60 @@ export class Spine {
   get totalLength(): number { return this.lengths.reduce((a, b) => a + b, 0); }
 
   /**
-   * Lay the tuft out straight from the ferrule along `dir` (unit, pointing from
-   * ferrule toward the tip). This is the rest shape the solver starts from each
-   * step — which is exactly what makes the brush snap back when lifted.
+   * Lay the tuft out from the ferrule: down the pen while it is above the
+   * paper, then along the paper in `lay` once it reaches it. This is the rest
+   * shape the solver starts from each step — which is what makes the brush snap
+   * back when lifted, and, now, what decides which way it folds when pressed.
+   *
+   * [MEASURED, docs/14 E9] It used to run straight along `dir` for the whole
+   * tuft, which at any real pressure buried most of the chain below the paper.
+   * Non-penetration then had to push all that length back out, and a chain with
+   * fixed segment lengths can only do that by buckling — a problem with many
+   * nearly-equal answers and nothing to choose between them. Two spines placed
+   * 1.42 cells apart came out 22.4 cells apart, and the same tuft on the same
+   * stroke could fold either way from one frame to the next. That is where the
+   * crumpling came from: not from pressing too hard, but from starting every
+   * solve inside the paper with no reason to prefer one fold.
+   *
+   * Starting from the laid-over shape is not a smoothing hack. It is the choice
+   * of which equilibrium to relax into, and it is the one a real brush takes:
+   * a tuft lies back along the way it is being dragged.
    */
-  private resetTo(fx: number, fy: number, fz: number, dir: [number, number, number]) {
+  private resetTo(
+    fx: number, fy: number, fz: number,
+    dir: [number, number, number],
+    lay: [number, number],
+  ) {
     const j = this.joints;
     j[0].x = fx; j[0].y = fy; j[0].z = fz; j[0].contact = false;
+    // How much tuft is used up before the tip would reach the paper.
+    const down = Math.max(1e-4, -dir[2]);
+    let toFloor = fz > 0 ? fz / down : 0;
+
     for (let i = 0; i < this.lengths.length; i++) {
       const L = this.lengths[i];
-      j[i + 1].x = j[i].x + dir[0] * L;
-      j[i + 1].y = j[i].y + dir[1] * L;
-      j[i + 1].z = j[i].z + dir[2] * L;
+      let dx: number, dy: number, dz: number;
+      if (toFloor >= L) {
+        // Still in the air: straight down the pen.
+        dx = dir[0]; dy = dir[1]; dz = dir[2];
+        toFloor -= L;
+      } else if (toFloor > 0) {
+        // This segment straddles the surface. Blend so the corner is turned
+        // over one segment rather than in a single joint.
+        const t = toFloor / L;
+        dx = dir[0] * t + lay[0] * (1 - t);
+        dy = dir[1] * t + lay[1] * (1 - t);
+        dz = dir[2] * t;
+        const dl = Math.hypot(dx, dy, dz) || 1;
+        dx /= dl; dy /= dl; dz /= dl;
+        toFloor = 0;
+      } else {
+        // Lying on the paper, trailing the direction of travel.
+        dx = lay[0]; dy = lay[1]; dz = 0;
+      }
+      j[i + 1].x = j[i].x + dx * L;
+      j[i + 1].y = j[i].y + dy * L;
+      j[i + 1].z = Math.max(0, j[i].z + dz * L);
       j[i + 1].contact = false;
     }
   }
@@ -90,18 +132,22 @@ export class Spine {
    * @param dir       unit direction ferrule -> tip
    * @param drag      xy displacement of the ferrule since the last solve
    * @param prefDir   preferred drag direction (unit) — the anisotropy axis
+   * @param lay       unit xy direction the tuft folds toward once it reaches
+   *                  the paper. Trailing the stroke while the brush moves,
+   *                  outward across the blade while it does not.
    */
   solve(
     fx: number, fy: number, fz: number,
     dir: [number, number, number],
     drag: [number, number],
     prefDir: [number, number],
+    lay: [number, number],
   ) {
     // Remember where the contacting joints were, so friction can hold them back.
     const prev = this.joints.map((p) => ({ x: p.x, y: p.y }));
     const hadContact = this.joints.map((p) => p.contact);
 
-    this.resetTo(fx, fy, fz, dir);
+    this.resetTo(fx, fy, fz, dir, lay);
 
     const dragLen = Math.hypot(drag[0], drag[1]);
     let dhx = 0, dhy = 0;

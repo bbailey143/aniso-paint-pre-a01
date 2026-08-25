@@ -14,8 +14,12 @@ export const BRUSHES: BrushDef[] = [
     name: 'Round Sable',
     slug: 'round-sable',
     kind: 'round',
-    // A single spine gives round brushes. It cannot spread bristles — that is
-    // the documented consequence of one spine, and why the flat below has two.
+    /* One spine. A round tuft is symmetric about its own axis, so a fan across
+       one chosen direction would be an arbitrary choice of direction — what a
+       round brush wants is a small cluster (centre plus a ring), which is not
+       built. So a round brush still cannot do anything asymmetric: it cannot
+       bow, and it cannot lead with one side. Known gap, not a decision. */
+    spines: 1,
     segments: 5,
     length: 26,
     widthRatio: 0.34,
@@ -40,8 +44,16 @@ export const BRUSHES: BrushDef[] = [
     name: 'Flat Sable',
     slug: 'flat-sable',
     kind: 'flat',
-    // Two spines, each driving one side of the lattice. This is what produces
-    // flat-brush spreading and scratching. VL found a third spine buys nothing.
+    /* Five spines across the blade.
+       [MEASURED, node tools/brush-bench.mjs fan 0.25] Worst gap between where a
+       fan of N chords puts the blade and where it actually solves, at the end of
+       a 90-degree arc: 2 spines 5.98 cells, 3 -> 3.22, 5 -> 1.28, 9 -> 1.19.
+       Five is the knee; past it the return collapses. Two spines cannot bow at
+       all — the blade is a ruled sheet between the edges by construction — so
+       the ~6 cells the pair misses is the middle of the blade doing something
+       neither edge is doing.
+       Cost is five chain relaxations instead of two, all CPU, ~90 numbers. */
+    spines: 5,
     segments: 5,
     length: 24,
     widthRatio: 0.95,     // a chisel, much wider than it is thick
@@ -61,6 +73,72 @@ export const BRUSHES: BrushDef[] = [
       upRate: 0.12,
     },
     plasticity: 0.06,
+  },
+  {
+    name: 'Flat Hog',
+    slug: 'flat-hog',
+    kind: 'flat',
+    /* Five, as the flat sable, and measured the same way: 2 spines 4.40 cells,
+       3 -> 3.49, 5 -> 3.03, 9 -> 2.73. A hog is stiffer and bows less, so it
+       gains less than the sable does — but it is the same tool shape and there
+       is no reason to give it a coarser blade. */
+    spines: 5,
+    // A hog bristle brush, which is what oil is moved with. Everything below is
+    // the same handful of rows the sables use, turned the other way: where a
+    // sable is soft, springy, absorbent and fine, a hog is stiff, blunt, coarse
+    // and holds almost nothing. That contrast is the entire definition - there
+    // is no hog-brush code path.
+    segments: 5,
+    length: 22,           // cut stubbier than a sable of the same width
+    widthRatio: 1.05,     // wider at the ferrule than it is long
+    taper: 0.22,          // barely tapers; the bristles run near parallel
+    /* Stiff at the ferrule, and that is where a hog's stiffness lives — it is
+       what lets the brush push paint around instead of folding. But the taper
+       is how fast that stiffness falls off toward the tip, and setting it near
+       1 said "rigid all the way down", which is a wire brush, not a hog.
+
+       [MEASURED, tools/brush-bench.mjs shape] A rigid tuft cannot lie down: its
+       joints stack vertically, project to the same point on the paper, and
+       every hair emits a degenerate segment — a dot instead of a track. At
+       0.98/0.96 the mean footprint segment was 0.57 cells at working pressure,
+       against 3.21 for the flat sable. That is the whole of why the mark came
+       out as separated ticks across the stroke instead of striations along it.
+
+       The sweep is unambiguous: the taper decides this and the stiffness barely
+       touches it. Anything at 0.84 or below lies down; 0.96 never does.
+
+       ~~against 3.21 for the flat sable~~ **THAT COMPARISON IS RETRACTED,
+       2026-08-24.** The flat sable's 3.21 was measured while DRIVE was 1.0,
+       which drove the ferrule 85% of a tuft length past the paper and left the
+       chain folded back on itself at 135 degrees. A mean track of 3.21 cells
+       per step, when the hand moved 1 cell, is not a hair being dragged: it is
+       a hair being flung as the fold flips. At DRIVE 0.35 the same measurement
+       reads 0.30. The 0.57-vs-lies-down conclusion about the TAPER still holds
+       and was reproduced; only the sable number it was compared against was
+       taken from a broken regime. See docs/14 E9. */
+    stiffness: 0.92,
+    stiffnessTaper: 0.74,
+    // Coarse hair grabs the surface, and grabs it in every direction rather
+    // than slicing cleanly along one. Lower cEta and a wider cone is what makes
+    // it drag paint sideways instead of gliding over it.
+    friction: { mu: 0.92, cEta: 0.62, k: 1.7 },
+    bristles: 22,         // fewer, thicker hairs than a sable
+    // Lean on it and it opens into a rake. This is the mark a hog is chosen for.
+    splayFromPressure: 1.15,
+    reservoir: {
+      // Bristle is not absorbent the way sable hair is. It carries paint on and
+      // between the hairs rather than in them, so it holds well under half what
+      // a sable does, and runs out sooner.
+      capacityBelly: 1.1,
+      capacityTip: 0.35,
+      // A hog will not hold a flood. This is a stiff tool for stiff paint.
+      waterOvercharge: 1.2,
+      downRate: 0.030,    // paste leaves a bristle faster than a wash leaves hair
+      upRate: 0.34,       // and it lifts what it is dragged through
+    },
+    // The rake stays raked. A sable springs straight back; a splayed hog keeps
+    // its shape for a while, which is why a second stroke repeats the first.
+    plasticity: 0.18,
   },
 ];
 

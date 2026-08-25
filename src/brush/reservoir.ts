@@ -24,6 +24,10 @@ export class Reservoir {
   /** Per-cell capacity — the belly/tip profile. */
   capacity: Float32Array;
   private def: ReservoirDef;
+  /** How big the tuft is, as a multiple of its own row. See `setScale`. */
+  private scale = 1;
+  /** How fast it gives its load up, as a multiple of its own row. See `setFlow`. */
+  private flow = 1;
 
   constructor(def: ReservoirDef, bristles: number, segments: number) {
     this.def = def;
@@ -33,19 +37,58 @@ export class Reservoir {
     this.water = new Float32Array(n);
     this.pigment = new Float32Array(n * 8);
     this.capacity = new Float32Array(n);
+    this.buildProfile();
+  }
 
-    for (let b = 0; b < bristles; b++) {
-      for (let s = 0; s < segments; s++) {
+  /** The belly/tip profile, at the current scale. */
+  private buildProfile() {
+    const { capacityTip, capacityBelly } = this.def;
+    for (let b = 0; b < this.bristles; b++) {
+      for (let s = 0; s < this.segments; s++) {
         // s = 0 at the ferrule, s = segments-1 at the tip. The belly sits a
         // little below the ferrule, so capacity peaks around a third along.
-        const t = s / Math.max(1, segments - 1);
+        const t = s / Math.max(1, this.segments - 1);
         const belly = 1 - Math.abs(t - 0.35) / 0.65;
-        const cap = def.capacityTip +
-          (def.capacityBelly - def.capacityTip) * Math.max(0, belly);
-        this.capacity[b * segments + s] = cap;
+        const cap = capacityTip + (capacityBelly - capacityTip) * Math.max(0, belly);
+        this.capacity[b * this.segments + s] = cap * this.scale;
       }
     }
   }
+
+  /**
+   * Resize the tuft's holding, keeping its belly-to-tip shape.
+   *
+   * Load fills the brush; this changes how big the brush IS. They are different
+   * questions and only one of them was answerable: a brush at full Load that
+   * still runs out after forty cells needs a bigger reservoir, not a fuller
+   * one.
+   *
+   * The rows this multiplies are explicitly not measured — the brush doc says
+   * "reservoir capacities are tuned to the engine's units, not measured", and
+   * records that the first values were about fifty times too small and a whole
+   * stroke came out invisible. So a dial on top of them is honest.
+   *
+   * Does not itself refill: the caller charges, because only it knows the mix.
+   */
+  setScale(scale: number) {
+    this.scale = Math.max(0.05, scale);
+    this.buildProfile();
+  }
+
+  /**
+   * How fast the tuft gives its load up, per cell travelled.
+   *
+   * [MEASURED, tools/brush-bench.mjs legs] This is the one that changes how FAR
+   * a dip goes, and capacity is not. `withdraw` takes a fraction of what is in
+   * a cell, so a bigger reservoir lays proportionally more at every step and
+   * empties over exactly the same distance: at 0.5x through 5x capacity a flat
+   * hog laid 48 units then 484, and faded at 88 cells every single time. Bigger
+   * tuft, heavier stroke, same legs.
+   *
+   * The distance is set here. Halve this and one dip goes twice as far, laying
+   * half as much at each point along the way.
+   */
+  setFlow(flow: number) { this.flow = Math.max(0.02, flow); }
 
   /**
    * Dip the brush. `load` is how much paint is in the tuft; `waterCharge` is
@@ -178,7 +221,7 @@ export class Reservoir {
     // to zero — it just stops being what drives the transfer.
     const STILL = 0.25;
     const dist = Math.max(STILL, travel);
-    const rate = Math.min(1, this.def.downRate * dist)
+    const rate = Math.min(1, this.def.downRate * this.flow * dist)
                * Math.max(0, Math.min(1, contactFrac));
     const w = this.water[cell] * rate;
     this.water[cell] -= w;

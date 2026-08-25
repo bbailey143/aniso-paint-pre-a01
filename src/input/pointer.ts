@@ -75,6 +75,15 @@ export class PointerInput {
     canvas.addEventListener('pointermove', this.onMove, { passive: false });
     canvas.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('pointercancel', this.onUp);
+    /* Backstop: a stroke ends when the pointer lifts, wherever it lifts.
+       Capture normally routes the release back here, but a capture that was
+       never acquired or was lost leaves the release landing on whatever is
+       under the hand — a HUD window, the rail, the dock — and the canvas never
+       hears it. The stroke then never ends. Bubble phase, so for a release
+       that IS on the canvas the listener above still runs first and this one
+       finds nothing left to do. */
+    window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('pointerleave', this.onLeave);
     // Block the browser's default touch/scroll gestures over the canvas.
     canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
@@ -129,7 +138,10 @@ export class PointerInput {
     if (this.cb.shouldIgnorePress?.(e)) return;
     e.preventDefault();
     this.activeId = e.pointerId;
-    this.canvas.setPointerCapture(e.pointerId);
+    // A pointer can be gone before this runs - a pen lifted clear of the
+    // tablet, a touch the browser cancelled. Capture is a convenience, not a
+    // precondition, so failing to get it must not stop the stroke.
+    try { this.canvas.setPointerCapture(e.pointerId); } catch { /* already gone */ }
     this.prev = null;
     const s = this.toSample(e, true);
     this.cb.onStrokeStart?.(s);
@@ -157,9 +169,13 @@ export class PointerInput {
     const s = this.toSample(e, false);
     this.cb.onStrokeEnd?.(s);
     this.emit(s);
-    this.canvas.releasePointerCapture?.(e.pointerId);
+    // Clear the stroke BEFORE letting go of the pointer. Releasing capture for
+    // a pointer that has already left throws, and when that throw landed here
+    // it skipped these two lines - leaving activeId set, so `onDown` refused
+    // every stroke afterwards and the canvas went dead for the session.
     this.activeId = null;
     this.prev = null;
+    try { this.canvas.releasePointerCapture?.(e.pointerId); } catch { /* already gone */ }
   };
 
   private onLeave = (e: PointerEvent) => {

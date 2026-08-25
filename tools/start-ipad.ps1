@@ -45,7 +45,56 @@ try {
 
 Write-Host ''
 Write-Host 'Creating a temporary iPad link...'
-Write-Host 'Cloudflare will print the link below. Open it on the iPad.'
-Write-Host 'Keep this window open while testing. Press Ctrl+C here when you are done.'
 Write-Host ''
-& $cloudflared tunnel --url $localUrl
+
+# Cloudflare hands out a different random name every session, and typing one of
+# those on an iPad by hand is miserable. Catch the address as it appears and put
+# a QR code on screen instead: point the iPad camera at the terminal and tap.
+$log = Join-Path $env:TEMP ("aniso-tunnel-" + $PID + ".log")
+$errLog = "$log.err"
+Remove-Item $log, $errLog -ErrorAction SilentlyContinue
+
+$proc = Start-Process -FilePath $cloudflared `
+  -ArgumentList 'tunnel', '--url', $localUrl, '--no-autoupdate' `
+  -RedirectStandardOutput $log -RedirectStandardError $errLog `
+  -PassThru -NoNewWindow
+
+try {
+  $url = $null
+  for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Milliseconds 500
+    $text = ((Get-Content $log, $errLog -Raw -ErrorAction SilentlyContinue) -join "`n")
+    $m = [regex]::Match($text, 'https://[a-z0-9-]+\.trycloudflare\.com')
+    if ($m.Success) { $url = $m.Value; break }
+    if ($proc.HasExited) { break }
+  }
+
+  if (-not $url) {
+    Write-Host 'Cloudflare did not hand back a link. Its own output follows:' -ForegroundColor Yellow
+    Get-Content $log, $errLog -ErrorAction SilentlyContinue | Select-Object -Last 20
+    return
+  }
+
+  Write-Host ''
+  Write-Host '  Open this on the iPad:' -ForegroundColor Cyan
+  Write-Host "  $url" -ForegroundColor White
+  Write-Host ''
+  try {
+    # Not a dependency: npx fetches it once and caches it. If there is no
+    # network for that, the address above is still perfectly usable.
+    # It reads the text from stdin; passed as an argument it prints nothing.
+    $url | & npx.cmd --yes qrcode-terminal
+    Write-Host '  ...or point the iPad camera at that square.' -ForegroundColor DarkGray
+  } catch {
+    Write-Host '  (no QR this time - use the address above)' -ForegroundColor DarkGray
+  }
+  Write-Host ''
+  Write-Host '  WebGPU needs this https:// address. A plain http:// LAN address will not work.' -ForegroundColor DarkGray
+  Write-Host '  Keep this window open while testing. Ctrl+C closes the link.' -ForegroundColor DarkGray
+  Write-Host ''
+
+  Wait-Process -Id $proc.Id
+} finally {
+  if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+  Remove-Item $log, $errLog -ErrorAction SilentlyContinue
+}

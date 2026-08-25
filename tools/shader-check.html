@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>shader check</title>
+<style>
+  body { background:#0b0d10; color:#dfe3ea; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; padding:24px; }
+  h1 { font-size:15px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#8fa0b8; }
+  .ok { color:#7fd08a; } .bad { color:#e8807a; } .name { color:#dfe3ea; }
+  pre { margin:2px 0 10px 22px; white-space:pre-wrap; color:#e8807a; }
+  p.note { color:#8fa0b8; max-width:62ch; }
+</style>
+<h1>Shader check</h1>
+<p class="note">
+  Compiles every WGSL pass against a real device and reports what the driver
+  says. A shader that fails to compile does <em>not</em> stop the app booting —
+  the pipeline is quietly invalid and its pass becomes a no-op, so the symptom
+  is a blank or unchanging sheet with a clean console. That has cost this
+  project two round trips. Open this page after touching any shader.
+</p>
+<div id="out">running…</div>
+<script type="module">
+const out = document.getElementById('out');
+const FLUID = [
+  'deposit', 'dry_deposit', 'dry_store', 'dry_tick', 'flow_outward',
+  'flux_apply_pigment', 'flux_apply_water', 'flux_compute', 'capillary_alarm',
+  'capillary_flow', 'reduce', 'reduce_final', 'reduce_ink', 'reduce_ink_final',
+  'relax_divergence', 'rewet', 'rim_migration', 'transfer_pigment',
+  'update_velocities', 'wet_clear', 'zero_fill', 'bake_push',
+];
+
+/** Vite serves `?raw` as a JS module; unwrap it back to the source text. */
+async function source(path) {
+  const js = await (await fetch(path + '?raw')).text();
+  const m = js.match(/^export default "([\s\S]*)"$/m);
+  return (m ? JSON.parse('"' + m[1] + '"') : js).replace(/\r\n/g, '\n');
+}
+
+if (!navigator.gpu) {
+  out.innerHTML = '<span class="bad">No WebGPU here. Needs a secure context — localhost or https.</span>';
+} else {
+  const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+  // The fluid passes are built with common.wgsl prepended, so they have to be
+  // checked the same way or every one of them fails on undefined types.
+  const common = await source('/src/engine/shaders/fluid/common.wgsl');
+  const jobs = [
+    ...FLUID.map((n) => [n, `/src/engine/shaders/fluid/${n}.wgsl`, common + '\n']),
+    ['composite', '/src/engine/shaders/composite.wgsl', ''],
+    ['paper', '/src/engine/shaders/paper.wgsl', ''],
+  ];
+  out.textContent = '';
+  let bad = 0;
+  for (const [name, path, prefix] of jobs) {
+    const mod = device.createShaderModule({ code: prefix + await source(path), label: name });
+    const errs = (await mod.getCompilationInfo()).messages.filter((m) => m.type === 'error');
+    const line = document.createElement('div');
+    // Line numbers are into the prepended source, so say so rather than
+    // sending the reader to the wrong line of the file they edited.
+    const offset = prefix ? prefix.split('\n').length - 1 : 0;
+    line.innerHTML = `<span class="${errs.length ? 'bad' : 'ok'}">${errs.length ? '✕' : '✓'}</span> `
+      + `<span class="name">${name}</span>`;
+    out.append(line);
+    if (errs.length) {
+      bad++;
+      const pre = document.createElement('pre');
+      pre.textContent = errs.map((e) =>
+        `line ${e.lineNum - offset} (of ${name}.wgsl): ${e.message}`).join('\n');
+      out.append(pre);
+    }
+  }
+  const tally = document.createElement('h1');
+  tally.textContent = bad ? `${bad} failing` : 'all clean';
+  out.append(tally);
+}
+</script>

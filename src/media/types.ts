@@ -40,6 +40,14 @@ export interface MediumPhysics {
 export interface Medium {
   name: string;
   slug: string;
+  /**
+   * Artist-facing family this belongs to — Graphite, Charcoal, Watercolour.
+   *
+   * The same idea as Paper.collection, and for the same reason: the picker has
+   * to group things without carrying its own list of what goes where. 9B and 2H
+   * are two hardnesses of one material, not two materials.
+   */
+  collection: string;
   /** Which branch of the tree — decides whether the fluid passes run at all. */
   family: 'wet' | 'dry';
 
@@ -58,10 +66,41 @@ export interface Medium {
   kInstrument: number;
 
   // ---- body ----------------------------------------------------------------
-  /** Stands as h_p, or collapses flat. Watercolour and graphite are flat. */
-  hasBody: boolean;
+  /**
+   * How far a load of this material stands off the sheet, as relief the light
+   * can catch.
+   *
+   * 0 is flat — a stain, which is watercolour and every dry stick: the only
+   * thing the lamp finds is the paper's own tooth. Higher and the film becomes
+   * a surface in its own right, so a ridge left by a bristle throws a shadow
+   * and an impasto passage reads as something sitting ON the canvas rather than
+   * soaked into it.
+   *
+   * Replaces the old `hasBody` boolean, which nothing ever read. A dead flag
+   * next to a live number that means the same thing is worse than no flag.
+   */
+  relief: number;
   /** Fraction of wet height retained on drying. */
   bodyShrink: number;
+  /**
+   * How completely a load of this material hides the surface beneath it.
+   *
+   * 0 is a stain: the sheet shows through however much you put on, which is
+   * watercolour and is the whole reason watercolour is painted on white paper.
+   * 1 covers: two loaded strokes of oil and the canvas is gone.
+   *
+   * This exists because the sheet's TONE and its TOOTH were being applied over
+   * the finished colour rather than under it. The Kubelka-Munk stack already
+   * hides the paper's reflectance as a layer thickens - that part was right -
+   * but the sheet's colour and its relief lighting were multiplied on top
+   * afterwards, unconditionally. So the weave came through a solid impasto, and
+   * the harder you painted the more canvas you saw.
+   *
+   * Strictly it is an approximation of what the optics would do on their own if
+   * the sheet's tone were spectral rather than RGB. At 0 the composite is
+   * byte-for-byte what it was.
+   */
+  hidesGround: number;
 
   // ---- transfer ------------------------------------------------------------
   downRate: number;
@@ -133,6 +172,29 @@ export interface WetMedium extends Medium {
    * dry by evaporation at all — it cures, and it famously leaves no ring.
    */
   edgeEvaporation: number;
+  /**
+   * The stress a face must feel before this material moves at all.
+   *
+   * Water has none: push it however gently and it flows, which is why a wash
+   * levels itself and a watercolour brushmark disappears the moment you lift.
+   * Oil has a real one. Below it the paint is a soft solid and holds whatever
+   * shape it was left in - that is impasto, a knife ridge, and the reason a
+   * brushmark in oil is still there tomorrow.
+   *
+   * Above the threshold only the EXCESS drives flow (the Bingham term), so a
+   * stress that barely clears it produces almost nothing: thick paint creeps
+   * rather than collapsing. Pile it high enough that its own weight clears the
+   * threshold and it slumps, which is exactly what real paint does.
+   *
+   * 0 restores water's behaviour precisely - the solver takes an early exit
+   * and the unyielded path is untouched, not approximated.
+   *
+   * [UNVERIFIED] The oil value is reasoned from the archived oil spec's
+   * Herschel-Bulkley model, not measured. It is the first number to turn when
+   * oil feels wrong: too high and the brush cannot shove paint at all, too low
+   * and ridges sag.
+   */
+  yieldStress: number;
   /** Dimensionless, per unit time. */
   evapRate: number;
   /** How strongly it soaks in via Lucas-Washburn. */
@@ -151,6 +213,20 @@ export interface WetMedium extends Medium {
  */
 export interface DryMedium extends Medium {
   family: 'dry';
+  /**
+   * What you are actually holding.
+   *
+   *   'stick'   — bare, with faces. Conte, vine charcoal, chalk, a pastel, a
+   *               crayon with the paper off. It can be rolled onto its side and
+   *               laid flat, so the shape of the contact is worth showing.
+   *   'encased' — wrapped in wood. A pencil only ever presents its point.
+   *   'pen'     — a ball or a nib. The contact is fixed by the hardware.
+   *
+   * This exists so nothing has to ask whether a medium is *conte*. The contact
+   * view belongs to every bare stick, and the ones that have not been built yet
+   * will get it by saying what they are.
+   */
+  form: 'stick' | 'encased' | 'pen';
   /** Paper height above which it deposits at all, before hardness shifts it. */
   toothThreshold: number;
   /** 0..1 — how fast strokes break the line up. Graphite high, ballpoint low. */

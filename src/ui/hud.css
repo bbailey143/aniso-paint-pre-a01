@@ -1,0 +1,217 @@
+/* HUD windows.
+ *
+ * The old manager positioned every panel absolutely and snapped one axis at a
+ * time, so a window could latch its top edge to another and still sit twenty
+ * pixels off to the side. Every panel was also whatever width its own content
+ * happened to be, which made a stack look like a bad staircase.
+ *
+ * Two changes fix both: every window is the same width, and docked windows sit
+ * in a real flex column rather than being nudged into place with arithmetic.
+ * A column cannot misalign, and it re-flows for free when a window is
+ * minimised, dragged out, or dropped in.
+ */
+
+:root {
+  --hud-w: 236px;
+  --hud-bar: 30px;
+  --hud-glass: rgba(20, 20, 23, 0.86);
+  --hud-edge: rgba(255, 255, 255, 0.13);
+  --hud-accent: #d9a441;
+}
+
+/* The readouts ride with the toggle in the dock. The dock itself always
+   exists, because other things live in it now — tilt is a tool, not a readout,
+   and hiding it behind the numbers button would be wrong. A window carries its
+   own visibility rather than the container deciding for all of them. */
+body:not(.st-readouts) .hud-win[data-role="readout"] { display: none; }
+.hud-win[hidden] { display: none; }
+
+.hud-dock {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 64px;
+  width: var(--hud-w);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  /* Above #cmd-trigger, which sits at z-60 in the bottom-right corner. Under
+     it, a tap meant for a window landed on the command palette instead - and
+     the palette focuses its search box, which is what was raising the iPad
+     keyboard out of nowhere. The column also stops short of that corner. */
+  z-index: 70;
+  pointer-events: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.hud-dock::-webkit-scrollbar { display: none; }
+.hud-dock > * { pointer-events: auto; }
+
+.hud-free { position: fixed; inset: 0; pointer-events: none; z-index: 71; }
+.hud-free > * { pointer-events: auto; }
+
+/* ---------------------------------------------------------------- window */
+
+.hud-win {
+  width: var(--hud-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--hud-glass);
+  border: 1px solid var(--hud-edge);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .42);
+  overflow: hidden;
+  /* Docked windows live in the column's flow. Only floating ones are placed. */
+  position: static;
+  inset: auto;
+}
+
+/* Switching off superseded layout, not winning an argument.
+ *
+ * These panels were written as free-standing fixed boxes, so style.css still
+ * pins them by id — #gauges { bottom: 132px; left: 12px; min-width: 172px },
+ * #conte-viewer { width: 218px; padding: 10px }, and so on. An id beats a
+ * class, so those rules survive being adopted into a window.
+ *
+ * Docked they are harmless: insets do nothing to a statically positioned box.
+ * Floating they are not. The dragged `top` and the stylesheet's `bottom` apply
+ * together and stretch the window down the entire screen — and a box pinned at
+ * both ends cannot shrink, so minimising it only emptied it out.
+ *
+ * `top` and `left` are left alone: those come from the drag as inline styles,
+ * and inline beats an ordinary rule.
+ */
+.hud-win {
+  width: var(--hud-w) !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+.hud-win.floating {
+  position: absolute;
+  right: auto !important;
+  bottom: auto !important;
+  height: auto !important;   /* just big enough for what is in it */
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .55);
+}
+
+.hud-win.dragging {
+  transition: none;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+  opacity: .96;
+}
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--hud-bar);
+  padding: 0 4px 0 10px;
+  flex: none;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background: rgba(255, 255, 255, .045);
+  border-bottom: 1px solid var(--hud-edge);
+}
+.hud-win.dragging .hud-bar { cursor: grabbing; }
+.hud-win.min .hud-bar { border-bottom: 0; }
+
+.hud-name {
+  flex: 1;
+  min-width: 0;
+  font: 600 9.5px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #b9b3ab;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Not a button, and deliberately not focusable: on iPadOS anything focusable
+   near the palette risks raising the keyboard, and the whole title bar is the
+   target now anyway. This is a state marker, not a control. */
+.hud-mark {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  color: #8e8880;
+  font: 600 13px/1 system-ui, sans-serif;
+  flex: none;
+  pointer-events: none;
+}
+.hud-bar:active .hud-mark { color: #f0ece7; background: rgba(255,255,255,.12); }
+
+.hud-body {
+  padding: 8px 10px 10px;
+  overflow: hidden;
+  font: 500 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #e9e5e0;
+}
+.hud-win.min .hud-body { display: none; }
+
+/* the readouts inside keep their existing shape */
+.hud-body .stylus-row { display: flex; justify-content: space-between; gap: 12px; }
+.hud-body .stylus-row span { color: #8e8880; }
+.hud-body .stylus-row b { color: #f2efeb; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hud-body .hud-title { display: none; }  /* the title bar already says it */
+
+/* ---------------------------------------------------------------- snapping */
+
+/* Where a dragged window will land, shown before it lands. */
+.hud-slot {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hud-accent);
+  box-shadow: 0 0 12px rgba(217, 164, 65, .8);
+  flex: none;
+  margin: -2px 0;
+}
+
+/* The dock lights up while a window is over it. */
+.hud-dock.hot {
+  outline: 1px dashed rgba(217, 164, 65, .5);
+  outline-offset: 6px;
+  border-radius: 14px;
+}
+
+/* A floating window that has just latched onto another one. */
+.hud-win.latched { animation: hud-latch .32s ease; }
+@keyframes hud-latch {
+  0% { box-shadow: 0 0 0 0 rgba(217,164,65,.55), 0 14px 44px rgba(0,0,0,.55); }
+  55% { box-shadow: 0 0 0 4px rgba(217,164,65,.45), 0 14px 44px rgba(0,0,0,.55); }
+  100% { box-shadow: 0 0 0 0 rgba(217,164,65,0), 0 14px 44px rgba(0,0,0,.55); }
+}
+
+@media (max-width: 720px) {
+  :root { --hud-w: 210px; }
+  .hud-dock { top: 8px; right: 8px; bottom: 96px; }
+}
+
+/* The close button sits over the title bar's right end rather than inside it,
+   so a press on it can never be read as a minimise and a drag never fires it. */
+.hud-win { position: relative; }
+.hud-win.floating { position: absolute; }
+.hud-close {
+  position: absolute;
+  top: 0; right: 0;
+  width: 30px; height: var(--hud-bar);
+  display: grid; place-items: center;
+  border: 0; padding: 0;
+  background: transparent; color: #8e8880;
+  font: 600 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  z-index: 2;
+}
+.hud-close:hover { color: #f0ece7; background: rgba(255,255,255,.10); }
+.hud-close:active { background: rgba(255,255,255,.18); }
+/* the minimise marker shifts left to make room */
+.hud-bar { padding-right: 32px; }

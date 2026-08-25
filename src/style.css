@@ -36,6 +36,9 @@ html, body {
 
 /* Classic hand pan. Open hand the moment space goes down so the mode is visible
    before committing to a drag, closed while actually dragging the sheet. */
+/* Focusable, but never ringed: the focus is for keyboard shortcuts, not
+   for showing the artist where the paper is. */
+#stage:focus, #stage:focus-visible { outline: none; }
 #stage.hand { cursor: grab; }
 #stage.grabbing { cursor: grabbing; }
 #stage.contact-cursor:not(.hand):not(.grabbing) { cursor: none; }

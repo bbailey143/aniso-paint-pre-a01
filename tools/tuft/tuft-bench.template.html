@@ -1,0 +1,774 @@
+<title>Filling the Tuft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground:#f3f1ed; --surface:#ffffff; --sunk:#eae7e1; --line:#ddd8d0;
+  --ink:#1a1c20; --dim:#6f6b64;
+  --now:#a8443c; --new:#2f7d5e; --gauge:#3d7ea3; --sable:#b46a2c;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#131519; --surface:#1a1d23; --sunk:#0e1014; --line:#2b2f38;
+    --ink:#e9e6e1; --dim:#918d86;
+    --now:#d97b72; --new:#63bd97; --gauge:#6fa8c9; --sable:#cd8b48;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#131519; --surface:#1a1d23; --sunk:#0e1014; --line:#2b2f38;
+  --ink:#e9e6e1; --dim:#918d86;
+  --now:#d97b72; --new:#63bd97; --gauge:#6fa8c9; --sable:#cd8b48;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 400 15px/1.6 "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding: 40px 24px 72px; display: flex; flex-direction: column; gap: 28px; }
+header { display: flex; flex-direction: column; gap: 12px; max-width: 72ch; }
+h1 {
+  font: 300 clamp(29px, 4.6vw, 44px)/1.05 Fraunces, Georgia, serif;
+  font-variation-settings: "opsz" 120; margin: 0; letter-spacing: -0.015em; text-wrap: balance;
+}
+.eyebrow { font: 500 10px/1 "IBM Plex Mono", monospace; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); }
+header p { margin: 0; color: var(--dim); max-width: 68ch; }
+header p em { color: var(--ink); font-style: normal; font-weight: 600; }
+
+.bar {
+  display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+  border: 1px solid var(--line); background: var(--surface); border-radius: 3px; padding: 12px 16px;
+  position: sticky; top: 0; z-index: 5;
+}
+button {
+  font: 500 11.5px/1 "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--dim); background: var(--surface); border: 1px solid var(--line);
+  padding: 8px 12px; border-radius: 2px; cursor: pointer; transition: color .15s, border-color .15s, background .15s;
+}
+button:hover { color: var(--ink); border-color: var(--dim); }
+button[aria-pressed="true"] { color: var(--ground); background: var(--ink); border-color: var(--ink); }
+button:focus-visible { outline: 2px solid var(--gauge); outline-offset: 2px; }
+.seg { display: flex; gap: 0; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 2px 0 0 2px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 2px 2px 0; }
+.hint { font: 400 12px/1.5 "IBM Plex Mono", monospace; color: var(--dim); }
+.phase {
+  font: 500 10px/1 "IBM Plex Mono", monospace; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gauge); min-width: 58px;
+}
+.phase[data-p="release"], .phase[data-p="settle"] { color: var(--now); }
+input[type="range"] { accent-color: var(--gauge); height: 20px; }
+input[type="range"]:focus-visible { outline: 2px solid var(--gauge); outline-offset: 3px; }
+.bar input[type="range"] { flex: 1; min-width: 160px; }
+.readout { font: 400 11px/1 "IBM Plex Mono", monospace; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+@media (max-width: 1140px) { .trio { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .trio { grid-template-columns: minmax(0, 1fr); } }
+
+.card { border: 1px solid var(--line); background: var(--surface); border-radius: 3px; overflow: hidden; display: flex; flex-direction: column; }
+.card > h2 {
+  margin: 0; padding: 13px 16px 11px; border-bottom: 1px solid var(--line);
+  font: 500 12.5px/1.35 "IBM Plex Mono", monospace; letter-spacing: 0.09em; text-transform: uppercase;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.card > h2 span { color: var(--dim); font-weight: 400; letter-spacing: 0.03em; text-transform: none; font-size: 11.5px; }
+canvas { display: block; width: 100%; background: var(--sunk); touch-action: none; }
+canvas.solid { height: 330px; cursor: grab; }
+canvas.solid:active { cursor: grabbing; }
+canvas.strip { border-top: 1px solid var(--line); }
+canvas.sect { height: 196px; }
+canvas.foot { height: 172px; }
+.stripcap {
+  display: flex; justify-content: space-between; gap: 10px; padding: 7px 16px 6px;
+  border-top: 1px solid var(--line);
+  font: 500 9.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: 0.13em; text-transform: uppercase; color: var(--dim);
+}
+.stripcap b { font-weight: 400; letter-spacing: 0.02em; text-transform: none; font-size: 11px; font-variant-numeric: tabular-nums; }
+.k-now { color: var(--now); }
+.k-new { color: var(--new); }
+
+.dials { padding: 10px 16px 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px; }
+.dial { display: grid; grid-template-columns: 92px minmax(0,1fr) 48px; gap: 9px; align-items: center; }
+.dial label { font: 400 10.5px/1.3 "IBM Plex Mono", monospace; color: var(--dim); }
+.dial output { font: 400 10.5px/1 "IBM Plex Mono", monospace; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.dial input { width: 100%; }
+.dials summary {
+  font: 500 10px/1 "IBM Plex Mono", monospace; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--dim); cursor: pointer; padding: 4px 0;
+}
+.dials details[open] summary { margin-bottom: 6px; }
+
+.panel { border: 1px solid var(--line); background: var(--surface); padding: 20px 22px; border-radius: 3px; }
+.panel.flag { border-left: 3px solid var(--now); }
+.panel.good { border-left: 3px solid var(--new); }
+.panel h2 { margin: 0 0 4px; font: 500 13px/1 "IBM Plex Mono", monospace; letter-spacing: 0.1em; text-transform: uppercase; }
+.panel > p { margin: 0 0 14px; color: var(--dim); max-width: 70ch; }
+.panel > p em { color: var(--ink); font-style: normal; }
+.panel ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.panel li { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: baseline; }
+@media (max-width: 660px) { .panel li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+.panel li b { font: 500 12px/1.5 "IBM Plex Mono", monospace; color: var(--now); }
+.panel.good li b { color: var(--new); }
+.panel li span { color: var(--dim); }
+.panel li span em { color: var(--ink); font-style: normal; }
+pre {
+  margin: 0; padding: 13px 15px; overflow-x: auto; border-radius: 2px;
+  background: var(--sunk); border: 1px solid var(--line);
+  font: 400 11.5px/1.7 "IBM Plex Mono", monospace; color: var(--ink);
+}
+pre b { color: var(--now); font-weight: 500; }
+pre i { color: var(--new); font-style: normal; font-weight: 500; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font: 400 11.5px/1.6 "IBM Plex Mono", monospace; min-width: 620px; }
+thead th { text-align: left; color: var(--dim); font-weight: 500; padding: 0 14px 7px 0; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+tbody tr { border-top: 1px solid var(--line); }
+tbody th { text-align: left; font-weight: 400; color: var(--ink); padding: 5px 14px 5px 0; white-space: nowrap; }
+tbody td { padding: 5px 14px 5px 0; font-variant-numeric: tabular-nums; color: var(--dim); }
+tbody td.v { color: var(--ink); }
+tbody td.note { white-space: normal; min-width: 240px; }
+footer { color: var(--dim); font: 400 12.5px/1.7 "IBM Plex Mono", monospace; max-width: 80ch; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">aniso-paint &#183; brush/brush.ts &#183; tuft geometry</div>
+    <h1>Filling the tuft</h1>
+    <p>
+      A tuft here is a <em>shell</em>. The round brush puts every hair on one circle and leaves the
+      middle empty; the flat puts every hair on one straight line between its two spines, two deep.
+      Both are perfectly regular, and both are identical on every stroke ever painted. This page
+      keeps the recorded spines and rebuilds the hairs on top of them as a <em>filled bundle</em>
+      with randomness in it &#8212; so the two can be looked at side by side with one thing changed.
+    </p>
+    <p>
+      The spines are engine output, recorded with <em>brush-bench tuft</em>. The hairs are the
+      proposal, generated live, and every dial below is real.
+    </p>
+  </header>
+
+  <div class="bar">
+    <span class="phase" id="phase">hover</span>
+    <input type="range" id="scrub" min="0" max="48" value="20" step="1" aria-label="Frame">
+    <span class="readout" id="frameOut">f20</span>
+    <button id="play" aria-pressed="false">Play</button>
+    <button id="resetAll">Reset brush</button>
+    <span class="seg" role="group" aria-label="Which tuft to draw">
+      <button data-view="now" aria-pressed="false">Now</button>
+      <button data-view="both" aria-pressed="true">Both</button>
+      <button data-view="new" aria-pressed="false">Proposed</button>
+    </span>
+    <span class="hint">Drag a tuft to orbit &#183; scroll to zoom &#183; shared across all three.</span>
+  </div>
+
+  <div class="trio" id="trio"></div>
+
+  <div class="panel flag">
+    <h2>Three things the recording says outright</h2>
+    <p>
+      Both of these came out of the carrier file before any of the above was built. Neither is an
+      opinion about how a brush ought to work.
+    </p>
+    <ul>
+      <li>
+        <b>The second spine is a copy</b>
+        <span>
+          Over all 49 frames of a press-and-pull, for both flats, <em>max |x&#8320;&#8722;x&#8321;| = 0.000000</em>
+          and <em>max |z&#8320;&#8722;z&#8321;| = 0.000000</em>. The two spines differ only by the fixed
+          &#177;half-width they were placed at. They see the same ferrule, the same drag, the same
+          friction direction and the same floor, so they solve to the same curve every time. A flat
+          brush has <em>one</em> spine's worth of behaviour, and the surface between them can only
+          ever be a straight ruled sheet &#8212; no corner leads, nothing buckles, nothing twists.
+        </span>
+      </li>
+      <li>
+        <b>One of the round's hairs is a duplicate</b>
+        <span>
+          The ring is laid out as <em>u = b / (B&#8722;1)</em>, angle
+          <em>u &#215; 2&#960;</em>. Hair 0 lands at 0 and hair 27 lands at 2&#960;, which is the
+          same place. <em>28 bristles, 27 positions</em> &#8212; one hair is drawn twice, lays
+          paint twice and costs twice, forever. Small, but it is the kind of thing a ring hides
+          and a filled section cannot.
+        </span>
+      </li>
+      <li>
+        <b>The flats are a diffraction grating</b>
+        <span>
+          Spacing between neighbouring hair tracks across the blade, at working pressure:
+          <em>0% variation</em> for the flat sable and <em>0% for the flat hog</em>. Not
+          approximately even &#8212; exactly even, to every decimal place, on every stroke. A
+          perfectly regular comb dragged across a textured surface is the classic way to
+          manufacture a periodic pattern, and a periodic pattern in the paint is the artefact
+          that has been coming back all week. The round sable is 72%, which is only because a
+          ring projected onto a line gives uneven spacing by accident.
+        </span>
+      </li>
+    </ul>
+  </div>
+
+  <div class="panel good">
+    <h2>What the fill measures out at</h2>
+    <p>
+      Coverage is how much of the mark's own outline is actually inked, rasterised at 0.15 cells and
+      clipped to the outline so the rim band cannot flatter it. Live numbers on each card; these are
+      the defaults, at frame 20, full press.
+    </p>
+    <ul>
+      <li><b>Round sable&#8195;26% &#8594; 88%</b><span>The empty middle is the whole of that gap. 28 hairs on a circle ink a rim; 96 through the disc ink the disc.</span></li>
+      <li><b>Flat sable&#8195;30% &#8594; 76%</b><span>A two-deep ribbon against a chisel section with real thickness.</span></li>
+      <li><b>Flat hog&#8195;39% &#8594; 80%</b><span>And its stray bristles now reach outside the mark, which is most of what a hog looks like.</span></li>
+      <li><b>Hair count is free</b><span>Swept 40 to 180 hairs: coverage stayed between 65% and 90% at every count, because a drawn hair stands for a <em>bundle</em> and its thickness follows the packing rather than the count. So count is chosen on cost and on how fine the striations should be &#8212; not to fix the hollow. The hollow is fixed by where the roots sit.</span></li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>The rows this would add</h2>
+    <p>
+      Chosen, not measured &#8212; the same standing the brush library's existing numbers have. Each
+      one is a sentence about the tool: a sable is dressed hair that points, a hog is coarse bristle
+      cut blunt.
+    </p>
+    <div class="scroll" id="rowTable"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Still hollow, in the part this does not touch</h2>
+    <p>
+      Worth being straight about what a fill cannot buy on its own.
+    </p>
+    <ul>
+      <li><b>Every hair still rides one curve</b><span>The bundle is filled, but its shape is still a blend of the same one or two solved spines. Per-hair stiffness spreads them apart &#8212; soft hairs lie over further than the spine, stiff ones do not reach it &#8212; and that is a real spread, but it is a spread <em>about</em> one curve, not hairs finding their own way. Two spines that solve identically cannot give a flat brush a leading corner.</span></li>
+      <li><b>The clamp at the sheet is crude</b><span>A hair pushed below the surface is set to z&#160;=&#160;0 where it stands. A real hair would lie along the surface and lengthen its contact. This is why soft hairs stay down through a stroke here, which is the behaviour wanted, but it is bought with an approximation and not with a contact solve.</span></li>
+      <li><b>Splay is still geometric</b><span><em>splayFromPressure</em> multiplies the section by a number derived from the contact count. Press harder, the whole bundle scales. Nothing fans because it met a ridge.</span></li>
+      <li><b>The release is still a teleport</b><span>Unchanged from the last recording: <em>end()</em> does not move the tuft, and one hover solve snaps it straight. Scrub past frame 34 with either tuft drawn and it is the same single-frame jump.</span></li>
+    </ul>
+  </div>
+
+  <footer>
+    Carrier recorded with <b>node tools/brush-bench.mjs tuft</b> &#8212; 49 frames, three brushes,
+    spines and rest lines only. Hairs, sections, footprints and every coverage figure on this page
+    are computed in the page from those spines. Nothing here is wired into the paint engine yet;
+    painting behaves exactly as it did.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const CARRIER = /*__CARRIER__*/;
+/*__FILL__*/
+/*__SPECS__*/
+
+const SLAB = 0.55;
+const SLUGS = Object.keys(CARRIER);
+const view = { mode: "both", frame: 20, yaw: 0.62, pitch: 0.50, zoom: 1.15, playing: false };
+
+/* ---- per-brush live state ------------------------------------------------ */
+const DIALS = [
+  ["count",      "hairs",       20,  240, 1,    function (v) { return String(v | 0); }],
+  ["rootJitter", "root jitter",  0,  1.5, 0.05, f2],
+  ["thickRatio", "thickness",  0.04,  1, 0.01, f2],
+  ["convT",      "tip close",  0.02,  1, 0.01, f2],
+  ["lenVar",     "hair length", 0,  0.5, 0.01, f2],
+  ["bendVar",    "stiffness",   0,  0.6, 0.01, f2],
+  ["strayFrac",  "strays",      0, 0.35, 0.01, function (v) { return (v * 100).toFixed(0) + "%"; }]
+];
+function f2(v) { return (+v).toFixed(2); }
+
+const cards = SLUGS.map(function (slug) {
+  const d = CARRIER[slug];
+  const halfWidth = 0.5 * d.def.widthRatio * d.tuftLength;
+  const spec = Object.assign({}, SPECS[slug], { halfWidth: halfWidth });
+  return {
+    slug: slug, d: d, spec: spec, halfWidth: halfWidth,
+    hairs: drawTuft(spec), rad: bundleRadius(spec, halfWidth),
+    cov: { now: null, alt: null }
+  };
+});
+
+/* ---- build the cards ----------------------------------------------------- */
+const trio = document.getElementById("trio");
+cards.forEach(function (c) {
+  const d = c.d;
+  const el = document.createElement("section");
+  el.className = "card";
+  el.innerHTML =
+      '<h2>' + esc(d.def.name)
+    + '<span>' + d.def.kind + ' &#183; ' + d.spineCount + ' spine' + (d.spineCount > 1 ? 's' : '')
+    + ' &#183; tuft ' + d.tuftLength + ' cells &#183; blade ' + (c.halfWidth * 2).toFixed(1) + ' wide</span></h2>'
+    + '<div class="stripcap"><span>Section at the belly, looking down the hairs</span><b class="sect"></b></div>'
+    + '<canvas class="strip sect"></canvas>'
+    + '<canvas class="solid"></canvas>'
+    + '<div class="stripcap"><span>What touches, from above &#183; stroke runs down</span><b class="foot"></b></div>'
+    + '<canvas class="strip foot"></canvas>'
+    + '<div class="dials"><details><summary>Tuft rows</summary><div class="dialset"></div></details></div>';
+  trio.appendChild(el);
+  c.el = el;
+  c.cvSect = el.querySelector("canvas.sect");
+  c.cvSolid = el.querySelector("canvas.solid");
+  c.cvFoot = el.querySelector("canvas.foot");
+  c.outSect = el.querySelector("b.sect");
+  c.outFoot = el.querySelector("b.foot");
+
+  const set = el.querySelector(".dialset");
+  c.inputs = {};
+  DIALS.forEach(function (row) {
+    const key = row[0];
+    const wrap = document.createElement("div");
+    wrap.className = "dial";
+    const id = c.slug + "-" + key;
+    wrap.innerHTML = '<label for="' + id + '">' + row[1] + '</label>'
+      + '<input id="' + id + '" type="range" min="' + row[2] + '" max="' + row[3] + '" step="' + row[4] + '">'
+      + '<output></output>';
+    set.appendChild(wrap);
+    const inp = wrap.querySelector("input"), out = wrap.querySelector("output");
+    inp.value = c.spec[key];
+    out.textContent = row[5](c.spec[key]);
+    inp.addEventListener("input", function () {
+      c.spec[key] = +inp.value;
+      out.textContent = row[5](+inp.value);
+      c.hairs = drawTuft(c.spec);
+      c.rad = bundleRadius(c.spec, c.halfWidth);
+      drawCard(c); queueCoverage();
+    });
+    c.inputs[key] = inp;
+  });
+  bindOrbit(c.cvSolid);
+});
+
+function esc(s) { return s.replace(/[&<>]/g, function (m) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]; }); }
+
+/* ---- geometry helpers ---------------------------------------------------- */
+function nowSplay(d, f) {
+  const J = d.def.segments + 1;
+  return 1 + d.def.splayFromPressure * (f.contact / (d.spineCount * J));
+}
+function nowHairs(c, f) {
+  const out = [];
+  for (let b = 0; b < c.d.def.bristles; b++) out.push(nowHair(f, c.d.def, c.d.tuftLength, b, nowSplay(c.d, f)));
+  return out;
+}
+function newHairs(c, f, steps) {
+  const out = [];
+  for (let i = 0; i < c.hairs.length; i++) out.push(hairPath(f, c.spec, c.hairs[i], steps));
+  return out;
+}
+function contactPts(paths, J) {
+  const pts = [];
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i];
+    for (let s = 0; s <= J; s++) if (p[s * 3 + 2] <= SLAB) pts.push([p[s * 3], p[s * 3 + 1]]);
+  }
+  return pts;
+}
+
+/* ---- coverage (debounced: the raster is not free) ------------------------ */
+function hull(pts) {
+  if (pts.length < 3) return pts.slice();
+  const p = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+  const cr = function (o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); };
+  const lo = [], up = [];
+  for (let i = 0; i < p.length; i++) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p[i]) <= 0) lo.pop(); lo.push(p[i]); }
+  for (let i = p.length - 1; i >= 0; i--) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p[i]) <= 0) up.pop(); up.push(p[i]); }
+  lo.pop(); up.pop();
+  return lo.concat(up);
+}
+function polyArea(h) {
+  let a = 0;
+  for (let i = 0; i < h.length; i++) { const j = (i + 1) % h.length; a += h[i][0] * h[j][1] - h[j][0] * h[i][1]; }
+  return Math.abs(a) / 2;
+}
+function coverage(pts, r) {
+  if (pts.length < 3) return null;
+  // Same raster as the node measurement, so the live figure and the quoted one
+  // are the same number. A coarser grid flatters a thin hair by a good 10 points.
+  const C = 0.15;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i][0] < x0) x0 = pts[i][0]; if (pts[i][0] > x1) x1 = pts[i][0];
+    if (pts[i][1] < y0) y0 = pts[i][1]; if (pts[i][1] > y1) y1 = pts[i][1];
+  }
+  x0 -= r + C; x1 += r + C; y0 -= r + C; y1 += r + C;
+  const W = Math.ceil((x1 - x0) / C), H = Math.ceil((y1 - y0) / C);
+  if (W * H > 400000) return null;
+  const g = new Uint8Array(W * H), rc = Math.ceil(r / C);
+  for (let i = 0; i < pts.length; i++) {
+    const cx = Math.round((pts[i][0] - x0) / C), cy = Math.round((pts[i][1] - y0) / C);
+    for (let dy = -rc; dy <= rc; dy++) for (let dx = -rc; dx <= rc; dx++) {
+      if (dx * dx + dy * dy > rc * rc) continue;
+      const gx = cx + dx, gy = cy + dy;
+      if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
+      g[gy * W + gx] = 1;
+    }
+  }
+  const h = hull(pts), A = polyArea(h);
+  if (A <= 0) return null;
+  let on = 0;
+  for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
+    if (!g[gy * W + gx]) continue;
+    const x = x0 + gx * C, y = y0 + gy * C;
+    let inside = false;
+    for (let i = 0, j = h.length - 1; i < h.length; j = i++) {
+      if ((h[i][1] > y) !== (h[j][1] > y) &&
+          x < (h[j][0] - h[i][0]) * (y - h[i][1]) / (h[j][1] - h[i][1]) + h[i][0]) inside = !inside;
+    }
+    if (inside) on++;
+  }
+  return on * C * C / A;
+}
+let covTimer = 0;
+function queueCoverage() {
+  clearTimeout(covTimer);
+  covTimer = setTimeout(function () {
+    cards.forEach(function (c) {
+      const f = c.d.frames[view.frame], J = c.d.def.segments;
+      c.cov.now = coverage(contactPts(nowHairs(c, f), J), c.d.hairRadiusNow);
+      c.cov.alt = coverage(contactPts(newHairs(c, f, J), J), c.rad);
+      writeFoot(c);
+    });
+  }, 140);
+}
+function pct(v) { return v == null ? "--" : (v * 100).toFixed(0) + "%"; }
+function writeFoot(c) {
+  c.outFoot.innerHTML = '<span class="k-now">now ' + pct(c.cov.now) + '</span> &#183; '
+    + '<span class="k-new">filled ' + pct(c.cov.alt) + '</span> inked';
+}
+function writeSect(c) {
+  const J = c.d.def.segments + 1;
+  c.outSect.innerHTML = '<span class="k-now">' + c.d.def.bristles + ' hairs, r' + c.d.hairRadiusNow.toFixed(2)
+    + ' &#183; ' + (c.d.def.bristles * J) + ' seg</span> &#183; '
+    + '<span class="k-new">' + c.spec.count + ', r' + c.rad.toFixed(2)
+    + ' &#183; ' + (c.spec.count * J) + ' seg</span>';
+}
+
+/* ---- drawing ------------------------------------------------------------- */
+function fit(cv) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return { g: g, w: w, h: h };
+}
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+/* -- 1. the section across the tuft at its belly, looking down the hairs --
+   The belly, not the ferrule, because that is where a tuft is fattest and where
+   the two designs are actually comparable. Each lane draws its OWN occupied
+   section, so a shell shows as an outline with the middle empty. */
+const SECT_T = 0.32;
+function nowProfile(t) { return Math.sin(Math.PI * Math.min(1, 0.15 + t * 0.85)) * (1 - t * 0.75); }
+
+function drawSection(c) {
+  const o = fit(c.cvSect), g = o.g;
+  const lanes = view.mode === "both" ? [["now", 0], ["new", 1]] : [[view.mode, 0]];
+  const laneH = o.h / lanes.length;
+  const hw = c.halfWidth, isRound = c.d.spineCount === 1;
+
+  // What the current code occupies at the belly.
+  const rNow = 0.5 * c.d.def.widthRatio * c.d.tuftLength * nowProfile(SECT_T);
+  const nowHalfW = isRound ? rNow : hw;
+  const nowHalfB = isRound ? rNow : rNow * 0.35 * 0.5;
+  // What the proposal occupies there.
+  const wF = bellyAt(SECT_T, c.spec.convW, c.spec.bulge, c.spec.bellyAt);
+  const tF = bellyAt(SECT_T, c.spec.convT, c.spec.bulge, c.spec.bellyAt);
+  const newHalfW = hw * (isRound ? wF : wF);
+  const newHalfB = hw * (isRound ? wF : c.spec.thickRatio) * (isRound ? 1 : tF);
+
+  // One scale for both lanes, or the comparison is a lie.
+  const maxW = Math.max(nowHalfW, newHalfW), maxB = Math.max(nowHalfB, newHalfB, hw * 0.05);
+  const sc = Math.min((o.w - 40) / (2 * maxW), (laneH - 22) / (2 * maxB));
+
+  lanes.forEach(function (lane) {
+    const which = lane[0], row = lane[1];
+    const cy = laneH * (row + 0.5), cx = o.w / 2;
+    const col = which === "now" ? css("--now") : css("--new");
+    const hwL = which === "now" ? nowHalfW : newHalfW;
+    const hbL = which === "now" ? nowHalfB : newHalfB;
+    const n = which === "new" && !isRound ? c.spec.section : 2;
+
+    g.save();
+    g.strokeStyle = css("--line"); g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 0; i <= 120; i++) {
+      const th = i / 120 * Math.PI * 2;
+      const cc = Math.abs(Math.cos(th)), ss = Math.abs(Math.sin(th));
+      const rr = n === 2 ? 1 : Math.pow(Math.pow(cc, n) + Math.pow(ss, n), -1 / n);
+      const x = cx + Math.cos(th) * rr * hwL * sc;
+      const y = cy + Math.sin(th) * rr * hbL * sc;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath(); g.stroke();
+
+    if (which === "now") {
+      const B = c.d.def.bristles, rr = Math.max(1.1, c.d.hairRadiusNow * sc);
+      g.fillStyle = col; g.globalAlpha = 0.62;
+      for (let b = 0; b < B; b++) {
+        const u = B === 1 ? 0.5 : b / (B - 1);
+        let x, y;
+        if (isRound) { const ang = u * Math.PI * 2; x = Math.cos(ang) * rNow; y = Math.sin(ang) * rNow; }
+        else { x = (u - 0.5) * 2 * hw; y = ((b % 2) - 0.5) * rNow * 0.35; }
+        g.beginPath(); g.arc(cx + x * sc, cy + y * sc, rr, 0, 6.284); g.fill();
+      }
+    } else {
+      const rr = Math.max(1.1, c.rad * sc);
+      for (let i = 0; i < c.hairs.length; i++) {
+        const h = c.hairs[i];
+        g.globalAlpha = h.stray ? 0.95 : 0.6;
+        g.fillStyle = h.stray ? css("--sable") : col;
+        const x = h.a * hw * (isRound ? wF : wF);
+        const y = h.b * hw * (isRound ? wF : tF);
+        g.beginPath(); g.arc(cx + x * sc, cy + y * sc, rr, 0, 6.284); g.fill();
+      }
+    }
+    g.restore();
+
+    g.fillStyle = col; g.globalAlpha = 0.85;
+    g.font = '500 9px "IBM Plex Mono", monospace';
+    g.fillText(which === "now" ? "NOW" : "FILLED", 10, cy - laneH / 2 + 13);
+    g.globalAlpha = 1;
+    if (row > 0) {
+      g.strokeStyle = css("--line"); g.beginPath();
+      g.moveTo(0, laneH * row); g.lineTo(o.w, laneH * row); g.stroke();
+    }
+  });
+  writeSect(c);
+}
+
+/* -- 2. the tuft in space, on the recorded spine -- */
+function project(x, y, z, cam) {
+  const cy2 = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const rx = x * cy2 - y * sy;
+  const ry = x * sy + y * cy2;
+  const sx = rx;
+  const sz = ry * sp - z * cp;
+  return [cam.cx + sx * cam.s, cam.cy + sz * cam.s];
+}
+function drawSolid(c) {
+  const o = fit(c.cvSolid), g = o.g;
+  const d = c.d, f = d.frames[view.frame];
+  const L = d.tuftLength;
+  const cam = {
+    yaw: view.yaw, pitch: view.pitch, s: (o.h / (L * 1.55)) * view.zoom,
+    cx: o.w / 2, cy: o.h * 0.52
+  };
+  // The sheet. Everything below z = 0 is inside the paper.
+  g.strokeStyle = css("--line"); g.lineWidth = 1; g.globalAlpha = 0.9;
+  g.beginPath();
+  const R = L * 1.1;
+  for (let i = -3; i <= 3; i++) {
+    const t = (i / 3) * R;
+    let p = project(-R, t, 0, cam), q = project(R, t, 0, cam);
+    g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]);
+    p = project(t, -R, 0, cam); q = project(t, R, 0, cam);
+    g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]);
+  }
+  g.stroke();
+  g.globalAlpha = 1;
+
+  const J = d.def.segments;
+  const sets = [];
+  if (view.mode !== "new") sets.push({ paths: nowHairs(c, f), col: css("--now"), steps: J, alpha: 0.5 });
+  if (view.mode !== "now") sets.push({ paths: newHairs(c, f, 20), col: css("--new"), steps: 20, alpha: 0.5, hairs: c.hairs });
+
+  const strands = [];
+  sets.forEach(function (set) {
+    set.paths.forEach(function (p, i) {
+      const pts = [];
+      let depth = 0;
+      for (let s = 0; s <= set.steps; s++) {
+        const x = p[s * 3], y = p[s * 3 + 1], z = p[s * 3 + 2];
+        pts.push(project(x, y, z, cam));
+        depth += x * Math.sin(cam.yaw) + y * Math.cos(cam.yaw);
+      }
+      const stray = set.hairs && set.hairs[i] && set.hairs[i].stray;
+      strands.push({ pts: pts, depth: depth / (set.steps + 1), col: stray ? css("--sable") : set.col,
+                     alpha: stray ? 0.95 : set.alpha, w: stray ? 1.3 : 1 });
+    });
+  });
+  strands.sort(function (a, b) { return b.depth - a.depth; });
+  strands.forEach(function (s) {
+    g.globalAlpha = s.alpha; g.strokeStyle = s.col; g.lineWidth = s.w;
+    g.beginPath();
+    s.pts.forEach(function (p, i) { i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); });
+    g.stroke();
+  });
+
+  // The spines, over the top, so it is obvious what the hairs are riding.
+  g.globalAlpha = 1; g.lineWidth = 2; g.strokeStyle = css("--gauge");
+  for (let k = 0; k < f.spines.length; k++) {
+    g.beginPath();
+    for (let s = 0; s <= J; s++) {
+      const p = project(f.spines[k][s * 3], f.spines[k][s * 3 + 1], f.spines[k][s * 3 + 2], cam);
+      s ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]);
+    }
+    g.stroke();
+  }
+  g.fillStyle = css("--dim");
+  g.font = '400 10px "IBM Plex Mono", monospace';
+  g.fillText(f.phase + "  p " + f.pressure.toFixed(2) + "  " + f.contact + " joints down", 10, o.h - 10);
+}
+
+/* -- 3. what actually touches, from above -- */
+function drawFoot(c) {
+  const o = fit(c.cvFoot), g = o.g;
+  const d = c.d, f = d.frames[view.frame], J = d.def.segments;
+  const twoUp = view.mode === "both";
+  const lanes = twoUp ? [["now", 0], ["new", 1]] : [[view.mode, 0]];
+  const laneH = o.h / lanes.length;
+
+  // One scale for both lanes, from whichever spreads widest.
+  const all = contactPts(nowHairs(c, f), J).concat(contactPts(newHairs(c, f, J), J));
+  if (!all.length) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  all.forEach(function (p) {
+    if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+    if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+  });
+  /* Quarter-turned: across the blade runs along the card's long axis, the
+     stroke runs down it. A flat blade is three or four times wider than the
+     mark is long, so drawn the other way up it is a sliver and the striations
+     are sub-pixel. Aspect is still true &#8212; one scale, both axes. */
+  const pad = 2;
+  const sc = Math.min((o.w - 20) / Math.max(2, y1 - y0 + pad * 2), (laneH - 14) / Math.max(2, x1 - x0 + pad * 2));
+
+  lanes.forEach(function (lane) {
+    const which = lane[0], row = lane[1];
+    const cy = laneH * (row + 0.5), cx = o.w / 2;
+    const col = which === "now" ? css("--now") : css("--new");
+    const paths = which === "now" ? nowHairs(c, f) : newHairs(c, f, J);
+    const rad = which === "now" ? d.hairRadiusNow : c.rad;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    g.save();
+    g.fillStyle = col; g.globalAlpha = 0.5;
+    for (let i = 0; i < paths.length; i++) {
+      const p = paths[i];
+      for (let s = 0; s <= J; s++) {
+        if (p[s * 3 + 2] > SLAB) continue;
+        g.beginPath();
+        g.arc(cx + (p[s * 3 + 1] - my) * sc, cy + (p[s * 3] - mx) * sc, Math.max(0.9, rad * sc), 0, 6.284);
+        g.fill();
+      }
+    }
+    g.restore();
+    g.fillStyle = col; g.globalAlpha = 0.85;
+    g.font = '500 9px "IBM Plex Mono", monospace';
+    g.fillText(which === "now" ? "NOW" : "FILLED", 10, cy - laneH / 2 + 13);
+    g.globalAlpha = 1;
+    if (row > 0) {
+      g.strokeStyle = css("--line"); g.beginPath();
+      g.moveTo(0, laneH * row); g.lineTo(o.w, laneH * row); g.stroke();
+    }
+  });
+}
+
+function drawCard(c) { drawSection(c); drawSolid(c); drawFoot(c); }
+function drawAll() { cards.forEach(drawCard); }
+
+/* ---- transport & orbit --------------------------------------------------- */
+const scrub = document.getElementById("scrub");
+const phaseEl = document.getElementById("phase");
+const frameOut = document.getElementById("frameOut");
+scrub.max = String(CARRIER[SLUGS[0]].frames.length - 1);
+
+function setFrame(n) {
+  view.frame = Math.max(0, Math.min(+scrub.max, n | 0));
+  scrub.value = String(view.frame);
+  const f = CARRIER[SLUGS[0]].frames[view.frame];
+  phaseEl.textContent = f.phase;
+  phaseEl.dataset.p = f.phase;
+  frameOut.textContent = "f" + view.frame;
+  drawAll(); queueCoverage();
+}
+scrub.addEventListener("input", function () { view.playing = false; syncPlay(); setFrame(+scrub.value); });
+
+const playBtn = document.getElementById("play");
+function syncPlay() {
+  playBtn.setAttribute("aria-pressed", view.playing ? "true" : "false");
+  playBtn.textContent = view.playing ? "Pause" : "Play";
+}
+playBtn.addEventListener("click", function () { view.playing = !view.playing; syncPlay(); });
+document.getElementById("resetAll").addEventListener("click", function () {
+  setFrame(CARRIER[SLUGS[0]].releaseFrame);
+  view.playing = true; syncPlay();
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+  b.addEventListener("click", function () {
+    view.mode = b.dataset.view;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (o) {
+      o.setAttribute("aria-pressed", o === b ? "true" : "false");
+    });
+    drawAll();
+  });
+});
+
+let drag = null;
+function bindOrbit(cv) {
+  cv.addEventListener("pointerdown", function (e) {
+    drag = { x: e.clientX, y: e.clientY };
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    view.yaw += (e.clientX - drag.x) * 0.01;
+    view.pitch = Math.max(0.04, Math.min(1.52, view.pitch + (e.clientY - drag.y) * 0.006));
+    drag.x = e.clientX; drag.y = e.clientY;
+    cards.forEach(drawSolid);
+  });
+  const up = function () { drag = null; };
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  cv.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    view.zoom = Math.max(0.4, Math.min(9, view.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    cards.forEach(drawSolid);
+  }, { passive: false });
+}
+
+let last = 0;
+function tick(now) {
+  if (view.playing && now - last > 70) {
+    last = now;
+    setFrame(view.frame >= +scrub.max ? 0 : view.frame + 1);
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+window.addEventListener("resize", function () { drawAll(); });
+
+/* ---- the proposed-rows table -------------------------------------------- */
+(function () {
+  const rows = [
+    ["count", "hairs drawn, each standing for a bundle", function (c) { return c.spec.count; }, function (c) { return c.d.def.bristles; }],
+    ["section", "2 = circle, 3 = rounded rectangle", function (c) { return c.d.spineCount === 1 ? 2 : c.spec.section; }, function () { return "&#8212;"; }],
+    ["thickRatio", "blade thickness as a share of its width", function (c) { return c.spec.thickRatio.toFixed(2); }, function (c) { return c.d.spineCount === 1 ? "&#8212;" : "0.00 (two rows)"; }],
+    ["convW / convT", "how far the section closes, width / thickness", function (c) { return c.spec.convW.toFixed(2) + " / " + c.spec.convT.toFixed(2); }, function () { return "one radius, both axes"; }],
+    ["bulge / bellyAt", "how full the belly is, and where it sits", function (c) { return c.spec.bulge.toFixed(2) + " / " + c.spec.bellyAt.toFixed(2); }, function () { return "fixed sine curve"; }],
+    ["rootJitter", "roots off the lattice, in spacings", function (c) { return c.spec.rootJitter.toFixed(2); }, function () { return "0 &#8212; exactly even"; }],
+    ["lenVar", "spread of hair lengths", function (c) { return c.spec.lenVar.toFixed(2); }, function () { return "0 &#8212; all identical"; }],
+    ["bendVar", "spread of hair stiffness", function (c) { return c.spec.bendVar.toFixed(2); }, function () { return "0 &#8212; all identical"; }],
+    ["strayFrac", "hairs the dresser missed", function (c) { return (c.spec.strayFrac * 100).toFixed(0) + "%"; }, function () { return "0%"; }]
+  ];
+  let html = '<table><thead><tr><th>row</th><th>what it says</th>';
+  cards.forEach(function (c) { html += '<th>' + esc(c.d.def.name) + '</th>'; });
+  html += '<th>now</th></tr></thead><tbody>';
+  rows.forEach(function (r) {
+    html += '<tr><th>' + r[0] + '</th><td class="note">' + r[1] + '</td>';
+    cards.forEach(function (c) { html += '<td class="v">' + r[2](c) + '</td>'; });
+    html += '<td>' + r[3](cards[0]) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById("rowTable").innerHTML = html;
+})();
+
+setFrame(20);
+syncPlay();
+</script>

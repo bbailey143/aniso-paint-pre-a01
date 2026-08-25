@@ -36,12 +36,28 @@ struct Comp {
   pTooth: f32,
   pFreq: f32,
   pSeed: f32,
-  grainKind: f32,   // 0 = watercolor grain, 1 = shared fibrous pastel tooth
+  grainKind: f32,   // 0 = watercolor noise, 1 = pastel fibre, 2 = woven canvas, 3 = flat
 
   // Display tone for the active sheet. This is deliberately separate from the
   // physical paper texture: every medium still reads the shared paper rows.
   paperTone: vec3f,
-  _pad1: f32,
+  // How far the sheet is turned, in radians, document -> screen. It rides in
+  // the 4 bytes a vec3f already reserves for alignment.
+  rot: f32,
+
+  // How completely the material covers what is under it. 0 = a stain and the
+  // sheet always shows; 1 = paint that hides the ground. Buffer is 128 bytes;
+  // canvas.ts must agree.
+  hidesGround: f32,
+  /** How far the paint film stands off the sheet. 0 = a stain, and the relief
+   * below reduces to exactly the paper tooth it always was. */
+  paintRelief: f32,
+  // Separate floats, NOT a vec3f. A vec3f aligns to 16 in WGSL, so it would
+  // land at 128 rather than 116 and make this struct 144 bytes against a
+  // 128-byte buffer — the bind group is then invalid and the sheet does not
+  // draw at all. Scalars align to 4 and pack where they are put.
+  _pad3: f32,
+  _pad4: f32,
 };
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
@@ -194,8 +210,59 @@ fn grain_pastel_fibre(p: vec2f) -> f32 {
   let cross = grain_vnoise(vec2f(p.x * 5.1 + p.y * 0.08, p.y * 0.58));
   return clamp(0.5 + (long - 0.5) * 0.78 + (cross - 0.5) * 0.22, 0.0, 1.0);
 }
+/**
+ * A plain woven ground. Must stay in step with `canvas_weave` in paper.wgsl.
+ *
+ * Warp and weft cross over and under: at every other crossing the warp is the
+ * thread on top, and at the ones between it dips beneath the weft. That
+ * alternation is the whole reason this is its own function and not another
+ * grade of tooth - no amount of noise produces an over-under, and without it
+ * canvas just reads as coarse paper.
+ *
+ * The over-under has to be built from something SMOOTH. A thread rises and
+ * falls along its length; it does not teleport from over to under at the edge
+ * of a crossing. Deciding it by the parity of the crossing is arithmetically
+ * correct and visually wrong, and it puts a hard step across the whole sheet
+ * at every thread line.
+ */
+fn grain_weave(p: vec2f) -> f32 {
+  // A ridge down the middle of each thread, falling to zero where two threads
+  // meet. This is the shape ACROSS a thread.
+  let warpRidge = 0.5 + 0.5 * cos((fract(p.x) - 0.5) * 6.2831853);
+  let weftRidge = 0.5 + 0.5 * cos((fract(p.y) - 0.5) * 6.2831853);
+
+  // And this is the shape ALONG it: each thread rises over its neighbour, dips
+  // under the next, and does it smoothly, because a thread bends rather than
+  // stepping. The two are in antiphase, so where the warp is over, the weft is
+  // under — the over-under of a plain weave.
+  //
+  // [MEASURED] The first version decided over-or-under by the parity of the
+  // crossing, which is true of a weave but jumps the height by 0.45 in one
+  // step at every whole-numbered thread line. That is a hard edge running the
+  // full width and height of the sheet, at every thread — straight, and
+  // aligned to the axes, because the grid is. The `floor` here survives only
+  // where it is multiplied by a ridge that is already zero, so nothing jumps:
+  // the same sweep now measures 0.006, which is the sampling step.
+  let warp = warpRidge * (0.5 + 0.5 * cos(3.14159265 * (p.y - floor(p.x) - 0.5)));
+  let weft = weftRidge * (0.5 - 0.5 * cos(3.14159265 * (p.x - floor(p.y) - 0.5)));
+
+  // Slub: real thread is not evenly spun, and a perfectly regular weave reads
+  // as printed fabric rather than woven cloth.
+  let slub = grain_vnoise(p * 2.7) - 0.5;
+  return clamp(0.12 + 0.76 * max(warp, weft) + slub * 0.16, 0.0, 1.0);
+}
+
 fn grain_h(uv: vec2f) -> f32 {
   let p = vec2f(uv.x * C.pFreq, uv.y * C.pFreq * 1.15);
+  // A weave is analytic — it has an exact value at every real point — so unlike
+  // the fBm below it needs no extra octaves to stay sharp as the view closes
+  // in, and the octave loop is skipped rather than computed and discarded.
+  // Flat: a constant, so its gradient is zero and the lamp finds nothing on the
+  // surface at all. Cheapest branch in the shader, and the point of it.
+  if (C.grainKind > 2.5) { return 0.5; }
+  if (C.grainKind > 1.5) {
+    return clamp(0.5 + (grain_weave(p) - 0.5) * (0.4 + C.pTooth * 1.6), 0.02, 0.98);
+  }
   var v = 0.0;
   var amp = 0.5;
   var freq = 1.0;
@@ -299,7 +366,17 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // other, or paint stops landing under the cursor.
   let fragPx = in.uv * C.view;
   let scale = min(C.view.x / C.doc.x, C.view.y / C.doc.y) * C.zoom;
-  let docPx = (fragPx - C.view * 0.5) / scale + vec2f(C.panX, C.panY);
+  // Screen -> document is the inverse of the view transform, so the rotation
+  // runs backwards here: R(-rot) on the offset from the middle of the window.
+  //
+  // A turned sheet costs nothing in sharpness for the same reason a magnified
+  // one does not — this is still one fresh sample of the field per screen
+  // pixel, not a bitmap being spun. There is no resampling step to soften.
+  let cr = cos(C.rot);
+  let sr = sin(C.rot);
+  let off = fragPx - C.view * 0.5;
+  let docPx = vec2f(off.x * cr + off.y * sr, -off.x * sr + off.y * cr) / scale
+    + vec2f(C.panX, C.panY);
   let uv = docPx / C.doc;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
     return vec4f(bg, 1.0);
@@ -468,6 +545,13 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // valueShift 0.18 produces an 18% wet-state value difference.
   rgb = rgb * max(1.0 - C.valueShift * wetness, 0.1);
 
+  /* How much of the SHEET still reaches the eye. Needed before the relief
+     below, not only for the colour at the end: a tooth buried under paint
+     throws no shadow either, so the same term fades the paper's slope out of
+     the surface normal. */
+  let laid = total + total1 + total2;
+  let seen = exp(-C.hidesGround * laid * C.thickScale * 2.0);
+
   // Relief lighting from the paper height gradient (tooth catches the light).
   //
   // The gradient is taken one SCREEN pixel apart, not one texel of the baked
@@ -485,11 +569,101 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let hR = grain_h(uv + vec2f(texel.x, 0.0));
   let hU = grain_h(uv - vec2f(0.0, texel.y));
   let hD = grain_h(uv + vec2f(0.0, texel.y));
-  let n = normalize(vec3f(-(hR - hL) * C.relief, -(hD - hU) * C.relief, 1.0));
+
+  /* The surface the light finds is the paper PLUS whatever is sitting on it.
+   *
+   * Until now only the paper had a shape, so a loaded impasto stroke and a thin
+   * stain lit identically — both of them flat, both of them showing the weave.
+   * The film height is already in the wet band; this reads it as what it is,
+   * a surface, and takes its slope the same way the tooth's is taken.
+   *
+   * The paper's own contribution fades as paint covers it, through the same
+   * `seen` term the tone uses: buried tooth throws no shadow. At paintRelief 0
+   * the second gradient is zero and the first is unattenuated, so a stain is
+   * lit by exactly the arithmetic it always was.
+   */
+  /* The step for the PAINT is one cell, never one screen pixel.
+   *
+   * The paper above is sampled a screen pixel apart on purpose: its tooth is a
+   * function, so it has real detail at every scale and a finer step asks it a
+   * finer question. The paint is not a function. It is a 512-cell field with
+   * nothing in it below that, and once the view is closer than a pixel per
+   * cell, asking for its slope a screen pixel apart stops asking the paint
+   * anything at all — it asks the INTERPOLATION KERNEL. `paint()` switches to
+   * Catmull-Rom above zoom 1.05, and Catmull-Rom's slope kinks at every cell
+   * boundary. Multiplied by the relief strength, that draws the simulation grid
+   * over the whole mark as a lattice of little ridges, square to the cell axes
+   * and quite unlike anything a brush does.
+   *
+   * `max` and not a plain swap: zoomed OUT, a screen pixel is wider than a cell
+   * and stepping by a cell would alias instead. Never finer than a cell, never
+   * finer than a pixel.
+   */
+  let cellStep = 1.0 / vec2f(textureDimensions(wet0));
+  /* Two cells, not one.
+   *
+   * [MEASURED] Toggling this term alone, over the same paint: banding across
+   * the stroke 5.65 with relief on, 2.24 with it off, while the hair tracks
+   * running ALONG the stroke barely moved (3.62 to 4.20). So the lighting was
+   * the source of roughly two thirds of the cross-stroke marks — it was not
+   * showing paint, it was showing the simulation grid.
+   *
+   * The lamp should see the shape of the PAINT. A brush ridge is many cells
+   * wide; one cell of deposit noise is not a ridge at all, but at relief 26 the
+   * lighting turned every one into a bright line square to the grid axes. A
+   * central difference taken two cells apart cancels most of what varies from
+   * cell to cell and leaves anything broader than that intact — which is every
+   * real ridge a bristle makes. Halved to keep the slope the same size, so the
+   * dial still means what it meant.
+   *
+   * Same tap count as before. This is a change of scale, not of cost.
+   */
+  let ftex = max(texel, cellStep) * 2.0;
+  let fL = paint(wet0, uv - vec2f(ftex.x, 0.0)).y * 0.5;
+  let fR = paint(wet0, uv + vec2f(ftex.x, 0.0)).y * 0.5;
+  let fU = paint(wet0, uv - vec2f(0.0, ftex.y)).y * 0.5;
+  let fD = paint(wet0, uv + vec2f(0.0, ftex.y)).y * 0.5;
+  let gx = (hR - hL) * C.relief * seen + (fR - fL) * C.paintRelief;
+  let gy = (hD - hU) * C.relief * seen + (fD - fU) * C.paintRelief;
+  let n = normalize(vec3f(-gx, -gy, 1.0));
   let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
-  let lambert = clamp(dot(n, lightDir), 0.0, 1.0);
+  // The lamp is in the room, not on the paper. The tooth is part of the sheet
+  // and turns with it, so its normal is carried forward into screen space
+  // before it meets a light that stays put — turn the sheet and the grain
+  // catches the light differently, the way it does on a real desk.
+  //
+  // At rot = 0 this is the identity, so the unturned picture is untouched.
+  let ns = vec3f(n.x * cr - n.y * sr, n.x * sr + n.y * cr, n.z);
+  let lambert = clamp(dot(ns, lightDir), 0.0, 1.0);
   let shade = 0.82 + 0.18 * lambert;      // subtle; paper is not shiny
-  rgb = rgb * sheetTone * shade;
+
+  /* Sheen. A wet oil binder is glossy and a ridge of it catches a hard little
+   * highlight along its crest — which is most of how the eye reads thickness in
+   * a photograph of a painting. Driven by the medium's own gloss dial, so a
+   * matte material (kInstrument 1, which is watercolour) gets none of it and
+   * this whole term is zero. */
+  let gloss = clamp(1.0 - C.kInstrument, 0.0, 1.0) * clamp(C.paintRelief, 0.0, 1.0);
+  var sheen = 0.0;
+  if (gloss > 0.0) {
+    let half = normalize(lightDir + vec3f(0.0, 0.0, 1.0));
+    sheen = pow(clamp(dot(ns, half), 0.0, 1.0), 48.0) * gloss * 0.55;
+  }
+
+  // The sheet is something you see THROUGH the paint, so how much of it reaches
+  // the eye has to fall as the paint piles up. Both its tone and its tooth are
+  // properties of the ground, and both were being applied over the finished
+  // colour unconditionally — so no thickness of paint could ever cover the
+  // canvas, and the weave came through solid impasto.
+  //
+  // The Kubelka-Munk stack above already hides the paper's REFLECTANCE, which
+  // is why a watercolour glaze correctly deepens rather than covering. This is
+  // the same job for the two parts of the sheet that live outside that stack.
+  //
+  // `hidesGround` is 0 for every staining material, and at 0 this is exp(0) = 1
+  // and the line below is exactly what it always was.
+  // `shade` already carries both surfaces: the paper's slope faded out by
+  // covering, and the paint's added in. Applying it once is applying all of it.
+  rgb = rgb * mix(vec3f(1.0), sheetTone, seen) * shade + sheen;
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

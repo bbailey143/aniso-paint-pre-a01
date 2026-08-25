@@ -18,8 +18,16 @@ export class WebGpuUnavailable extends Error {}
 
 export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   if (!('gpu' in navigator)) {
+    // A missing navigator.gpu means one of two very different things, and
+    // saying "this browser has no WebGPU" to someone on a current iPad sends
+    // them off to update software that is already up to date. WebGPU is only
+    // exposed on a secure page: https, or localhost. A plain http:// address on
+    // the home network is neither, so the browser hides it.
     throw new WebGpuUnavailable(
-      'This browser has no WebGPU. Use Chrome/Edge 113+, or Safari 26 on iPadOS.',
+      window.isSecureContext
+        ? 'This browser has no WebGPU. Use Chrome/Edge 113+, or Safari 26 on iPadOS.'
+        : `WebGPU is switched off on insecure pages, and ${location.origin} is plain http://. `
+          + 'The browser is fine — the address is the problem. Open the https:// tunnel link instead.',
     );
   }
 
@@ -33,6 +41,18 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   // Core only: request no optional features. Default limits are treated as real
   // (Card 0 / D1) — the 256 MB single-buffer ceiling is binding on target hardware.
   const device = await adapter.requestDevice();
+
+  /* Say something when the GPU rejects our work.
+     A WebGPU validation error does not throw. It fires here and is otherwise
+     silent, and an invalid bind group makes its whole render pass a no-op — so
+     the symptom is a blank sheet with a clean console and nothing to go on.
+     That is exactly how a uniform whose struct had grown to 144 bytes against a
+     128-byte buffer presented on 2026-08-24: the app booted, reported no error,
+     and drew nothing. Cheap to shout about; expensive not to. */
+  device.addEventListener('uncapturederror', (ev) => {
+    const err = (ev as GPUUncapturedErrorEvent).error;
+    console.error('[webgpu]', err.message);
+  });
   device.lost.then((info) => {
     // Surfaced rather than swallowed; a lost device is a real event to handle later.
     console.error('WebGPU device lost:', info.reason, info.message);

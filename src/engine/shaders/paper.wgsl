@@ -17,7 +17,7 @@ struct PaperParams {
   cMin: f32,
   cMax: f32,
   seed: f32,
-  grainKind: f32,    // 0 = watercolor grain, 1 = shared fibrous pastel tooth
+  grainKind: f32,    // 0 = watercolor noise, 1 = pastel fibre, 2 = woven canvas, 3 = flat
   waterUptake: f32, // 1 = ordinary watercolour response; >1 drinks faster
 };
 @group(0) @binding(0) var<uniform> P: PaperParams;
@@ -60,6 +60,48 @@ fn pastel_fibre(p: vec2f) -> f32 {
   return clamp(0.5 + (long - 0.5) * 0.78 + (cross - 0.5) * 0.22, 0.0, 1.0);
 }
 
+/**
+ * A plain woven ground.
+ *
+ * Warp and weft cross over and under: at every other crossing the warp is the
+ * thread on top, and at the ones between it dips beneath the weft. That
+ * alternation is the whole reason this is its own function and not another
+ * grade of tooth - no amount of noise produces an over-under, and without it
+ * canvas just reads as coarse paper.
+ *
+ * The over-under has to be built from something SMOOTH. A thread rises and
+ * falls along its length; it does not teleport from over to under at the edge
+ * of a crossing. Deciding it by the parity of the crossing is arithmetically
+ * correct and visually wrong, and it puts a hard step across the whole sheet
+ * at every thread line.
+ */
+fn canvas_weave(p: vec2f) -> f32 {
+  // A ridge down the middle of each thread, falling to zero where two threads
+  // meet. This is the shape ACROSS a thread.
+  let warpRidge = 0.5 + 0.5 * cos((fract(p.x) - 0.5) * 6.2831853);
+  let weftRidge = 0.5 + 0.5 * cos((fract(p.y) - 0.5) * 6.2831853);
+
+  // And this is the shape ALONG it: each thread rises over its neighbour, dips
+  // under the next, and does it smoothly, because a thread bends rather than
+  // stepping. The two are in antiphase, so where the warp is over, the weft is
+  // under — the over-under of a plain weave.
+  //
+  // [MEASURED] The first version decided over-or-under by the parity of the
+  // crossing, which is true of a weave but jumps the height by 0.45 in one
+  // step at every whole-numbered thread line. That is a hard edge running the
+  // full width and height of the sheet, at every thread — straight, and
+  // aligned to the axes, because the grid is. The `floor` here survives only
+  // where it is multiplied by a ridge that is already zero, so nothing jumps:
+  // the same sweep now measures 0.006, which is the sampling step.
+  let warp = warpRidge * (0.5 + 0.5 * cos(3.14159265 * (p.y - floor(p.x) - 0.5)));
+  let weft = weftRidge * (0.5 - 0.5 * cos(3.14159265 * (p.x - floor(p.y) - 0.5)));
+
+  // Slub: real thread is not evenly spun, and a perfectly regular weave reads
+  // as printed fabric rather than woven cloth.
+  let slub = vnoise(p * 2.7) - 0.5;
+  return clamp(0.12 + 0.76 * max(warp, weft) + slub * 0.16, 0.0, 1.0);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let dim = textureDimensions(dst);
@@ -68,11 +110,19 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   // Anisotropic weave: stretch the grain slightly so streaks read as fibres.
   let p = vec2f(uv.x * P.featureFreq, uv.y * P.featureFreq * 1.15);
-  var grain = fbm(p);
-  // Keep watercolour byte-for-byte on its established fBm route. Pastel only
-  // replaces its source with the common felted fibre field.
-  if (P.grainKind > 0.5) {
-    grain = mix(grain, pastel_fibre(p), 0.68);
+  // Keep watercolour byte-for-byte on its established fBm route. Pastel
+  // replaces its source with the common felted fibre field; canvas is woven and
+  // shares nothing with either.
+  var grain = 0.0;
+  if (P.grainKind > 2.5) {
+    // Flat. Not a shallow tooth — none. Everything below centres on 0.5, so
+    // this is the surface with the character taken out rather than turned down.
+    grain = 0.5;
+  } else if (P.grainKind > 1.5) {
+    grain = canvas_weave(p);
+  } else {
+    grain = fbm(p);
+    if (P.grainKind > 0.5) { grain = mix(grain, pastel_fibre(p), 0.68); }
   }
   // Contrast the grain by the tooth amplitude; keep it centred around 0.5.
   var h = 0.5 + (grain - 0.5) * (0.4 + P.toothAmp * 1.6);

@@ -91,6 +91,13 @@ export interface FluidParams {
   /** How much faster a film dries at its pinned edge than in its interior
    * (log 13, E11). 0 = evenly, the pre-E11 behaviour. */
   edgeEvaporation: number;
+  /** Stress a face must clear before the material moves. 0 = water, and the
+   * flux pass exits early, so every water medium is bit-identical. */
+  yieldStress: number;
+  /** Film the brush cannot shove off the sheet however hard it scrubs. */
+  teflonMin: number;
+  /** How hard the brush shoves the paint already down. 1 is the lab's share. */
+  smearStrength: number;
   /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
@@ -121,6 +128,9 @@ export const DEFAULT_FLUID: FluidParams = {
   rimMigration: 0.0,
   rimReach: 2.0,
   edgeEvaporation: 0.0,
+  yieldStress: 0.0,
+  teflonMin: 0.0,
+  smearStrength: 1.0,
   handoffEnabled: true,
 };
 
@@ -524,7 +534,8 @@ export class FluidEngine {
     dv.setFloat32(76, p.rimMigration, true);
     dv.setFloat32(80, p.rimReach, true);
     dv.setFloat32(84, p.edgeEvaporation, true);
-    // 88, 92 are _mediumPad4..5 — the tail of that 16-byte group.
+    dv.setFloat32(88, p.yieldStress, true);
+    dv.setFloat32(92, p.teflonMin, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
@@ -674,7 +685,8 @@ export class FluidEngine {
    * Advance one frame. `segments` are resampled stroke pieces in grid space —
    * the host must space them <= 1 cell apart (Card 6; otherwise strokes bead).
    */
-  step(segments: Float32Array<ArrayBuffer>, segCount: number, mixWeights: Float32Array<ArrayBuffer>) {
+  step(segments: Float32Array<ArrayBuffer>, segCount: number, mixWeights: Float32Array<ArrayBuffer>,
+       travelX = 0, travelY = 0) {
     // Do not continually simulate an untouched sheet. The first wet footprint
     // wakes the solver; after that the normal gauge decides when it may rest.
     if (segCount > 0) {
@@ -704,7 +716,14 @@ export class FluidEngine {
       const n = Math.min(total - done, MAX_SEGS);
       device.queue.writeBuffer(
         this.segBuf, 0, segments, done * SEG_FLOATS, n * SEG_FLOATS);
-      device.queue.writeBuffer(this.ctlBuf, 0, this.segBounds(segments, done, n));
+      /* Where the brush went, for the smear. Lanes 5 and 6 are spare in the
+         wet control block; the dry path writes its own meanings into the same
+         two, and each writes immediately before its own dispatch. */
+      const ctl = this.segBounds(segments, done, n);
+      ctl[5] = travelX;
+      ctl[6] = travelY;
+      ctl[7] = this.params.smearStrength;
+      device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const denc = device.createCommandEncoder({ label: 'deposit-chunk' });
       const dpass = denc.beginComputePass();
@@ -712,11 +731,36 @@ export class FluidEngine {
         U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
-        this.paper,
+        this.paper, { buffer: this.fluxBuf },
       ]);
       dpass.end();
-      device.queue.submit([denc.finish()]);
       this.wet0.flip(); this.wet1.flip(); this.wet2.flip(); this.wet5.flip();
+
+      /* Move what the brush just shoved. The deposit wrote it as an outflow per
+         cell; these are the same two appliers the fluid uses, so the smear is
+         carried by the one conservative ledger rather than a second one.
+         Pigment BEFORE water — the fraction leaving is measured against the
+         vehicle present before the move, which is what makes a dirty brush
+         drag one colour through another instead of bleaching it. */
+      /* Every wet material, matching the shader. Gating this on a yield stress
+         would have left watercolour writing a smear flux that nothing applied —
+         and `flux_compute` overwrites the buffer later in the frame, so it
+         would have been discarded without a trace. Only runs when there are
+         segments, so it costs an idle sheet nothing. */
+      {
+        const spass = denc.beginComputePass({ label: 'smear' });
+        this.dispatch(spass, this.pipes.fluxPig, [
+          U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
+          this.wet1.dst, this.wet2.dst,
+        ]);
+        this.wet1.flip(); this.wet2.flip();
+        this.dispatch(spass, this.pipes.fluxWater, [
+          U, this.wet0.src, { buffer: this.fluxBuf }, this.wet0.dst,
+        ]);
+        this.wet0.flip();
+        spass.end();
+      }
+      device.queue.submit([denc.finish()]);
     }
 
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
@@ -730,8 +774,16 @@ export class FluidEngine {
 
     const run = (name: string, fn: () => void) => { if (!this.skip.has(name)) fn(); };
 
+    /* A paste has no velocity field. For a material with a yield stress the
+       flux pass moves paint by slump — the steepness of the pile against the
+       yield — and reads neither the velocities nor the pressure. So these two
+       are skipped rather than computed and ignored, which is both the honest
+       statement of the model and, as it happens, the removal of the two most
+       expensive passes in the frame. */
+    const paste = this.params.yieldStress > 0;
+
     // 2 — UpdateVelocities
-    run('vel', () => {
+    if (!paste) run('vel', () => {
       this.dispatch(pass, this.pipes.vel, [
         U, this.wet0.src, this.wet5.src, this.paper, this.wet0.dst,
       ]);
@@ -739,7 +791,7 @@ export class FluidEngine {
     });
 
     // 3 — RelaxDivergence, N iterations
-    run('relax', () => {
+    if (!paste) run('relax', () => {
       for (let i = 0; i < this.relaxIters; i++) {
         this.dispatch(pass, this.pipes.relax, [U, this.wet0.src, this.wet0.dst]);
         this.wet0.flip();

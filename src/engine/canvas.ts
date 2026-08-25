@@ -10,6 +10,7 @@ import { PIGMENTS } from '../color/pigment-palette';
 import type { WetMedium } from '../media/types';
 import type { Recipe } from '../color/km';
 import type { Paper } from '../substrate/papers';
+import { GRAIN_KIND } from '../substrate/papers';
 import { DEFAULT_FLUID, FluidEngine, type Gauges, type FluidParams } from './fluid';
 import paperWgsl from './shaders/paper.wgsl?raw';
 import compositeWgsl from './shaders/composite.wgsl?raw';
@@ -38,7 +39,12 @@ const PAPER_SEED = 0.137;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 16;
 
-const STORAGE_TEX =
+/* Read lazily. GPUTextureUsage is a WebGPU global, so touching it while this
+   module is being evaluated throws on any browser without WebGPU — which took
+   the whole entry module down with it and left a blank page instead of the
+   "WebGPU unavailable" message a few lines away in main.ts. A plain http:// LAN
+   address is not a secure context, so that is every iPad on the home network. */
+const storageTex = () =>
   GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST;
 
 const SLUG_TO_ID = new Map(PIGMENTS.map((p, i) => [p.slug, i]));
@@ -90,6 +96,17 @@ export class CanvasEngine {
   zoom = 1;
   panX = DOC / 2;
   panY = DOC / 2;
+  /**
+   * How far the sheet is turned on the desk, in radians, document -> screen.
+   * Screen y runs downward here and in the composite alike, so both use the
+   * same matrix and cannot disagree about which way round is which.
+   *
+   * Turning the sheet does not turn gravity. A wash still runs toward the
+   * downhill the tilt pad was set to, because that is the board, and D11 keeps
+   * the board apart from the view. Rotating the paper to bring a curve under
+   * your wrist should not re-aim the water.
+   */
+  rot = 0;
   /** Grain rows for the active sheet, so the composite can evaluate the tooth
    * procedurally at screen resolution. Set by `setPaper`. */
   private paperTooth = 0.45;
@@ -117,12 +134,42 @@ export class CanvasEngine {
   /** Pan by a screen-pixel delta at the current zoom. */
   panBy(dxScreen: number, dyScreen: number, viewW: number, viewH: number) {
     const scale = Math.min(viewW / DOC, viewH / DOC) * this.zoom;
-    this.panX -= dxScreen / scale;
-    this.panY -= dyScreen / scale;
+    // The hand travels across the glass, but the sheet may be turned under it,
+    // so the drag is rotated back into document space before it becomes a pan.
+    // Without this, dragging sideways across a turned sheet walks off at an
+    // angle and the paper slides out from under the fingers.
+    const c = Math.cos(this.rot), s = Math.sin(this.rot);
+    this.panX -= (dxScreen * c + dyScreen * s) / scale;
+    this.panY -= (-dxScreen * s + dyScreen * c) / scale;
     this.clampPan();
   }
 
-  resetView() { this.zoom = 1; this.panX = DOC / 2; this.panY = DOC / 2; }
+  /**
+   * Turn the sheet by `delta` radians about a document point, so that point
+   * stays where it is on the glass instead of the view swinging away from it.
+   * The pinch pivots on the midpoint between the fingers; the R-drag pivots on
+   * the middle of the window, which happens to be `(panX, panY)` and therefore
+   * leaves the pan untouched.
+   *
+   * Zoom needs no such companion: scaling about a document point cancels the
+   * rotation on both sides, so `zoomAt` is already correct at any angle.
+   */
+  rotateAt(delta: number, docX: number, docY: number) {
+    if (delta === 0) return;
+    // pan' = docP + R(-delta) * (pan - docP)
+    const c = Math.cos(delta), s = Math.sin(delta);
+    const dx = this.panX - docX, dy = this.panY - docY;
+    this.panX = docX + dx * c + dy * s;
+    this.panY = docY - dx * s + dy * c;
+    // Kept inside one turn so the float handed to the shader stays precise
+    // however long somebody spins. Gestures track their own running total, so
+    // the wrap is never visible as a jump.
+    const TAU = Math.PI * 2;
+    this.rot = ((this.rot + delta + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    this.clampPan();
+  }
+
+  resetView() { this.zoom = 1; this.panX = DOC / 2; this.panY = DOC / 2; this.rot = 0; }
 
   /** Keep the sheet from being dragged entirely off-screen. Generous rather
    * than strict — half a sheet of slack in every direction. */
@@ -132,16 +179,22 @@ export class CanvasEngine {
     this.panY = Math.min(DOC + m, Math.max(-m, this.panY));
   }
   private reliefStrength = 2.2;
+  /** How completely the material in hand covers the sheet. 0 keeps the
+   *  composite exactly as it was for every staining medium. */
+  private hidesGround = 0;
+  /** How far its film stands off the sheet. 0 is flat, and flat is the
+   *  arithmetic the composite had before paint had a surface of its own. */
+  private paintRelief = 0;
 
   constructor(gpu: Gpu) {
     this.gpu = gpu;
     const { device, format } = gpu;
 
     this.paperTex = device.createTexture({
-      size: [SIM, SIM], format: 'rgba16float', usage: STORAGE_TEX, label: 'paper',
+      size: [SIM, SIM], format: 'rgba16float', usage: storageTex(), label: 'paper',
     });
     this.inkPaperTex = device.createTexture({
-      size: [INK, INK], format: 'rgba16float', usage: STORAGE_TEX, label: 'ink-paper',
+      size: [INK, INK], format: 'rgba16float', usage: storageTex(), label: 'ink-paper',
     });
 
     this.lib = createColorLibrary(device);
@@ -153,10 +206,10 @@ export class CanvasEngine {
       size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'paperParams',
     });
     this.compParams = device.createBuffer({
-      // 80, not 64: the water-view flag added a fifth 16-byte group. This size,
+      // 128, not 112: covering power added an eighth 16-byte group. This size,
       // the ArrayBuffer in writeCompParams, and `struct Comp` in composite.wgsl
       // must agree — an overflowing write is rejected whole and silently.
-      size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
+      size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'compParams',
     });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
@@ -215,14 +268,23 @@ export class CanvasEngine {
       rimMigration: m.rimMigration,
       rimReach: m.rimReach,
       edgeEvaporation: m.edgeEvaporation,
+      yieldStress: m.yieldStress,
+      teflonMin: m.teflonMin,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
     });
     this.kInstrument = m.kInstrument;
     this.valueShift = m.valueShift;
+    this.hidesGround = m.hidesGround;
+    this.paintRelief = m.relief;
   }
   setGloss(kInstrument: number) { this.kInstrument = kInstrument; }
+  /** How completely the material covers the sheet. Drives the same row
+   *  `setWetMedium` sets; the dial simply lets the artist find it faster. */
+  setCover(v: number) { this.hidesGround = Math.max(0, v); }
+  /** How far the paint stands off the sheet. */
+  setRelief(v: number) { this.paintRelief = Math.max(0, v); }
   /** Wipe the sheet. A blank document has no history, so the slot map resets too. */
   clear() {
     this.fluid.clear();
@@ -236,7 +298,7 @@ export class CanvasEngine {
     const buf = new ArrayBuffer(48);
     new Float32Array(buf).set([
       p.toothAmp, p.featureFreq, p.sizing, p.rc, p.cMin, p.cMax, PAPER_SEED,
-      p.grainKind === 'pastel' ? 1 : 0, p.waterUptake,
+      GRAIN_KIND[p.grainKind], p.waterUptake,
     ]);
     this.gpu.device.queue.writeBuffer(this.paperParams, 0, buf);
     // The composite re-derives the same grain at screen resolution, so it needs
@@ -244,7 +306,7 @@ export class CanvasEngine {
     this.paperTooth = p.toothAmp;
     this.paperFreq = p.featureFreq;
     this.paperTone = p.tone;
-    this.paperGrainKind = p.grainKind === 'pastel' ? 1 : 0;
+    this.paperGrainKind = GRAIN_KIND[p.grainKind];
 
     const enc = this.gpu.device.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -336,15 +398,15 @@ export class CanvasEngine {
   get slotsUsed(): number { return this.slotIds.filter((s) => s >= 0).length; }
 
   /** Advance the physics one frame with this frame's stroke segments. */
-  step(segments: Float32Array<ArrayBuffer>, segCount: number): boolean {
-    return this.fluid.step(segments, segCount, this.mixWeights_);
+  step(segments: Float32Array<ArrayBuffer>, segCount: number, dx = 0, dy = 0): boolean {
+    return this.fluid.step(segments, segCount, this.mixWeights_, dx, dy);
   }
 
   private writeCompParams(viewW: number, viewH: number) {
-    // 112 bytes = 7 groups of 16. Must match `struct Comp` in composite.wgsl and
+    // 128 bytes = 8 groups of 16. Must match `struct Comp` in composite.wgsl and
     // the createBuffer size above. An overflowing uniform write is rejected
     // whole and silently; this has cost time twice already.
-    const buf = new ArrayBuffer(112);
+    const buf = new ArrayBuffer(128);
     const dv = new DataView(buf);
     dv.setFloat32(0, viewW, true);
     dv.setFloat32(4, viewH, true);
@@ -369,6 +431,11 @@ export class CanvasEngine {
     dv.setFloat32(96, this.paperTone[0], true);
     dv.setFloat32(100, this.paperTone[1], true);
     dv.setFloat32(104, this.paperTone[2], true);
+    // Rotation rides in the 4 bytes a vec3f already reserves for alignment, so
+    // the buffer stays 112 and nothing above has to move.
+    dv.setFloat32(108, this.rot, true);
+    dv.setFloat32(112, this.hidesGround, true);
+    dv.setFloat32(116, this.paintRelief, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

@@ -9,14 +9,17 @@ import type { WetMedium, GranularDry, InkMedium, Tool, MediumPhysics } from './t
 type DryRow = GranularDry | InkMedium;
 
 export const WATERCOLOR: WetMedium = {
-  name: 'Watercolour', slug: 'watercolour', family: 'wet', pigments: [],
+  name: 'Watercolour', slug: 'watercolour', collection: 'Watercolour', family: 'wet', pigments: [],
   physics: {
     pigmentParticleSize: 0.12, binderViscosity: 0.10, mediumHardness: 0,
     shearRate: 0.35, adhesionStrength: 0.45, compressiveYield: 1,
     specularPotential: 0.18, microReflectance: 0.35, refractiveIndex: 0.62,
   },
   k1: 0.03, k2: 0.65, kInstrument: 1,
-  hasBody: false, bodyShrink: 0, downRate: 0.35, upRate: 0.08, teflonMin: 0.02,
+  // A stain. However many washes go down, the sheet is still what you are
+  // looking at - which is why watercolour is painted on white paper.
+  relief: 0, bodyShrink: 0, hidesGround: 0,
+  downRate: 0.35, upRate: 0.08, teflonMin: 0.02,
   openTime: 90, valueShift: 0.18, reactivatable: true, oneWayDoor: false,
   solvent: 'water', viscosity: 0.1,
   drag: 0.06, gravityResponse: 0.03, wetLayerDrag: 0.55,
@@ -26,7 +29,101 @@ export const WATERCOLOR: WetMedium = {
   rimMigration: 0, rimReach: 2.0, edgeEvaporation: 0,
   evapRate: 0.0015,
   absorptionCoupling: 0.0001, pigmentBoost: 1,
+  // Water has no yield stress. Push it however gently and it flows, which is
+  // why a wash levels itself out. The solver takes an early exit on 0, so this
+  // row is not merely a small number - it is the untouched path.
+  yieldStress: 0,
 };
+
+/**
+ * Oil paint.
+ *
+ * Sourced from the archived oil engine spec and the oil material row carried
+ * over in the harvest, not invented here. What the spec says oil IS, in the
+ * order it matters:
+ *
+ *   It holds its shape until pushed.       -> yieldStress
+ *   Its pigment never spreads on its own.  -> rimMigration 0, edgeDarkening 0
+ *   It never wets the sheet.               -> absorptionCoupling 0
+ *   It cures by oxidation over days.       -> openTime 48 h, evapRate near nil
+ *   It is opaque and glossy.               -> kInstrument low, specular high
+ *   It picks up what it is dragged through.-> upRate high [NOT WIRED - see
+ *                                              BrushDef.upRate. Nothing reads
+ *                                              it; oil does not pick up.]
+ *
+ * It stands up off the sheet as of 2026-08-24: `relief` is read by the
+ * composite, which takes the slope of the film the same way it takes the
+ * slope of the paper's tooth, so a bristle ridge throws a shadow and a wet
+ * binder catches a highlight along its crest.
+ *
+ * [UNVERIFIED] Every value below is reasoned from the spec, not measured.
+ */
+export const OIL: WetMedium = {
+  name: 'Oil Paint', slug: 'oil', collection: 'Oil', family: 'wet', pigments: [],
+  physics: {
+    // Ground coarser than watercolour and suspended in a thick binder, which is
+    // most of why it holds a mark instead of levelling.
+    pigmentParticleSize: 0.30, binderViscosity: 0.82, mediumHardness: 0,
+    shearRate: 0.55, adhesionStrength: 0.88, compressiveYield: 1,
+    specularPotential: 0.86, microReflectance: 0.42, refractiveIndex: 0.72,
+  },
+  k1: 0.03, k2: 0.65,
+  // Wet oil is glossy. Watercolour sits at 1, fully matte; this is the other end.
+  kInstrument: 0.25,
+  // Truthfully declared and currently unread — see the note above. bodyShrink is
+  // the spec's shrinkage on cure: a ridge sinks a little as the oil oxidises.
+  relief: 26, bodyShrink: 0.85,
+  // Oil covers. Two loaded strokes and the canvas is gone - which is what an
+  // opaque paint is FOR, and what the artist reported missing on 2026-08-24:
+  // "it should only take one, maybe two thick strokes to cover the canvas."
+  // Starts deliberately strong. The artist's report on 2026-08-24 was that the
+  // canvas "shows through at all levels, never disappears under the paint", and
+  // the Cover dial is right there to bring it back down once it is visibly too
+  // much. Erring quiet is what wasted the last two rounds.
+  hidesGround: 3,
+  downRate: 0.55, upRate: 0.42, teflonMin: 0.18,
+  // 48 hours, straight off the harvested material row. Watercolour is 90
+  // seconds. That ratio is the whole difference in how the two are worked.
+  openTime: 172800,
+  // Zero, and deliberately: watercolour deepens while wet and lifts as it
+  // dries, acrylic is milky wet and cures darker, oil does neither.
+  valueShift: 0,
+  reactivatable: false, oneWayDoor: true,
+  solvent: 'oil',
+  // Thick and draggy. This is the ordinary resistance; yieldStress below is the
+  // separate question of whether it moves at all.
+  viscosity: 0.85, drag: 0.55,
+  // It feels gravity, but rarely enough to clear its own yield stress. Piling
+  // it up is what makes it slump, not tilting the board a little.
+  gravityResponse: 0.22, wetLayerDrag: 0.15,
+  // No ring, ever. Watercolour rings because water leaves the film at its
+  // pinned edge and carries pigment out there; oil does not lose solvent to the
+  // air at all, and famously leaves no ring. All three rim rows are off, which
+  // also means the rim passes are skipped rather than run with small numbers.
+  edgeDarkening: 0, rimMigration: 0, rimReach: 2.0, edgeEvaporation: 0,
+  // It cures rather than evaporating, so this is not "how fast the water goes"
+  // but how fast it stops being workable. 48 hours against watercolour's 90
+  // seconds is the same 1920x, applied to watercolour's rate.
+  evapRate: 0.0015 / 1920,
+  // Never wets the sheet: OL-05 on the lab board, and the reason oil belongs on
+  // a primed ground rather than on paper.
+  absorptionCoupling: 0,
+  pigmentBoost: 1,
+  // The number that makes oil oil. Below this a face does not move at all.
+  //
+  // 0.34 is the value the sarasara lab arrived at for `RHEO-002` on its own oil
+  // row, after artist sessions — the build the artist described as having "the
+  // feel of actual oil". Not transplanted blindly: that solver gates a height
+  // DIFFERENCE between neighbouring cells and this one gates a face drive, so
+  // the two numbers are not the same quantity. But both are normalised 0..1
+  // gates on whether the paint moves at all, the tuned one is six times the
+  // guess, and the guess was visibly too fluid. Start where the artist landed.
+  yieldStress: 0.34,
+};
+
+/** Every wet material, in the order the picker offers them. */
+export const WET_MEDIA: WetMedium[] = [WATERCOLOR, OIL];
+
 
 function physics(
   pigmentParticleSize: number, binderViscosity: number, mediumHardness: number,
@@ -42,9 +139,10 @@ function physics(
 function graphite(name: string, slug: string, row: MediumPhysics,
                   deposition: number, velocityCoupling: number): GranularDry {
   return {
-    name, slug, family: 'dry', kind: 'granular', pigments: [['bone-black', 1]], physics: row,
+    name, slug, collection: 'Graphite', family: 'dry', kind: 'granular', form: 'encased',
+    pigments: [['bone-black', 1]], physics: row,
     k1: 0.03, k2: 0.65, kInstrument: 0.45,
-    hasBody: false, bodyShrink: 0, downRate: 1, upRate: 0, teflonMin: 1,
+    relief: 0, bodyShrink: 0, hidesGround: 0, downRate: 1, upRate: 0, teflonMin: 1,
     openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
     toothThreshold: 0.5, velocityCoupling, hardness: row.mediumHardness,
     tipRadius: 1.1, contactProfile: 'round', contactAspect: 1,
@@ -63,10 +161,11 @@ export const GRAPHITE_GRADES: GranularDry[] = [
 
 function ballpoint(name: string, slug: string, pigment: string, deposition: number): InkMedium {
   return {
-    name, slug, family: 'dry', kind: 'ink', flowMode: 'ball', pigments: [[pigment, 1]],
+    name, slug, collection: 'Ink', family: 'dry', kind: 'ink', flowMode: 'ball', form: 'pen',
+    pigments: [[pigment, 1]],
     physics: physics(0.02, 0.88, 0.72, 0.58, 0.98, 0.88, 0.25, 0.22, 0.70),
     k1: 0.03, k2: 0.65, kInstrument: 0.8,
-    hasBody: false, bodyShrink: 0, downRate: 1, upRate: 0, teflonMin: 1,
+    relief: 0, bodyShrink: 0, hidesGround: 0, downRate: 1, upRate: 0, teflonMin: 1,
     openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
     toothThreshold: 0.42, velocityCoupling: 0.16, hardness: 0.72,
     tipRadius: 0.46, contactProfile: 'round', contactAspect: 1,
@@ -79,9 +178,9 @@ export const BALLPOINT_BLUE = ballpoint('Biro', 'ballpoint-blue', 'phthalo-blue-
 export const BALLPOINT_BLACK = ballpoint('Biro K', 'ballpoint-black', 'bone-black', 0.42);
 
 export const VINE_CHARCOAL: GranularDry = {
-  name: 'Vine Charcoal', slug: 'vine-charcoal', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  name: 'Vine Charcoal', slug: 'vine-charcoal', collection: 'Charcoal', family: 'dry', form: 'stick', kind: 'granular', pigments: [['bone-black', 1]],
   physics: physics(0.72, 1, 0.05, 0.95, 0.62, 0.98, 0, 0.06, 0.52),
-  k1: 0.03, k2: 0.65, kInstrument: 1, hasBody: false, bodyShrink: 0,
+  k1: 0.03, k2: 0.65, kInstrument: 1, relief: 0, bodyShrink: 0, hidesGround: 0,
   downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
   toothThreshold: 0.38, velocityCoupling: 0.26, hardness: 0.05,
   tipRadius: 1.7, contactProfile: 'round', contactAspect: 1,
@@ -90,9 +189,9 @@ export const VINE_CHARCOAL: GranularDry = {
 };
 
 export const CONTE_CRAYON: GranularDry = {
-  name: 'Conte Crayon', slug: 'conte-crayon', family: 'dry', kind: 'granular', pigments: [['sanguine-sepia', 1]],
+  name: 'Conte Crayon', slug: 'conte-crayon', collection: 'Conté', family: 'dry', form: 'stick', kind: 'granular', pigments: [['sanguine-sepia', 1]],
   physics: physics(0.48, 0.96, 0.46, 0.70, 0.86, 0.76, 0.16, 0.18, 0.60),
-  k1: 0.03, k2: 0.65, kInstrument: 0.84, hasBody: false, bodyShrink: 0,
+  k1: 0.03, k2: 0.65, kInstrument: 0.84, relief: 0, bodyShrink: 0, hidesGround: 0,
   downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
   toothThreshold: 0.44, velocityCoupling: 0.42, hardness: 0.46,
   // Square end upright; the long rectangular side arrives with tilt or Lay Flat.
@@ -105,9 +204,9 @@ export const CONTE_CRAYON: GranularDry = {
 };
 
 export const WAX_CRAYON: GranularDry = {
-  name: 'Wax Crayon', slug: 'wax-crayon', family: 'dry', kind: 'granular', pigments: [['bone-black', 1]],
+  name: 'Wax Crayon', slug: 'wax-crayon', collection: 'Wax crayon', family: 'dry', form: 'stick', kind: 'granular', pigments: [['bone-black', 1]],
   physics: physics(0.38, 0.56, 0.30, 0.42, 0.94, 0.82, 0.65, 0.44, 0.72),
-  k1: 0.03, k2: 0.65, kInstrument: 0.46, hasBody: false, bodyShrink: 0,
+  k1: 0.03, k2: 0.65, kInstrument: 0.46, relief: 0, bodyShrink: 0, hidesGround: 0,
   downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
   toothThreshold: 0.32, velocityCoupling: 0.22, hardness: 0.30,
   tipRadius: 1.8, contactProfile: 'round', contactAspect: 1.3,
@@ -116,9 +215,9 @@ export const WAX_CRAYON: GranularDry = {
 };
 
 export const FOUNTAIN_CHISEL: InkMedium = {
-  name: 'Chisel Fountain', slug: 'fountain-chisel', family: 'dry', kind: 'ink', flowMode: 'fountain',
+  name: 'Chisel Fountain', slug: 'fountain-chisel', collection: 'Ink', family: 'dry', form: 'pen', kind: 'ink', flowMode: 'fountain',
   pigments: [['bone-black', 1]], physics: physics(0.01, 0.14, 0, 1, 0.97, 1, 0.38, 0.30, 0.70),
-  k1: 0.03, k2: 0.65, kInstrument: 0.62, hasBody: false, bodyShrink: 0,
+  k1: 0.03, k2: 0.65, kInstrument: 0.62, relief: 0, bodyShrink: 0, hidesGround: 0,
   downRate: 1, upRate: 0, teflonMin: 1, openTime: 0, valueShift: 0, reactivatable: false, oneWayDoor: true,
   toothThreshold: 0.08, velocityCoupling: 0.04, hardness: 0,
   tipRadius: 0.52, contactProfile: 'chisel', contactAspect: 3.6,

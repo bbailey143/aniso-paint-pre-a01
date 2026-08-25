@@ -29,8 +29,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var g = array<f32, 8>(glo.x, glo.y, glo.z, glo.w, ghi.x, ghi.y, ghi.z, ghi.w);
   var d = array<f32, 8>(dlo.x, dlo.y, dlo.z, dlo.w, dhi.x, dhi.y, dhi.z, dhi.w);
 
+  /* Settling is pigment falling out of suspension into the hollows of the
+     paper — granulation, and one of the loveliest things watercolour does.
+     A paste does not do it: pigment cannot sink through a material stiff
+     enough to hold its own shape, and if it could, it would print the weave
+     into every layer of oil however thick. That is half of why the canvas
+     kept showing through.
+
+     Asked of the material, not of its name: anything with a yield stress
+     holds its pigment where the brush put it. */
   let wet = textureLoad(wet0_in, c, 0).x;
-  if (wet >= 0.5) {
+  if (wet >= 0.5 && P.yieldStress <= 0.0) {
     let h = textureLoad(paper, c, 0).x;
     for (var k = 0; k < 8; k = k + 1) {
       let rho   = P.pig[k].x;
