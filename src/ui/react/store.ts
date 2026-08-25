@@ -74,6 +74,8 @@ export class StudioStore {
   mixing = false;
   readouts = false;
   tiltOpen = false;
+  /** The paint-surface panel: the macros with their dials grouped beneath. */
+  surfaceOpen = false;
 
   private listeners = new Set<() => void>();
   private version = 0;
@@ -157,6 +159,7 @@ export class StudioStore {
   }
 
   setTiltOpen(on: boolean) { this.tiltOpen = on; this.changed(); }
+  setSurfaceOpen(on: boolean) { this.surfaceOpen = on; this.changed(); }
   setMixing(on: boolean) { this.mixing = on; this.changed(); }
 
   pickCollection(c: MediumCollection) {

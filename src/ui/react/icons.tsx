@@ -23,6 +23,12 @@ export const ICON: Record<string, string> = {
   drying:
     '<path d="M12 21a5.2 5.2 0 0 1-5.2-5.2c0-3.1 3.4-6.6 5.2-9.3 1.8 2.7 5.2 6.2 5.2 9.3A5.2 5.2 0 0 1 12 21Z"/>'
     + '<path d="M19.4 8.4c.9-.8.9-1.9 0-2.7"/><path d="M21.8 10c1.5-1.5 1.5-4 0-5.5"/>',
+  // A ridge of paint with the light coming off its crest - the whole subject of
+  // the panel this opens.
+  impasto:
+    '<path d="M2.6 17.4c2.6 0 3.4-6.2 6-6.2s3.4 6.2 6 6.2 3.4-6.2 6-6.2"/>'
+    + '<path d="M2.6 21c2.6 0 3.4-3.4 6-3.4"/>'
+    + '<path d="M17.6 6.2 19 3.4"/><path d="M20.8 7.4 23 6.4"/><path d="M14.6 6 14 3.2"/>',
   // A board propped on a slope, with the downhill arrow.
   tilt:
     '<path d="M3.4 17.6 15.8 5.2a1.6 1.6 0 0 1 2.3 0l2.7 2.7a1.6 1.6 0 0 1 0 2.3L8.4 22.6"/>'

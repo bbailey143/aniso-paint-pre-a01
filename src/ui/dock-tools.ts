@@ -19,7 +19,7 @@
 import type { ToolContext } from './controls';
 
 export interface DockTool {
-  id: 'drying' | 'tilt';
+  id: 'drying' | 'tilt' | 'impasto';
   label: string;
   /** Key into the icon table in studio.ts. */
   icon: string;
@@ -39,6 +39,16 @@ export const DOCK_TOOLS: DockTool[] = [
     // control the day it arrives, without anyone remembering to add it.
     appliesTo: (t) => openTimeOf(t) > 0,
     why: 'How long the sheet stays workable. Meaningless to something already dry.',
+  },
+  {
+    id: 'impasto',
+    label: 'Paint surface',
+    icon: 'impasto',
+    /* Only for a material that stands off the sheet at all. Asked of the
+       material rather than of its name, so a heavy gouache gets this the day it
+       arrives. A stain has no surface to tune. */
+    appliesTo: (t) => ((t.wet?.relief ?? 0) > 0),
+    why: 'Impasto depth and glossiness, with the dials they drive underneath.',
   },
   {
     id: 'tilt',

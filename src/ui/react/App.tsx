@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { PIGMENTS } from '../../color/pigment-palette';
 import { recipeToHex } from '../../color/km';
 import { PAPERS } from '../../substrate/papers';
-import { controlsFor, labelOf } from '../controls';
+import { controlsFor, dialGroups, labelOf } from '../controls';
 import { DOCK_TOOLS, dockToolsFor } from '../dock-tools';
 import { MEDIUM_COLLECTIONS, papersFor } from '../media';
 import { Icon } from './icons';
@@ -129,6 +129,11 @@ export function App({ store }: { store: StudioStore }) {
               isSelected={store.tiltOpen} onChange={(v) => store.setTiltOpen(v)}>
               <Icon name={d.icon} />
             </Toggle>
+          ) : d.id === 'impasto' ? (
+            <Toggle key={d.id} className="st-icon" aria-label={d.label} title={d.label}
+              isSelected={store.surfaceOpen} onChange={(v) => store.setSurfaceOpen(v)}>
+              <Icon name={d.icon} />
+            </Toggle>
           ) : (
             <Btn key={d.id} className={`st-icon${store.sheet === 'drying' ? ' on' : ''}`}
               aria-label={d.label} title={d.label} onPress={() => store.setSheet('drying')}>
@@ -162,14 +167,20 @@ export function App({ store }: { store: StudioStore }) {
       <HudWindows
         stickInHand={store.activeDry?.form === 'stick'}
         readoutsOn={store.readouts}
-        tools={store.tiltOpen
-          ? [{
+        tools={[
+          ...(store.tiltOpen ? [{
             id: 'tilt',
             title: 'Tilt',
             node: <TiltPad store={store} />,
             onClose: () => store.setTiltOpen(false),
-          } as ToolWindow]
-          : []}
+          } as ToolWindow] : []),
+          ...(store.surfaceOpen ? [{
+            id: 'surface',
+            title: 'Paint surface',
+            node: <SurfacePanel store={store} />,
+            onClose: () => store.setSurfaceOpen(false),
+          } as ToolWindow] : []),
+        ]}
       />
     </div>
   );
@@ -358,6 +369,49 @@ function DryingSheet({ store }: { store: StudioStore }) {
  *
  * The dragging is useMove now, which means the arrow keys tilt the board too.
  */
+/**
+ * The paint surface, as the artist asked for it on 2026-08-25: each macro on
+ * its own line with the dials it drives centred underneath, and plain sliders
+ * from there.
+ *
+ * The grouping is read from the control library (`dialGroups`), not written
+ * out here, so a macro added later brings its own group with it. Sheen appears
+ * under both macros on purpose — it is one dial drawn twice, and moving it in
+ * either place moves the same number.
+ */
+function SurfacePanel({ store }: { store: StudioStore }) {
+  const tool = store.toolContext();
+  const { groups, loose } = dialGroups(tool);
+  const dial = (c: ReturnType<typeof dialGroups>['loose'][number], wide: boolean) => (
+    <div key={c.id} className={wide ? 'sp-macro' : 'sp-sub'}>
+      <Slider
+        orientation="horizontal"
+        label={labelOf(c, tool)}
+        value={store.value(c.id)}
+        min={c.min}
+        max={c.max}
+        format={c.format}
+        onChange={(v) => store.setValue(c.id, v)}
+      />
+    </div>
+  );
+  return (
+    <div className="sp">
+      {groups.map((g) => (
+        <section key={g.macro.id} className="sp-group">
+          {dial(g.macro, true)}
+          <div className="sp-under">{g.under.map((c) => dial(c, false))}</div>
+        </section>
+      ))}
+      {loose.length > 0 && (
+        <section className="sp-group sp-loose">
+          <div className="sp-under">{loose.map((c) => dial(c, false))}</div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function TiltPad({ store }: { store: StudioStore }) {
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const padRef = useRef<HTMLDivElement>(null);

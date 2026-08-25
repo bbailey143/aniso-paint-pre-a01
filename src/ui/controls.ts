@@ -108,6 +108,17 @@ export interface RailControl {
    * afterwards and it stays where it is put, until a macro is moved again.
    */
   writes?(v: number, get: (id: string) => number): Record<string, number>;
+
+  /**
+   * The macro dials this one serves, if any.
+   *
+   * Grouping lives here rather than in the panel that draws it, so a new macro
+   * arrives with its own group and nothing in the UI has to be told. Sheen
+   * names both, because it genuinely answers to both: how bright a glint is
+   * depends on how shiny the surface is AND on there being a ridge to catch it.
+   * It is one dial shown twice, not two.
+   */
+  under?: string[];
   /** Does this dial mean anything for the tool in hand? */
   appliesTo(tool: ToolContext): boolean;
   /** One line on what it drives, for whoever reads this next. */
@@ -207,6 +218,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'smear',
     label: 'Smear',
     belongsTo: 'paint',
+    under: ['impasto'],
     min: 0,
     max: 4,
     initial: 0,
@@ -223,6 +235,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'relief',
     label: 'Relief',
     belongsTo: 'paint',
+    under: ['impasto'],
     min: 0,
     max: 40,
     initial: 0,
@@ -316,6 +329,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'gloss',
     label: 'Gloss',
     belongsTo: 'paint',
+    under: ['glossiness'],
     min: 0,
     max: 1,
     initial: 0,
@@ -336,6 +350,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'sheen',
     label: 'Sheen',
     belongsTo: 'paint',
+    under: ['impasto', 'glossiness'],
     min: 0,
     max: 1.5,
     initial: 0.55,
@@ -353,6 +368,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'sheenWidth',
     label: 'Sheen Width',
     belongsTo: 'paint',
+    under: ['glossiness'],
     min: 0,
     max: 1,
     // Reproduces the tightness that used to be hard-coded, so an untouched
@@ -408,6 +424,26 @@ export const RAIL_CONTROLS: RailControl[] = [
 /** The dials for this tool, optionally only the ones from one of the two
  *  groups. Omit `where` and you get everything, which is what the command
  *  palette and any future inspector should ask for. */
+/**
+ * The paint dials as GROUPS: each macro with the dials it drives beneath it.
+ *
+ * A dial that answers to no macro comes back in `loose`, so nothing can be
+ * added to the library and quietly fail to appear anywhere.
+ */
+export function dialGroups(tool: ToolContext): {
+  groups: { macro: RailControl; under: RailControl[] }[];
+  loose: RailControl[];
+} {
+  const paint = controlsFor(tool, 'paint');
+  const macros = paint.filter((c) => c.writes);
+  const groups = macros.map((macro) => ({
+    macro,
+    under: paint.filter((c) => c.under?.includes(macro.id)),
+  }));
+  const claimed = new Set(groups.flatMap((g) => [g.macro.id, ...g.under.map((c) => c.id)]));
+  return { groups, loose: paint.filter((c) => !claimed.has(c.id)) };
+}
+
 export const controlsFor = (tool: ToolContext, where?: RailControl['belongsTo']): RailControl[] =>
   RAIL_CONTROLS.filter((c) => c.appliesTo(tool) && (where === undefined || c.belongsTo === where));
 
