@@ -47,16 +47,21 @@
 
 /* ------------------------------------------------ the paint, along the top */
 
-/* Stops short of the docked HUD column: 12px margin + 236px of window + a gap,
-   read off --hud-w in hud.css. Scrolls rather than squeezing, because a
-   material with six properties must not shrink the others to nothing — and a
-   HUD window dragged out of the dock can land anywhere, which is the artist's
-   arrangement to make, not this strip's to guess at. */
+/* Sized to the dials it holds, not to the screen.
+   Two dials on a wide monitor used to stretch edge to edge, which stops reading
+   as a control and starts reading as a banner. So the strip shrink-fits its
+   contents, and the width it is allowed is whichever ceiling comes first: a
+   comfortable panel, or stopping short of the docked HUD column (12px margin +
+   236px of window + a gap, read off --hud-w in hud.css). Past that it scrolls
+   rather than squeezing its dials to nothing — and a HUD window dragged out of
+   the dock can land anywhere, which is the artist's arrangement to make, not
+   this strip's to guess at. */
 .st-paints {
   position: absolute;
   top: calc(10px + var(--st-safe-t, 0px));
   left: calc(84px + var(--st-safe-l));
-  right: 264px;
+  right: auto;
+  max-width: min(560px, calc(100% - 348px - var(--st-safe-l)));
   display: flex;
   gap: 0;
   align-items: center;
@@ -69,10 +74,16 @@
   scrollbar-width: none;
 }
 .st-paints::-webkit-scrollbar { display: none; }
-/* The dials share the strip evenly — one property of the paint is not more
-   important than another — but never squeeze below a width you can still read
-   a number in. Past that the strip scrolls instead. */
-.st-paints > * { flex: 1 1 0; min-width: 128px; padding: 0 13px; }
+/* Each dial gets the same width as its neighbours — one property of the paint
+   is not more important than another — and that width is a set amount rather
+   than a share of whatever is going, so two dials do not each take half a
+   monitor. Stated as a min-width and not only a basis, because a strip that
+   sizes itself to its contents measures a dial by its LABEL — and "Glossiness"
+   is a short word, so a basis alone collapsed the pair to their floor. Past the
+   room available the strip scrolls rather than squeezing them. */
+.st-paints > * { flex: 0 0 232px; min-width: 232px; padding: 0 13px; }
+/* And the pill keeps its own height. Nothing may stretch it into a slab. */
+.st-paints .st-htrack { max-height: 34px; }
 /* A hairline between neighbours, so six dials read as six things rather than
    one long row of knobs. Between, not around: the ends of the strip already
    have the panel's own edge. */
@@ -99,8 +110,11 @@
 .st-hlabelled .st-htrack { grid-column: 1 / -1; }
 
 @media (max-width: 900px) {
-  /* No HUD column to dodge on a narrow screen, and the strip needs the room. */
-  .st-paints { right: calc(10px + var(--st-safe-r, 0px)); }
+  /* No HUD column to dodge on a narrow screen, so the only ceiling left is the
+     edge of the glass. */
+  .st-paints {
+    max-width: calc(100% - 94px - var(--st-safe-l) - var(--st-safe-r, 0px));
+  }
 }
 
 /* Out of the way while a stroke is happening, same as everything else. */
