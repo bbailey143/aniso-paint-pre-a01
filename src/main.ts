@@ -343,7 +343,11 @@ async function main() {
   if (document.body.classList.contains('st-readouts')) watchGauges(true);
 
   let gaugeTick = 0;
-  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
+  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
+  /* What the tuft lifts off the sheet goes back into the tuft. The engine
+     subtracts it on the GPU and reports the exact amount here. */
+  engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
+  stroke.onBrushReset = () => engine.discardPickup();
   requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke);
 }
 function showFatal(message: string) { const el = document.createElement('div'); el.className = 'panel'; el.style.cssText = 'top:50%;left:50%;transform:translate(-50%,-50%);max-width:420px;text-align:center;color:var(--ink);line-height:1.6'; el.innerHTML = `<b style="color:var(--accent)">WebGPU unavailable</b><br><br>${message}`; document.body.appendChild(el); }

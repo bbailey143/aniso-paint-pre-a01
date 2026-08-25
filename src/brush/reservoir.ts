@@ -14,6 +14,10 @@
 
 import type { ReservoirDef } from './types';
 
+/** What a brim-full tuft still picks up, as a share of what an empty one would.
+ *  `[UNVERIFIED — tuning]` See `roomFraction`. */
+const FULL_STILL_TAKES = 0.3;
+
 export class Reservoir {
   readonly bristles: number;
   readonly segments: number;
@@ -238,9 +242,107 @@ export class Reservoir {
    * The reverse direction — canvas back into the brush (lifting, scrubbing,
    * picking up a neighbouring colour and dragging it along).
    *
-   * `[DEFERRED — P6]` Needs the canvas state read back to the CPU, which means a
-   * GPU->CPU path with a frame of lag. The rate lives here now so the schema is
-   * complete and the plumbing is the only thing missing.
+   * How grabby the TUFT is. What it is dragged through has its own say — see
+   * `MediumPhysics.upRate` — and the deposit pass multiplies the two, because
+   * both are true at once: a hog bristle scrubs harder than a sable, and wet
+   * oil gives itself up far more readily than a thin wash. Neither number is
+   * measured off a source; both are tuning rows.
    */
   get upRate(): number { return this.def.upRate; }
+
+  /**
+   * How readily the tuft will take more on, 0..1.
+   *
+   * The deposit pass multiplies its pickup by this, which is what makes a
+   * thirsty brush drink and a laden one mostly shove. It throttles rather than
+   * hard-stops, for two separate reasons:
+   *
+   *   - A hard cap on the brush side would refuse paint the sheet had ALREADY
+   *     given up, and refused paint is paint destroyed. The clamp has to live
+   *     where the subtraction happens or the two sides drift apart.
+   *   - `[UNVERIFIED — tuning]` A brim-full tuft still exchanges paint at its
+   *     surface; it just takes far less. Letting this reach zero would make
+   *     Load a switch that silently turns picking-up off, which is the exact
+   *     dead-control failure this project's own rules warn about.
+   *
+   * Occupancy is the WORSE of water and pigment rather than their sum, because
+   * `charge` fills both to the same capacity at full load — a brush charged to
+   * the brim holds one capacity of each, not two capacities of one thing.
+   */
+  roomFraction(): number {
+    let water = 0, pig = 0, cap = 0;
+    for (let i = 0; i < this.water.length; i++) {
+      cap += this.capacity[i];
+      water += this.water[i];
+      for (let k = 0; k < 8; k++) pig += this.pigment[i * 8 + k];
+    }
+    if (cap <= 1e-6) return 0;
+    const full = Math.max(0, Math.min(1, Math.max(water, pig) / cap));
+    return FULL_STILL_TAKES + (1 - FULL_STILL_TAKES) * (1 - full);
+  }
+
+  /**
+   * Take up what the sheet gave. `water` and `pig[8]` are the frame's totals,
+   * measured on the GPU as it removed them, so what arrives here is exactly
+   * what left the canvas — the two are the same subtraction, reported.
+   *
+   * Spread across the tuft in proportion to each cell's remaining room, so the
+   * emptier parts drink first and nothing piles into one hair. Where there is
+   * no room left it still goes in; see `roomFraction`.
+   *
+   * `[UNVERIFIED — reasoned]` Which reservoir cell a given canvas cell ought to
+   * credit is knowable in principle: Card 6's footprint carries the tuft's own
+   * texcoords for exactly this purpose. Until it does, spreading by room is the
+   * honest stand-in, and `wick` evens the tuft out every step regardless.
+   */
+  pickUp(water: number, pig: Float32Array) {
+    let pigTotal = 0;
+    for (let k = 0; k < 8; k++) pigTotal += pig[k];
+    if (water <= 0 && pigTotal <= 0) return;
+
+    const n = this.bristles * this.segments;
+    const per = new Float32Array(n);
+    let room = 0;
+    for (let i = 0; i < n; i++) {
+      let held = this.water[i];
+      for (let k = 0; k < 8; k++) held += this.pigment[i * 8 + k];
+      per[i] = Math.max(0, this.capacity[i] - held);
+      room += per[i];
+    }
+    // A brush with no room anywhere still has to put it somewhere; share it out
+    // by capacity then, so the belly takes more than the tip either way.
+    if (room <= 1e-9) {
+      room = 0;
+      for (let i = 0; i < n; i++) { per[i] = this.capacity[i]; room += per[i]; }
+    }
+    if (room <= 1e-9) return;
+
+    for (let i = 0; i < n; i++) {
+      const share = per[i] / room;
+      if (share <= 0) continue;
+      this.water[i] += water * share;
+      for (let k = 0; k < 8; k++) this.pigment[i * 8 + k] += pig[k] * share;
+    }
+  }
+
+  /**
+   * What the tuft is holding, as slot weights summing to 1.
+   *
+   * This is the colour the brush actually lays, and once it can pick paint up
+   * that is no longer the colour it was dipped in. All zeros for an empty or
+   * rinsed brush, which correctly lays nothing.
+   */
+  composition(out: Float32Array) {
+    out.fill(0);
+    let total = 0;
+    for (let i = 0; i < this.water.length; i++) {
+      for (let k = 0; k < 8; k++) {
+        const g = this.pigment[i * 8 + k];
+        out[k] += g;
+        total += g;
+      }
+    }
+    if (total <= 1e-12) { out.fill(0); return; }
+    for (let k = 0; k < 8; k++) out[k] /= total;
+  }
 }

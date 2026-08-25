@@ -25,13 +25,16 @@ export interface ReservoirDef {
   /**
    * Fraction of canvas holding that transfers back up (lifting/scrubbing).
    *
-   * [NOT WIRED] Nothing reads this. The deposit pass moves paint one way only,
-   * so no brush lifts, scrubs or picks up the colour it is dragged through,
-   * whatever this says. The row is kept because the bidirectional exchange it
-   * belongs to is designed and specified — but until a pass reads it, treat
-   * any claim built on it as false. The material inspector currently shows it
-   * as "picks up", which is the exact failure the controls rules warn about:
-   * a number that reads like a feature and drives nothing.
+   * WIRED 2026-08-25. The deposit pass takes paint off the sheet under the
+   * hairs at this rate times the material's own `MediumPhysics.upRate`, per
+   * cell travelled, and hands it to the reservoir — so a brush now lifts,
+   * scrubs, and carries the colour it is dragged through. Both halves matter:
+   * a hog scrubs harder than a sable, and wet oil gives itself up far more
+   * readily than a thin wash.
+   *
+   * It stood here reading like a feature and driving nothing from the day the
+   * schema was written until that date. The material inspector's "picks up"
+   * row was a lie for all of it.
    */
   upRate: number;
 }

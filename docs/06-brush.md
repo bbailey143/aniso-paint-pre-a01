@@ -124,10 +124,31 @@ Three things the build had to add or fix beyond the card:
 - **Reservoir capacities are tuned to the engine's units, not measured.** The first
   values were ~50× too small and a full stroke was invisible.
 
-`[DEFERRED — P6]` **Canvas → brush pickup.** `upRate` is in the schema and the
-transfer is specified, but the reverse direction needs canvas state read back to the
-CPU (a GPU→CPU path with a frame of lag). Lifting, scrubbing, and dragging a
-neighbouring colour along all wait on it.
+`[BUILT 2026-08-25]` **Canvas → brush pickup.** ~~`[DEFERRED — P6]` the reverse
+direction needs canvas state read back to the CPU (a GPU→CPU path with a frame of
+lag).~~ It does need that path; the lag turned out not to be the blocker it was
+assumed to be — measured at **0 steps** at one step per frame (docs/16 E4).
+
+The deposit pass takes paint off the sheet under the hairs at `upRate` (brush) ×
+`upRate` (material) × coverage × the loose share, per cell travelled, throttled by
+how much room the tuft has left. It tallies exactly what it subtracted into a small
+fixed-point buffer; the host reads that back and credits the reservoir. Sheet loss
+and brush gain match to four decimal places (docs/16 E3).
+
+Two things this cost, both written up in docs/16:
+
+- **Quantise before you subtract, not after.** Tallying a rounded-down copy of a
+  full-precision subtraction destroyed 0.91 % of everything lifted.
+- **A dip must discard pickup still in the post.** Otherwise the previous stroke's
+  colour lands on a tuft that has just been washed out and recharged.
+
+What the brush LAYS is now its reservoir's own composition rather than the palette
+recipe. The palette is what `charge` puts in; the tuft is what comes out, and once
+it can lift, those stop being the same thing.
+
+Still open: which reservoir cell a given canvas cell ought to credit. The footprint
+above carries the tuft's texcoords for exactly this and the deposit does not use
+them — pickup is spread across the tuft by remaining room instead.
 
 `[NOTE]` The footprint can exceed one GPU buffer on a fast flick, so the deposit is
 dispatched in chunks — each submitted separately, because `writeBuffer` runs on the

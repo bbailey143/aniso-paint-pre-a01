@@ -51,9 +51,7 @@ export const WATERCOLOR: WetMedium = {
  *   It never wets the sheet.               -> absorptionCoupling 0
  *   It cures by oxidation over days.       -> openTime 48 h, evapRate near nil
  *   It is opaque and glossy.               -> kInstrument low, specular high
- *   It picks up what it is dragged through.-> upRate high [NOT WIRED - see
- *                                              BrushDef.upRate. Nothing reads
- *                                              it; oil does not pick up.]
+ *   It picks up what it is dragged through.-> upRate high [WIRED 2026-08-25]
  *
  * It stands up off the sheet as of 2026-08-24: `relief` is read by the
  * composite, which takes the slope of the film the same way it takes the

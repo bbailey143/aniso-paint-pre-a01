@@ -1,0 +1,209 @@
+# 16 — Brush pickup log
+
+**Opened 2026-08-25 by Claude (Opus 5), on `D:\aniso-paint-pre-a01`, branch
+`tuft-fill`, Windows 11, GPU amd / gcn-4.** Everything here is measured in the
+running app against the real GPU passes; none of it can be driven from node.
+
+**Why this log exists.** The artist sent in an oil painting — blue strokes with
+orange dragged across them — with the note: *"The orange paint simply lays on
+top, it doesn't pick up bottom layers almost at all. While there should be some
+resistance to that, it shouldn't be a ton."*
+
+**The standing setup** unless a card says otherwise: Oil, Flat Hog, load 0.75,
+mouse pressure 0.65, 512 grid. A blue stripe is laid down the sheet at x=256,
+then an orange stroke is pulled left to right across it at y=250. Pigment is
+read straight out of `wet1` by `fluid.dump`, summed over the rows the stroke
+covers (y 230..270) at each x. Slot 0 is blue, slot 1 orange.
+
+---
+
+### E1 — The brush could not pick anything up, and never could (2026-08-25)
+
+**Purpose.** Establish what "doesn't pick up bottom layers almost at all"
+actually measures, before changing anything.
+
+**Method.** The standing setup, at the code as it shipped. Two identical runs.
+
+**Raw result.** Blue pigment along the orange trail, both runs identical to four
+decimal places:
+
+```
+x           250    256    258    260    262    265    270    275    285    300+
+blue before  0.05   6.90   1.58   0.60   0     0      0      0      0      0
+blue after   0.08   6.34   3.53   1.07   0.19  0.013  0.0001 0      0      0
+```
+
+**What it proves.** Blue reaches six cells past the crossing and then stops
+dead. The stroke is 290 cells long, so the paint travels about two per cent of
+it. What little movement there is comes from the smear shoving one neighbour at
+a time — the brush is not carrying anything, because there is no mechanism by
+which it could. `Reservoir.upRate` was marked `[NOT WIRED]` in the source from
+the day the schema was written: nothing read it.
+
+**What it does NOT prove.** Nothing about watercolour, which was never measured
+here. Nothing about how it should look — six cells is the wrong answer, but this
+does not say what the right one is.
+
+---
+
+### E2 — The brush→sheet deposit is not one-for-one (2026-08-25)
+
+**Purpose.** Find an instrument for conservation before building anything, since
+Invariant 1 makes conservation the axiom.
+
+**Method.** Charge the brush, record `reservoir.totals().pigment`, lay one
+stroke, record it again, and compare the drop against `sampleGauges().pigment`.
+Pickup entirely off, so this is the code as it shipped.
+
+**Raw result.**
+
+```
+brush lost      95.757
+sheet gained   223.577
+```
+
+**What it proves.** The obvious instrument does not work. A hair's withdrawal is
+laid into every cell it covers, so the deposit multiplies what leaves the brush
+by the coverage of its footprint — here by about 2.3. This is pre-existing and
+has nothing to do with pickup, but it rules out "brush lost = sheet gained" as a
+check, and it invalidated three of the measurements attempted before it was
+found.
+
+**What it does NOT prove.** That the deposit is wrong. It may well be the
+intended reading of coverage. It is recorded because it defeats a whole class of
+tests, not because it has been judged.
+
+---
+
+### E3 — What leaves the sheet is exactly what reaches the brush (2026-08-25)
+
+**Purpose.** The pickup subtracts on the GPU and credits on the CPU, a frame or
+more later. Show the two are the same number.
+
+**Method.** Isolate pickup as the only thing that can move pigment. Lay the blue
+stripe with `upRate` at 0 so no tally can be in flight when the window opens;
+rinse the brush so it carries no colour; then switch `upRate` to 0.42 and scrub
+the stripe twice with the rinsed brush, counting every credit the engine hands
+over. A rinsed brush lays no pigment, so the sheet can only lose. Driven one
+engine step per task. Two identical runs.
+
+**Raw result.**
+
+```
+                    run A      run B
+sheet before      223.5211   223.5762
+sheet lost        110.5026   110.4025
+credited to brush 110.5026   110.4025
+shortfall           0.0000     0.0000
+```
+
+**What it proves.** Exact, to four decimal places, twice. Nothing is created and
+nothing is destroyed in the exchange.
+
+**Earlier, and struck.** ~~The first version tallied a rounded-down copy of a
+full-precision subtraction.~~ That measured a shortfall of **0.91 %** of
+everything lifted — twice, to three decimals — which is paint ceasing to exist.
+The fix is to quantise first and subtract exactly what was reported (`lift()` in
+`deposit.wgsl`). Recorded rather than deleted because "the tally is only a
+report, it cannot affect the physics" was the wrong instinct and worth
+remembering.
+
+**What it does NOT prove.** Nothing about the brush→sheet direction, which E2
+shows is not one-for-one. This measures only the sheet→brush half.
+
+---
+
+### E4 — The readback does not lag (2026-08-25)
+
+**Purpose.** Card 6 deferred this work on the grounds that it "needs canvas
+state read back to the CPU (a GPU→CPU path with a frame of lag)". Measure the
+lag.
+
+**Method.** Count engine steps between the first step that could pick anything
+up and the first credit arriving. Driven one step per task, which is how a real
+frame runs. A rinsed brush scrubbed across wet paint for 120 steps.
+
+**Raw result.**
+
+```
+first step that lifts     261
+first credit arrives      261
+lag                         0 steps
+credits over 120 steps    100
+```
+
+**What it proves.** At one step per frame the credit lands on the same step,
+and a drain completes on about five frames in six. The deferral's stated
+blocker is not one in practice.
+
+**What it does NOT prove.** This is a desktop discrete GPU. An iPad may map
+buffers more slowly, and nothing here has been run on one.
+
+**A trap this exposed.** Driven the way a bench script drives it — hundreds of
+`step()` calls with no yield — the queue goes deep and credits arrive in one
+lump near the end of the stroke. Two earlier measurements in this session were
+read that way and said the brush only goes dirty at the end of a stroke. It is
+the harness, not the engine. Yield between steps or the readback timing is
+fiction.
+
+---
+
+### E5 — The brush now carries colour the length of the stroke (2026-08-25)
+
+**Purpose.** The artist's actual question.
+
+**Method.** The standing setup, driven one step per task, with `upRate` at 0 and
+then at 0.42. Two identical runs of the second.
+
+**Raw result.** Blue pigment along the orange trail (the crossing is x=256):
+
+```
+x              200    240     256     265     280     300     340     380     420
+no pickup      0      0       7.706   0.0028  0       0       0       0       0
+with pickup    0      0.0002  3.957   0.0198  0.0201  0.0175  0.0141  0.0127  0.0089
+orange there   0.79   0.65    0.59    0.67    0.69    0.63    0.58    0.59    0.48
+```
+
+Blue on the brush: **0.0000 at the dip**, 0.0166 at the end of the stroke.
+
+**What it proves.** Blue now runs the whole 164 cells from the crossing to the
+end of the stroke and fades as it goes, where before it was exactly zero past
+nine cells. The brush leaves the crossing carrying colour it did not dip in.
+Roughly 3 % of the trail's pigment is blue.
+
+The 0.0000 at the dip matters as much as the rest: it says a fresh dip discards
+what the brush was holding. Before `discardPickup`, an orange stroke came out
+carrying blue from its first cell — the *previous* stroke's blue, arriving late.
+
+**What it does NOT prove.** Whether 3 % looks right. That is the artist's call
+and the two rows that set it (`ReservoirDef.upRate` per brush,
+`MediumPhysics.upRate` per material) are where to move it.
+
+---
+
+### E6 — A stroke lays about a sixth less paint than it did (2026-08-25)
+
+**Purpose.** Pickup does not wait for a second stroke. A brush lifts its own
+paint back off as the tuft trails over ground its leading edge just covered, so
+turning this on changes every mark, not only crossings.
+
+**Method.** E5's runs, reading the orange trail before it reaches the crossing.
+
+**Raw result.**
+
+```
+x            200     240
+no pickup    0.946   0.686
+with pickup  0.788   0.656
+                -17 %   -4 %
+```
+
+Whole-sheet, one stroke: 223.6 with pickup off, 178.7 with it on — **20 % less
+paint down**.
+
+**What it proves.** This is a change to the feel of every stroke, not only to
+what happens over existing paint, and it is worth saying out loud rather than
+letting it be discovered as "my strokes got thinner".
+
+**What it does NOT prove.** That 20 % is wrong. A brush dragging through its own
+wet paint genuinely does take some back.

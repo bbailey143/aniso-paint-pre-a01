@@ -46,8 +46,11 @@ export class StrokeEngine {
   private travelY = 0;
   private brush: Brush;
   private size: number;
-  /** The mix currently on the brush, and how heavily it was charged. */
-  private mix = new Float32Array(8);
+  /** The mix the brush was last DIPPED in, and how heavily it was charged. */
+  private mix: Float32Array<ArrayBuffer> = new Float32Array(8);
+  /** What the tuft is holding now, which drifts from `mix` as it picks paint
+   *  up. Reused rather than allocated per frame — see `brushMix`. */
+  private live: Float32Array<ArrayBuffer> = new Float32Array(8);
   private loading = 0.6;
   /** Extra clean water added to the colour charge, 0..1. */
   private waterCharge = 0;
@@ -118,12 +121,65 @@ export class StrokeEngine {
     };
   }
 
+  /**
+   * Called whenever the tuft's whole load is replaced - a dip or a rinse.
+   *
+   * The host wires this to the engine, which throws away any pickup still in
+   * the post. Paint the brush lifted a moment ago belongs to the brush as it
+   * was; crediting it after a dip puts the last stroke's colour onto a tuft
+   * that has just been washed out.
+   */
+  onBrushReset: (() => void) | null = null;
+
   /** Dip the brush. Called when the mix or load changes, and at stroke start. */
   charge(mix: Float32Array, loading: number, waterCharge = this.waterCharge) {
     this.mix.set(mix.subarray(0, 8));
     this.loading = loading;
     this.waterCharge = Math.min(1, Math.max(0, waterCharge));
     this.brush.reservoir.charge(this.mix, loading, this.waterCharge);
+    this.onBrushReset?.();
+  }
+
+  /**
+   * The colour on the tuft RIGHT NOW, as slot weights summing to 1.
+   *
+   * Not the same thing as the colour on the palette: once the brush can lift
+   * paint off the sheet, what it is holding drifts away from what it was dipped
+   * in, and this is what makes the trail past a crossing come out muddied. The
+   * palette recipe is still what `charge` puts in — this is what comes out.
+   *
+   * Dry tools have no tuft; they keep laying exactly what they are made of.
+   */
+  get brushMix(): Float32Array<ArrayBuffer> {
+    if (this.dry) return this.mix;
+    this.brush.reservoir.composition(this.live);
+    return this.live;
+  }
+
+  /**
+   * The tuft's side of the pickup exchange: how grabby these bristles are,
+   * times how much room they have left.
+   *
+   * Both halves are real and both are data rows. A hog scrubs where a sable
+   * barely touches, and a brush that has run down drinks where a freshly
+   * dipped one mostly shoves. The material has its own say - see
+   * `FluidParams.upRate` - and the deposit pass multiplies the two together.
+   *
+   * A dry tool has no tuft and picks nothing up.
+   */
+  get brushTake(): number {
+    if (this.dry) return 0;
+    return this.brush.reservoir.upRate * this.brush.reservoir.roomFraction();
+  }
+
+  /**
+   * Take up what the sheet just gave. Called by the engine after it has read
+   * back what the deposit pass subtracted, so this is a credit for a debit that
+   * has already happened — never a decision to make here.
+   */
+  pickUp(water: number, pigment: Float32Array) {
+    if (this.dry) return;
+    this.brush.reservoir.pickUp(water, pigment);
   }
 
   /** How fast the tuft gives its load up. Lower makes one dip go further. */
@@ -148,6 +204,7 @@ export class StrokeEngine {
   rinse(waterFrac = 1) {
     this.mix.fill(0);
     this.brush.reservoir.rinse(waterFrac);
+    this.onBrushReset?.();
   }
 
   begin(gx: number, gy: number, s: StylusSample) {
@@ -161,6 +218,7 @@ export class StrokeEngine {
     // strokes, and within a stroke it runs down. That depletion is what makes a
     // long stroke fade rather than run forever.
     this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
+    this.onBrushReset?.();
     this.brush.begin(this.toInput(gx, gy, s, 0, 0));
     this.last = { x: gx, y: gy, s };
   }

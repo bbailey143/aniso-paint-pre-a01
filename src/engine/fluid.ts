@@ -53,6 +53,10 @@ const NQ = 15;
 // The second reduction stage writes this many lanes (NQ, padded). Keep in step
 // with LANES in reduce_final.wgsl — it is the size of every gauge readback.
 const TOTAL_LANES = 16;
+/** Pickup tally: the vehicle, then one lane per pigment slot. */
+const PICKUP_LANES = 9;
+/** Must match TALLY in deposit.wgsl. Fixed point, because WGSL has no atomic float. */
+const PICKUP_TALLY = 1.0e5;
 // Footprint segments per frame. The brush emits one per contacting bristle
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
@@ -104,6 +108,15 @@ export interface FluidParams {
   /** How hard the brush shoves the paint already down. 1 is the lab's share. */
   smearStrength: number;
   /**
+   * How readily this material comes back UP onto the tuft, per cell travelled.
+   *
+   * The material's half of the pickup; the tuft's own grabbiness is the other
+   * half and lives on its reservoir row. Wet oil gives itself up readily, a
+   * thin wash much less, and every dry medium not at all. The deposit pass
+   * multiplies the two.
+   */
+  upRate: number;
+  /**
    * Wet -> dry pigment handoff, and therefore glazing and re-wetting.
    *
    * Off is the fallback, not the intent: with it off a wash still dries
@@ -137,6 +150,8 @@ export const DEFAULT_FLUID: FluidParams = {
   yieldStress: 0.0,
   teflonMin: 0.0,
   smearStrength: 1.0,
+  // Off by default. A blank engine picks nothing up until a medium says it may.
+  upRate: 0.0,
   handoffEnabled: true,
 };
 
@@ -279,6 +294,25 @@ export class FluidEngine {
   private inkSegs = new Float32Array(MAX_SEGS * DRY_SEG_FLOATS);
   private ctlBuf: GPUBuffer;
   private mixBuf: GPUBuffer;
+  /** What the tuft lifted off the sheet this frame — see PICKUP_LANES. */
+  private pickupBuf: GPUBuffer;
+  private pickupRead: GPUBuffer;
+  private pickupZero = new Uint32Array(PICKUP_LANES);
+  private pickupBusy = false;
+  /** True while the tally may still hold something nobody has collected. */
+  private pickupPending = false;
+  /** Bumped whenever the brush is dipped or rinsed. See `discardPickup`. */
+  private pickupGen = 0;
+  private pickupOut = new Float32Array(8);
+  /**
+   * Where the lifted paint goes: the brush's reservoir, via the host.
+   *
+   * It arrives a frame or two late, because the map is asynchronous and a frame
+   * that finds one in flight skips rather than stalls. That is the right trade
+   * here — the sheet has already given the paint up, so nothing is riding on
+   * WHEN the tuft is told, only that it is told exactly once and told the truth.
+   */
+  onPickUp: ((water: number, pigment: Float32Array) => void) | null = null;
   private partialsBuf: GPUBuffer;
   /** Stage-2 output: one row of NQ totals. This is the ONLY buffer the host
    * copies from — 64 bytes a frame instead of the ~53 KB of raw partials. */
@@ -387,6 +421,18 @@ export class FluidEngine {
     });
     this.mixBuf = device.createBuffer({
       size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
+    });
+    /* The pickup tally: vehicle, then the eight pigment slots, in fixed point
+       because WGSL has no atomic float. Cleared before the frame's first
+       deposit chunk and summed across all of them. */
+    this.pickupBuf = device.createBuffer({
+      size: PICKUP_LANES * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      label: 'pickup-tally',
+    });
+    this.pickupRead = device.createBuffer({
+      size: PICKUP_LANES * 4,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, label: 'pickup-readback',
     });
 
     const wgPerSide = Math.ceil(n / 16);
@@ -603,6 +649,10 @@ export class FluidEngine {
     pass.end();
     enc.clearBuffer(this.fluxBuf);
     enc.clearBuffer(this.capillaryAlarmBuf);
+    // A tally standing from a stroke on the old sheet would be credited to the
+    // brush after the sheet it came from had ceased to exist.
+    enc.clearBuffer(this.pickupBuf);
+    this.pickupPending = false;
     this.inkDirty = this.inkBandTrafficEnabled;
     this.gpu.device.queue.submit([enc.finish()]);
   }
@@ -688,11 +738,76 @@ export class FluidEngine {
   }
 
   /**
+   * Throw away any pickup the brush has not been told about yet.
+   *
+   * Call this when the brush is dipped or rinsed. What it lifted a moment ago
+   * belongs to the brush as it was, and a dip replaces that brush's whole load
+   * — so crediting it afterwards puts the last stroke's colour onto a tuft that
+   * has just been washed and recharged.
+   *
+   * [MEASURED 2026-08-25] Without this, an orange stroke laid across a blue
+   * stripe came out carrying blue from its FIRST cell — before it had reached
+   * the stripe. The blue was the previous stroke's, arriving late.
+   */
+  discardPickup() {
+    this.pickupGen++;
+    this.pickupPending = false;
+    this.gpu.device.queue.writeBuffer(this.pickupBuf, 0, this.pickupZero);
+  }
+
+  /**
+   * Hand what the tuft lifted back to the brush.
+   *
+   * The tally is NEVER cleared at the top of a frame, and that is the whole
+   * trick. A frame that finds a map still in flight has to skip its own read
+   * rather than stall the queue, and if the tally were per-frame that skipped
+   * frame's paint would simply cease to exist — debited from the sheet by the
+   * shader and never credited to anything. So the tally accumulates, the copy
+   * takes everything standing, and the wipe is queued immediately behind the
+   * copy. A skip therefore costs a frame of lag and nothing else.
+   *
+   * `writeBuffer` and `submit` share the queue timeline in call order, which is
+   * what makes "copy, then wipe" safe to write as two separate calls.
+   */
+  private drainPickup() {
+    const { device } = this.gpu;
+    if (!this.onPickUp) {
+      // Nobody is listening, so nothing may be lifted into limbo. Wipe it.
+      device.queue.writeBuffer(this.pickupBuf, 0, this.pickupZero);
+      return;
+    }
+    if (this.pickupBusy) return;
+    this.pickupBusy = true;
+    const gen = this.pickupGen;
+    const enc = device.createCommandEncoder({ label: 'pickup-read' });
+    enc.copyBufferToBuffer(this.pickupBuf, 0, this.pickupRead, 0, this.pickupRead.size);
+    device.queue.submit([enc.finish()]);
+    device.queue.writeBuffer(this.pickupBuf, 0, this.pickupZero);
+    this.pickupRead.mapAsync(GPUMapMode.READ).then(() => {
+      const raw = new Uint32Array(this.pickupRead.getMappedRange().slice(0));
+      this.pickupRead.unmap();
+      this.pickupBusy = false;
+      // Dipped or rinsed while this was in the post: it belongs to a brush that
+      // no longer exists. See `discardPickup`.
+      if (gen !== this.pickupGen) { this.pickupPending = false; return; }
+      const water = raw[0] / PICKUP_TALLY;
+      let any = water;
+      for (let k = 0; k < 8; k++) {
+        this.pickupOut[k] = raw[k + 1] / PICKUP_TALLY;
+        any += this.pickupOut[k];
+      }
+      // Nothing came back, so the buffer is genuinely empty and may rest.
+      if (any > 0) this.onPickUp?.(water, this.pickupOut);
+      else this.pickupPending = false;
+    }).catch(() => { this.pickupBusy = false; });
+  }
+
+  /**
    * Advance one frame. `segments` are resampled stroke pieces in grid space —
    * the host must space them <= 1 cell apart (Card 6; otherwise strokes bead).
    */
   step(segments: Float32Array<ArrayBuffer>, segCount: number, mixWeights: Float32Array<ArrayBuffer>,
-       travelX = 0, travelY = 0) {
+       travelX = 0, travelY = 0, brushTake = 0) {
     // Do not continually simulate an untouched sheet. The first wet footprint
     // wakes the solver; after that the normal gauge decides when it may rest.
     if (segCount > 0) {
@@ -729,6 +844,11 @@ export class FluidEngine {
       ctl[5] = travelX;
       ctl[6] = travelY;
       ctl[7] = this.params.smearStrength;
+      /* The pickup, in the two lanes the dry path uses for its own meanings.
+         Safe for the same reason lanes 5 and 6 are: each path writes the whole
+         block immediately before its own dispatch. */
+      ctl[8] = Math.max(0, this.params.upRate);
+      ctl[9] = Math.max(0, Math.min(1, brushTake));
       device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const denc = device.createCommandEncoder({ label: 'deposit-chunk' });
@@ -737,7 +857,7 @@ export class FluidEngine {
         U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
-        this.paper, { buffer: this.fluxBuf },
+        this.paper, { buffer: this.fluxBuf }, { buffer: this.pickupBuf },
       ]);
       dpass.end();
       this.wet0.flip(); this.wet1.flip(); this.wet2.flip(); this.wet5.flip();
@@ -768,6 +888,15 @@ export class FluidEngine {
       }
       device.queue.submit([denc.finish()]);
     }
+
+    /* NOT `if (segCount > 0)`. The last frames of a stroke add to the tally
+       after the final footprint has already been collected, and gating the
+       drain on contact left that sitting in the buffer until some later stroke
+       happened to sweep it up — which read as a brush going dirty long after it
+       was rinsed. The latch keeps an idle sheet from paying for a readback
+       without leaving the hole open. */
+    if (segCount > 0 && this.params.upRate > 0) this.pickupPending = true;
+    if (this.pickupPending) this.drainPickup();
 
     const enc = device.createCommandEncoder({ label: 'fluid-frame' });
     // Clear the ledger every frame, before anything reads it. Uninitialised, it

@@ -36,7 +36,50 @@ struct Ctl {
   /** How hard the brush shoves the paint already on the sheet. 1 is the lab's
    * own share; higher exaggerates it so it can be seen and then pulled back. */
   smear: f32,
+  /** How willingly the MATERIAL comes back up off the sheet, per cell
+   * travelled. 0 disables pickup entirely, which is every dry medium. */
+  upRate: f32,
+  /** The TUFT's side of the same exchange: how grabby these bristles are,
+   * times how much room they have left. A hog scrubs harder than a sable, and
+   * a thirsty brush drinks where a laden one mostly shoves.
+   *
+   * Computed on the CPU because only the CPU knows the tuft, and applied HERE
+   * rather than there so that what the sheet loses and what the brush gains
+   * cannot drift apart. */
+  brushTake: f32,
 };
+
+/**
+ * Fixed point for the pickup tally. WGSL has no atomic float, and the tally has
+ * to survive being written by every cell under the footprint at once.
+ *
+ * 1e5 is chosen against the overflow, not for the precision: a heavy cell can
+ * give up a couple of units of film, a big footprint is a few thousand cells,
+ * and 2 * 1e5 * 3000 is still under a tenth of what a u32 holds. A per-cell
+ * ceiling below keeps that arithmetic true even if a cell goes strange.
+ */
+const TALLY: f32 = 1.0e5;
+const TALLY_CEIL: f32 = 64.0;
+
+/**
+ * Report `v` as lifted, and return the amount actually reported.
+ *
+ * The caller must subtract the RETURN value from the sheet, not `v`. Tallying a
+ * rounded-down copy of a full-precision subtraction sounds harmless and is not:
+ * every cell loses its last fraction, the brush is never told, and that paint
+ * simply stops existing. [MEASURED 2026-08-25] Done the wrong way round it came
+ * to 0.91 % of everything lifted, twice, to three decimal places. Quantising
+ * first makes the two sides the same number by construction and the error zero.
+ *
+ * Amounts below one part in TALLY therefore lift nothing at all, which is the
+ * honest behaviour: below the resolution of the ledger, nothing moved.
+ */
+fn lift(v: f32, lane: u32) -> f32 {
+  let q = u32(clamp(v, 0.0, TALLY_CEIL) * TALLY);
+  if (q == 0u) { return 0.0; }
+  atomicAdd(&lifted[lane], q);
+  return f32(q) / TALLY;
+}
 
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var<storage, read> segs: array<Seg>;
@@ -57,6 +100,10 @@ struct Ctl {
 /** Where the smear puts what it lifts. Written for EVERY cell, zero where the
  * brush is not, and moved by the same conservative appliers the fluid uses. */
 @group(0) @binding(13) var<storage, read_write> flux: array<vec4<f32>>;
+/** What the tuft took up this frame, in fixed point: [vehicle, then 8 slots].
+ * Cleared before the frame's first chunk, summed across all of them, and handed
+ * back to the reservoir on the CPU. */
+@group(0) @binding(14) var<storage, read_write> lifted: array<atomic<u32>>;
 
 /** A neighbour's film height. Off the sheet reads as nothing there. */
 fn filmAt(c: vec2<i32>, n: i32) -> f32 {
@@ -156,6 +203,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var glo = textureLoad(wet1_in, c, 0);
   var ghi = textureLoad(wet2_in, c, 0);
   var w5 = textureLoad(wet5_in, c, 0);
+  /* The colour that was here before the hairs added any. The pickup takes its
+     share of THIS and not of the sum, or the brush would immediately lift back
+     the paint it had just that instant laid — a loop that changes nothing on
+     the sheet and steadily fills the tuft with its own colour. */
+  let gloBefore = glo;
+  let ghiBefore = ghi;
 
   /* How hard the hairs are driving this cell, and how much of the cell they
      cover. Two different questions, and running them together is what made the
@@ -245,6 +298,60 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       glo = glo + mix[0] * pig;
       ghi = ghi + mix[1] * pig;
     }
+  }
+
+  /* ---- Pickup: the brush takes paint back UP off the sheet -----------------
+   *
+   * The other half of the transfer the brush card specifies, and the half that
+   * was never built:
+   *
+   *     toCanvas    = downRate * reservoirQuantity     (the loop above)
+   *     toReservoir = upRate   * canvasQuantity        (this)
+   *
+   * Without it a brush can only add. It cannot lift, cannot scrub, and cannot
+   * carry the colour it is dragged through — so every stroke lies on top of
+   * what is under it, which is what the artist reported on 2026-08-25 looking
+   * at orange laid across blue.
+   *
+   * [MEASURED, same day, two identical runs] Blue stripe, orange stroke pulled
+   * across it: blue reached 6 cells past the crossing and was exactly 0.0000
+   * from there on. The stroke was 290 cells long. The only thing moving any
+   * blue at all was the smear below, shoving one neighbour at a time.
+   *
+   * What is taken here LEAVES THE SHEET. That is not a hole in the ledger: the
+   * brush is already outside it — every deposit above arrives from the same
+   * place — so the sheet's total is meant to fall when a brush lifts, exactly
+   * as it rises when one lays. The amount subtracted here is tallied and handed
+   * to the reservoir, so the two sides are one subtraction, reported.
+   *
+   * Rate is per CELL TRAVELLED, never per frame (invariant 2), and matches how
+   * `Reservoir.withdraw` charges the other direction: a brush held still still
+   * works at the paint a little, so distance floors at a quarter cell rather
+   * than falling to nothing.
+   */
+  if (C.upRate > 0.0 && cover > 0.0 && C.brushTake > 0.0) {
+    /* Only what is not stuck down comes off — the same adhesion floor the
+       smear obeys, and the reason a second pass through a passage lifts less
+       than the first. teflonMin 1 (every dry medium) lifts nothing at all. */
+    let loose = clamp(1.0 - P.teflonMin, 0.0, 1.0);
+    let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.25, 4.0);
+    /* Capped at half a cell's worth per frame. A brush pulls paint off; it does
+       not strip a cell bare in one step, and leaving a share behind is what
+       makes the lift read as a gradual muddying rather than an erase. */
+    let up = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose * dist,
+                   0.0, 0.5);
+
+    /* Take the share off what was here BEFORE the hairs added anything, and
+       subtract exactly what `lift` reports rather than what was asked for. */
+    w0.y = max(w0.y - lift(max(filmBefore, 0.0) * up, 0u), 0.0);
+    glo.x = max(glo.x - lift(max(gloBefore.x, 0.0) * up, 1u), 0.0);
+    glo.y = max(glo.y - lift(max(gloBefore.y, 0.0) * up, 2u), 0.0);
+    glo.z = max(glo.z - lift(max(gloBefore.z, 0.0) * up, 3u), 0.0);
+    glo.w = max(glo.w - lift(max(gloBefore.w, 0.0) * up, 4u), 0.0);
+    ghi.x = max(ghi.x - lift(max(ghiBefore.x, 0.0) * up, 5u), 0.0);
+    ghi.y = max(ghi.y - lift(max(ghiBefore.y, 0.0) * up, 6u), 0.0);
+    ghi.z = max(ghi.z - lift(max(ghiBefore.z, 0.0) * up, 7u), 0.0);
+    ghi.w = max(ghi.w - lift(max(ghiBefore.w, 0.0) * up, 8u), 0.0);
   }
 
   /* ---- Smear: the brush shoves the paint that is already there -------------

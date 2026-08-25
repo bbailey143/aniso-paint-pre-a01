@@ -280,6 +280,9 @@ export class CanvasEngine {
       // Absent means true: every water medium behaves exactly as it did.
       hasCurrent: m.hasCurrent ?? true,
       teflonMin: m.teflonMin,
+      // How willingly this material comes back up onto the tuft. The brush has
+      // its own say too; the deposit pass multiplies the two.
+      upRate: m.upRate,
       evapRate: m.evapRate,
       absorptionCoupling: m.absorptionCoupling,
       rewetRate: m.reactivatable ? DEFAULT_FLUID.rewetRate : 0,
@@ -417,10 +420,30 @@ export class CanvasEngine {
   /** Slots in use, for the UI to warn before the palette fills. */
   get slotsUsed(): number { return this.slotIds.filter((s) => s >= 0).length; }
 
-  /** Advance the physics one frame with this frame's stroke segments. */
-  step(segments: Float32Array<ArrayBuffer>, segCount: number, dx = 0, dy = 0): boolean {
-    return this.fluid.step(segments, segCount, this.mixWeights_, dx, dy);
+  /**
+   * Advance the physics one frame with this frame's stroke segments.
+   *
+   * `mix` is what the TUFT is holding, which stops being the colour on the
+   * palette the moment the brush picks anything up — so the caller passes it
+   * and the palette recipe is only ever used to dip. Left out, it falls back to
+   * the palette, which is right for anything that cannot pick up (dry media)
+   * and for the soak harness.
+   *
+   * `brushTake` is the tuft's side of the pickup exchange - see
+   * `StrokeEngine.brushTake`.
+   */
+  step(segments: Float32Array<ArrayBuffer>, segCount: number, dx = 0, dy = 0,
+       mix?: Float32Array<ArrayBuffer>, brushTake = 0): boolean {
+    return this.fluid.step(segments, segCount, mix ?? this.mixWeights_, dx, dy, brushTake);
   }
+
+  /** Where lifted paint goes. The host points this at the brush's reservoir. */
+  set onPickUp(fn: ((water: number, pigment: Float32Array) => void) | null) {
+    this.fluid.onPickUp = fn;
+  }
+
+  /** Forget any pickup the brush has not been told about. Call on a dip. */
+  discardPickup() { this.fluid.discardPickup(); }
 
   private writeCompParams(viewW: number, viewH: number) {
     // 128 bytes = 8 groups of 16. Must match `struct Comp` in composite.wgsl and
