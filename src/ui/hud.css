@@ -216,26 +216,3 @@ body:not(.st-readouts) .hud-win[data-role="readout"] { display: none; }
 /* the minimise marker shifts left to make room */
 .hud-bar { padding-right: 32px; }
 
-/* ---------------------------------------------------------- paint surface --
- * Each macro on its own line, with the dials it drives centred beneath it.
- * The artist's layout, asked for on 2026-08-25: "the Impasto Depth slider
- * should have Relief, Smear and Sheen centered beneath it".
- *
- * The sub-row wraps rather than scrolls, so a macro that later drives four
- * dials instead of three still reads as one group.
- */
-.sp { display: flex; flex-direction: column; gap: 15px; padding: 11px 12px 13px; }
-.sp-group { display: flex; flex-direction: column; gap: 7px; }
-.sp-group + .sp-group { border-top: 1px solid rgba(255, 255, 255, 0.09); padding-top: 13px; }
-.sp-macro { width: 100%; }
-/* Stacked and inset by the same amount either side, which is what puts them
-   centred UNDER the macro rather than beside it. Deliberately not a wrapping
-   row: every HUD window is a fixed 236px so a stack of them lines up, and a row
-   of three sliders inside that width either overflows or shrinks to unusable.
-   The window rule is the one worth keeping. */
-.sp-under { display: flex; flex-direction: column; gap: 7px; padding: 0 13px; }
-.sp-sub { width: 100%; opacity: 0.85; }
-.sp-sub:hover, .sp-sub:focus-within { opacity: 1; }
-/* Dials that answer to no macro. They still have to appear somewhere, or a
-   control could be added to the library and quietly show up nowhere. */
-.sp-loose { opacity: 0.92; }

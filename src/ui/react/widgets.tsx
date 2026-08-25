@@ -79,6 +79,17 @@ interface SliderProps {
   onChange(v: number): void;
   /** Shown at each end of a horizontal slider instead of a numeric readout. */
   ends?: [string, string];
+  /**
+   * The thin form: a hairline track and a small round handle, name on the left
+   * and reading on the right.
+   *
+   * The fat pill suits the paint strip, where a slider is the whole control and
+   * has to be hit with a thumb on a tablet. A column of twelve of them does not
+   * suit anything — asked for on 2026-08-25: "you're holding onto the regular
+   * sliders like they're sacred... let's make the space clean and let it
+   * breathe."
+   */
+  slim?: boolean;
 }
 
 /**
@@ -109,7 +120,7 @@ export function Slider(props: SliderProps) {
   const { focusProps, isFocusVisible } = useFocusRing();
 
   const pct = state.getThumbPercent(0);
-  const KNOB = 26;
+  const KNOB = props.slim ? 16 : 26;
   // The thumb travels inside the track, so a full circle is always visible.
   const along = `calc(${pct * 100}% - ${pct * KNOB}px)`;
   const filled = `calc(${pct * 100}% - ${pct * KNOB}px + ${KNOB / 2}px)`;
@@ -126,7 +137,7 @@ export function Slider(props: SliderProps) {
         <div
           {...mergeProps(thumbProps, focusProps)}
           className={`st-knob st-knob-h${isFocusVisible ? ' st-focus' : ''}`}
-          style={{ left: along }}
+          style={{ left: along, width: KNOB, height: KNOB }}
         >
           <VisuallyHidden><input ref={inputRef} {...inputProps} /></VisuallyHidden>
         </div>
@@ -134,7 +145,7 @@ export function Slider(props: SliderProps) {
     );
     if (!ends) {
       return (
-        <div {...groupProps} className="st-hslider st-hlabelled">
+        <div {...groupProps} className={`st-hslider st-hlabelled${props.slim ? ' st-slim' : ''}`}>
           <span {...labelProps} className="st-hname">{label}</span>
           <output {...outputProps} className="st-hval">{format(props.value)}</output>
           {track}
@@ -246,3 +257,139 @@ export function useDraggable(
 }
 
 export type Ref<T> = RefObject<T | null>;
+
+/* ------------------------------------------------------------ range slider */
+
+/**
+ * A slider with two handles: a low end and a high end.
+ *
+ * Asked for on 2026-08-25 so each paint property can be given the stretch it is
+ * allowed to travel over, rather than one fixed number. The macro dial above a
+ * group will sweep between these two once it is wired back up, so setting them
+ * IS the tuning.
+ *
+ * Same hooks as the single slider, so both handles get arrow keys, Home/End and
+ * page steps for free.
+ */
+export function RangeSlider(props: {
+  label: string;
+  low: number;
+  high: number;
+  min: number;
+  max: number;
+  step?: number;
+  format(v: number): string;
+  onChange(low: number, high: number): void;
+  slim?: boolean;
+}) {
+  const { label, format } = props;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const loRef = useRef<HTMLInputElement>(null);
+  const hiRef = useRef<HTMLInputElement>(null);
+
+  const state = useSliderState({
+    numberFormatter: { format: (v: number) => format(v) } as Intl.NumberFormat,
+    minValue: props.min,
+    maxValue: props.max,
+    step: props.step ?? (props.max - props.min) / 200,
+    orientation: 'horizontal',
+    label,
+    value: [props.low, props.high],
+    onChange: ([lo, hi]) => props.onChange(lo, hi),
+  });
+  const { groupProps, trackProps, labelProps, outputProps } =
+    useSlider({ label, orientation: 'horizontal' }, state, trackRef);
+  const lo = useSliderThumb({ index: 0, trackRef, inputRef: loRef }, state);
+  const hi = useSliderThumb({ index: 1, trackRef, inputRef: hiRef }, state);
+  const loRing = useFocusRing();
+  const hiRing = useFocusRing();
+
+  const KNOB = props.slim ? 16 : 26;
+  const pos = (i: number) => {
+    const p = state.getThumbPercent(i);
+    return `calc(${p * 100}% - ${p * KNOB}px)`;
+  };
+  const a = state.getThumbPercent(0);
+  const b = state.getThumbPercent(1);
+
+  return (
+    <div {...groupProps} className={`st-hslider st-hlabelled st-range${props.slim ? ' st-slim' : ''}`}>
+      <span {...labelProps} className="st-hname">{label}</span>
+      <output {...outputProps} className="st-hval">
+        {format(props.low)}
+        {'–'}
+        {format(props.high)}
+      </output>
+      <div {...trackProps} ref={trackRef} className="st-htrack">
+        {/* The span between the handles is the part that means something, so it
+            is the part that is lit. */}
+        <div
+          className="st-rfill"
+          style={{
+            left: `calc(${a * 100}% - ${a * KNOB}px + ${KNOB / 2}px)`,
+            right: `calc(${(1 - b) * 100}% + ${b * KNOB}px - ${KNOB / 2}px)`,
+          }}
+        />
+        <div
+          {...mergeProps(lo.thumbProps, loRing.focusProps)}
+          className={`st-knob st-knob-h st-knob-r${loRing.isFocusVisible ? ' st-focus' : ''}`}
+          style={{ left: pos(0), width: KNOB, height: KNOB }}
+        >
+          <VisuallyHidden><input ref={loRef} {...lo.inputProps} /></VisuallyHidden>
+        </div>
+        <div
+          {...mergeProps(hi.thumbProps, hiRing.focusProps)}
+          className={`st-knob st-knob-h st-knob-r${hiRing.isFocusVisible ? ' st-focus' : ''}`}
+          style={{ left: pos(1), width: KNOB, height: KNOB }}
+        >
+          <VisuallyHidden><input ref={hiRef} {...hi.inputProps} /></VisuallyHidden>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ drawer */
+
+/**
+ * A drawer that comes in from the right.
+ *
+ * The same dialog machinery as the bottom sheet: focus trapped while it is
+ * open, focus restored to whatever opened it, Escape closes, announced as a
+ * dialog. It differs only in where it comes from and in being tall rather than
+ * wide, which is what a column of properties wants.
+ */
+export function Drawer({ isOpen, onClose, title, children }: {
+  isOpen: boolean; onClose(): void; title: string; children: ReactNode;
+}) {
+  const state = useOverlayTriggerState({ isOpen, onOpenChange: (o) => { if (!o) onClose(); } });
+  if (!state.isOpen) return null;
+  return (
+    <Overlay>
+      <DrawerBody state={state} title={title}>{children}</DrawerBody>
+    </Overlay>
+  );
+}
+
+function DrawerBody({ state, title, children }: {
+  state: ReturnType<typeof useOverlayTriggerState>; title: string; children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { modalProps, underlayProps } = useModalOverlay({ isDismissable: true }, state, ref);
+  const titleId = useId();
+  const { dialogProps } = useDialog({ 'aria-labelledby': titleId }, ref);
+  return (
+    <div {...underlayProps} className="st-scrim open">
+      <FocusScope contain restoreFocus autoFocus>
+        <div {...mergeProps(modalProps, dialogProps)} ref={ref} className="st-drawer open">
+          <div className="st-head">
+            <h2 id={titleId}>{title}</h2>
+            <span className="st-spacer" />
+            <Btn className="st-icon" aria-label="Close" onPress={() => state.close()}>&#10005;</Btn>
+          </div>
+          <div className="st-body">{children}</div>
+        </div>
+      </FocusScope>
+    </div>
+  );
+}

@@ -74,8 +74,16 @@ export class StudioStore {
   mixing = false;
   readouts = false;
   tiltOpen = false;
-  /** The paint-surface panel: the macros with their dials grouped beneath. */
+  /** The Paint Properties drawer. */
   surfaceOpen = false;
+  /**
+   * How far each paint property is allowed to travel, low to high.
+   *
+   * A macro dial will sweep between these once it is wired back up, so these
+   * ARE the tuning. Nothing reads them yet — the macros are parked — and that
+   * is said out loud in the drawer rather than left for someone to discover.
+   */
+  ranges = new Map<string, [number, number]>();
 
   private listeners = new Set<() => void>();
   private version = 0;
@@ -160,6 +168,19 @@ export class StudioStore {
 
   setTiltOpen(on: boolean) { this.tiltOpen = on; this.changed(); }
   setSurfaceOpen(on: boolean) { this.surfaceOpen = on; this.changed(); }
+
+  /** A property's allowed travel. Defaults to the whole of its own scale. */
+  range(id: string): [number, number] {
+    const found = this.ranges.get(id);
+    if (found) return found;
+    const c = RAIL_CONTROLS.find((k) => k.id === id);
+    return [c?.min ?? 0, c?.max ?? 1];
+  }
+
+  setRange(id: string, low: number, high: number) {
+    this.ranges.set(id, [Math.min(low, high), Math.max(low, high)]);
+    this.changed();
+  }
   setMixing(on: boolean) { this.mixing = on; this.changed(); }
 
   pickCollection(c: MediumCollection) {

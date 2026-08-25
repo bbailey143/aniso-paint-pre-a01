@@ -110,6 +110,16 @@ export interface RailControl {
   writes?(v: number, get: (id: string) => number): Record<string, number>;
 
   /**
+   * A dial that stands over a group of others.
+   *
+   * Kept separate from `writes` on purpose: a macro can be PARKED — still shown,
+   * still the head of its group, but driving nothing — which is where both of
+   * them are while the artist tunes the parts by hand. Without the split,
+   * unwiring one would also make it vanish from the strip.
+   */
+  macro?: boolean;
+
+  /**
    * The macro dials this one serves, if any.
    *
    * Grouping lives here rather than in the panel that draws it, so a new macro
@@ -271,6 +281,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'impasto',
     label: 'Impasto Depth',
     belongsTo: 'paint',
+    macro: true,
     min: 0,
     max: 1,
     initial: 0,
@@ -279,12 +290,13 @@ export const RAIL_CONTROLS: RailControl[] = [
     initialFor: (t) => depthFromRelief(t.wet?.relief ?? 0),
     format: (v) => (v <= 0.02 ? 'flat' : v.toFixed(2)),
     appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
-    writes: (v, get) => ({
-      relief: reliefFor(v),
-      smear: smearFor(v),
-      sheen: sheenFor(get('glossiness'), v),
-    }),
-    drives: 'Relief and Smear, and half of Sheen. See reliefFor/smearFor.',
+    /* PARKED 2026-08-25, at the artist's request: "let's temporarily unwire
+       them until things are tuned correctly". It still shows, and it is still
+       the head of its group; it just does not write anything yet. The mapping
+       it used is `reliefFor` / `smearFor` / `sheenFor` above, and the ranges
+       set in the Paint Properties drawer are what it will sweep between when
+       it comes back. */
+    drives: 'Nothing yet - parked while the parts underneath are tuned by hand.',
   },
   {
     /* HOW MUCH IT SHINES.
@@ -307,18 +319,15 @@ export const RAIL_CONTROLS: RailControl[] = [
     id: 'glossiness',
     label: 'Glossiness',
     belongsTo: 'paint',
+    macro: true,
     min: 0,
     max: 1,
     initial: 0,
     initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
     format: (v) => (v <= 0.02 ? 'matte' : v >= 0.98 ? 'wet' : v.toFixed(2)),
     appliesTo: () => true,
-    writes: (v, get) => ({
-      gloss: v,
-      sheenWidth: widthFor(v),
-      sheen: sheenFor(v, get('impasto')),
-    }),
-    drives: 'Gloss and Sheen Width, and half of Sheen. See widthFor/sheenFor.',
+    // PARKED with the other one - see the note above.
+    drives: 'Nothing yet - parked while the parts underneath are tuned by hand.',
   },
   {
     /* HOW WET THE SURFACE LOOKS.
@@ -435,7 +444,7 @@ export function dialGroups(tool: ToolContext): {
   loose: RailControl[];
 } {
   const paint = controlsFor(tool, 'paint');
-  const macros = paint.filter((c) => c.writes);
+  const macros = paint.filter((c) => c.macro);
   const groups = macros.map((macro) => ({
     macro,
     under: paint.filter((c) => c.under?.includes(macro.id)),

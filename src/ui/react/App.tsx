@@ -15,7 +15,7 @@ import { controlsFor, dialGroups, labelOf } from '../controls';
 import { DOCK_TOOLS, dockToolsFor } from '../dock-tools';
 import { MEDIUM_COLLECTIONS, papersFor } from '../media';
 import { Icon } from './icons';
-import { Btn, Sheet, Slider, Toggle, useDraggable } from './widgets';
+import { Btn, Drawer, RangeSlider, Sheet, Slider, Toggle, useDraggable } from './widgets';
 import { HudWindows, type ToolWindow } from './HudWindows';
 import type { StudioStore } from './store';
 
@@ -66,7 +66,10 @@ export function App({ store }: { store: StudioStore }) {
   const toolWord = store.collection.family === 'dry' ? 'Grade' : 'Brush';
   const toolName = store.activeDry ? store.activeDry.name : store.brush.name;
   const allowedTools = new Set(dockToolsFor(tool).map((d) => d.id));
-  const paintDials = controlsFor(tool, 'paint');
+  /* Only the macros ride the top strip now. Everything else moved into the
+     Paint Properties drawer - the artist's call on 2026-08-25: "please remove
+     the sliders from the top. This was meant to clean things." */
+  const paintDials = controlsFor(tool, 'paint').filter((c) => c.macro);
 
   return (
     <div className={`st${drawing ? ' drawing' : ''}`} ref={rootRef}>
@@ -164,6 +167,11 @@ export function App({ store }: { store: StudioStore }) {
         {store.sheet === 'drying' && <DryingSheet store={store} />}
       </Sheet>
 
+      <Drawer isOpen={store.surfaceOpen} onClose={() => store.setSurfaceOpen(false)}
+        title="Paint Properties">
+        <PaintProperties store={store} />
+      </Drawer>
+
       <HudWindows
         stickInHand={store.activeDry?.form === 'stick'}
         readoutsOn={store.readouts}
@@ -173,12 +181,6 @@ export function App({ store }: { store: StudioStore }) {
             title: 'Tilt',
             node: <TiltPad store={store} />,
             onClose: () => store.setTiltOpen(false),
-          } as ToolWindow] : []),
-          ...(store.surfaceOpen ? [{
-            id: 'surface',
-            title: 'Paint surface',
-            node: <SurfacePanel store={store} />,
-            onClose: () => store.setSurfaceOpen(false),
           } as ToolWindow] : []),
         ]}
       />
@@ -370,42 +372,73 @@ function DryingSheet({ store }: { store: StudioStore }) {
  * The dragging is useMove now, which means the arrow keys tilt the board too.
  */
 /**
- * The paint surface, as the artist asked for it on 2026-08-25: each macro on
- * its own line with the dials it drives centred underneath, and plain sliders
- * from there.
+ * Paint Properties: each macro at the head of its group, with the properties it
+ * will drive underneath — a value slider to set where each one sits now, and a
+ * range slider under that for the stretch it is allowed to travel over.
  *
- * The grouping is read from the control library (`dialGroups`), not written
- * out here, so a macro added later brings its own group with it. Sheen appears
- * under both macros on purpose — it is one dial drawn twice, and moving it in
- * either place moves the same number.
+ * The grouping is read from the control library (`dialGroups`), not written out
+ * here, so a macro added later brings its own group with it. Sheen appears in
+ * both groups on purpose: it answers to both, and it is one property drawn
+ * twice, not two.
+ *
+ * The macros are PARKED and say so on screen. They are still the head of their
+ * group so the shape of the thing is visible while its parts are tuned, but a
+ * control that silently drove nothing would be exactly what this project's own
+ * rules forbid — so it is labelled instead of left to be discovered.
  */
-function SurfacePanel({ store }: { store: StudioStore }) {
+function PaintProperties({ store }: { store: StudioStore }) {
   const tool = store.toolContext();
   const { groups, loose } = dialGroups(tool);
-  const dial = (c: ReturnType<typeof dialGroups>['loose'][number], wide: boolean) => (
-    <div key={c.id} className={wide ? 'sp-macro' : 'sp-sub'}>
-      <Slider
-        orientation="horizontal"
-        label={labelOf(c, tool)}
-        value={store.value(c.id)}
-        min={c.min}
-        max={c.max}
-        format={c.format}
-        onChange={(v) => store.setValue(c.id, v)}
-      />
-    </div>
+  type Dial = ReturnType<typeof dialGroups>['loose'][number];
+
+  const value = (c: Dial) => (
+    <Slider
+      slim
+      orientation="horizontal"
+      label={labelOf(c, tool)}
+      value={store.value(c.id)}
+      min={c.min}
+      max={c.max}
+      format={c.format}
+      onChange={(v) => store.setValue(c.id, v)}
+    />
   );
+
+  const property = (c: Dial) => {
+    const [lo, hi] = store.range(c.id);
+    return (
+      <div key={c.id} className="pp-prop">
+        {value(c)}
+        <RangeSlider
+          slim
+          label="Range"
+          low={lo}
+          high={hi}
+          min={c.min}
+          max={c.max}
+          format={c.format}
+          onChange={(a, b) => store.setRange(c.id, a, b)}
+        />
+      </div>
+    );
+  };
+
   return (
-    <div className="sp">
+    <div className="pp">
       {groups.map((g) => (
-        <section key={g.macro.id} className="sp-group">
-          {dial(g.macro, true)}
-          <div className="sp-under">{g.under.map((c) => dial(c, false))}</div>
+        <section key={g.macro.id} className="pp-group">
+          <div className="pp-head">
+            {value(g.macro)}
+            {!g.macro.writes && <span className="pp-parked">not connected yet</span>}
+          </div>
+          <div className="pp-under">{g.under.map(property)}</div>
         </section>
       ))}
       {loose.length > 0 && (
-        <section className="sp-group sp-loose">
-          <div className="sp-under">{loose.map((c) => dial(c, false))}</div>
+        <section className="pp-group">
+          <div className="pp-under">{loose.map((c) => (
+            <div key={c.id} className="pp-prop">{value(c)}</div>
+          ))}</div>
         </section>
       )}
     </div>
