@@ -148,8 +148,26 @@ export class Brush {
 
   setBodyTransfer(on: boolean) { this.bodyTransfer = on; }
 
+  /**
+   * The hand's pose as a blade angle.
+   *
+   * [TRAP, measured 2026-08-26 — cost the artist a session of "oil looks
+   * extremely broken"] There used to be a `+ 90` here. It was invisible while
+   * the angle was RELATIVE, because `contactAngle` subtracted the same
+   * `poseAngle` captured at touch-down and the constant cancelled itself. The
+   * moment the angle became absolute the constant stopped cancelling and stood
+   * up as a real 90° rotation of the blade: at any low-tilt pose the flat
+   * landed turned across its own stroke. Measured on one Oil pass with the Flat
+   * Hog — 3468 wet cells at 0.0722 film per cell became 6913 at 0.0402. Same
+   * paint, twice the area, a bit over half the depth, and since a mark's body
+   * is its film height the stroke read as a thin wash.
+   *
+   * So: no offset. Azimuth 0 is a horizontal blade, which is the neutral this
+   * app has always drawn and the value the relative form produced for an
+   * unchanging hand.
+   */
   private poseAngle(tiltAzimuth: number, twist: number): number {
-    return tiltAzimuth + twist + 90;
+    return tiltAzimuth + twist;
   }
 
   /**
