@@ -207,3 +207,91 @@ letting it be discovered as "my strokes got thinner".
 
 **What it does NOT prove.** That 20 % is wrong. A brush dragging through its own
 wet paint genuinely does take some back.
+
+---
+
+### E7 — Pickup eats the painting, and it is charged on the wrong clock (2026-08-25)
+
+**Purpose.** Bartford, same day, on a stacked oil painting: *"This chattered look
+— with white mixed in with blue — is after a stack of layers being laid down.
+It's acting as if there is no paint on the surface, and instead skipping along
+the canvas. If I pull slowly enough, it does look brush-like, but otherwise it
+chatters."* Find out what the white is.
+
+**Method, part 1 — is the white bare canvas or a highlight?** On his own painting
+as it stood, composite the sheet and read mean screen brightness with sheen at
+its setting, then at 0, then with relief off, then with `hidesGround` off.
+
+**Raw result.**
+
+```
+as painted                 mean 176.88
+sheen off                  mean 172.95
+relief off                 mean 192.09
+hidesGround off            mean 192.75
+```
+
+**What it proves.** The white is **not** sheen — switching the highlight off
+moves the picture by four units in 255, and *darker*, not lighter. It is the
+sheet showing through thin paint. (Relief off going lighter is the furrow
+shadows disappearing; separate, and expected.)
+
+**Method, part 2 — how deep is the paint?** Same painting: for every cell holding
+pigment, compare film height against the sheet's tooth (`toothAmp` 0.3), which is
+the depth the deposit's `bridged` term needs before it stops treating a hair as
+touching bare paper.
+
+**Raw result.**
+
+```
+painted cells        49,120
+mean film             0.0327     (tooth is 0.30)
+fully bridged              6 cells
+barely bridged        98.7 %
+```
+
+**What it proves.** After a whole session of stacking, the paint is about a tenth
+as deep as the weave it sits in. Nothing is filling the canvas.
+
+**Method, part 3 — is that the pickup?** Six overlapping strokes, oil, flat hog,
+Flow 3x (his setting), load 0.6, with pickup off and on. Repeated at two hand
+speeds: the same path and the same sub-steps, split into either one frame per
+point (a slow hand) or one frame per twelve (a fast one).
+
+**Raw result.**
+
+```
+                        mean film    brush ends holding   (tuft capacity 317)
+pickup off, slow          0.25595            19.9
+pickup on,  slow          0.06603           502.1
+pickup off, fast          0.24979            19.9
+pickup on,  fast          0.13778           400.5
+```
+
+**What it proves.** Two separate faults, both in the pickup added earlier today.
+
+1. **Far too greedy.** With it off, film builds to **0.25** — nearly the 0.30 it
+   needs to bury the weave, which is exactly what stacking ought to do. With it
+   on, film lands at **0.066–0.138**: roughly **three quarters of the paint is
+   taken straight back off the sheet**. The tuft finishes at **158 %** of its own
+   capacity. A brush ending a stroke holding half again as much as it can hold is
+   not picking up, it is hoovering.
+
+2. **Charged per FRAME, not per cell travelled** — Invariant 2 in as plain a form
+   as it gets. The same stroke removes **twice** as much when split into twelve
+   times as many frames. The cause: `cover` already sums every hair segment that
+   crossed the cell this frame, so it *already* carries how far the brush moved;
+   multiplying by `dist` on top counts the speed twice. `dist` does not belong in
+   that expression at all.
+
+**What it does NOT prove.** How much of the excess is mine. These numbers were
+taken on the running page, which had **Codex's uncommitted amplification of the
+same expression** live in it — `sqrt(cover)`, the per-frame ceiling raised from
+0.5 to 0.9, and `max(C.brushTake, …)` bypassing the tuft's room clamp entirely.
+Two of us are pulling opposite ways on one number. The split has NOT been
+measured and must not be guessed at.
+
+**What it also does not explain.** Bartford reports slow strokes look right and
+fast ones chatter. Part 3 measures the *opposite* sense — more frames per cell
+removes more. So the per-frame fault is real but it is not the whole of what he
+is seeing, and the rest is unaccounted for. Do not construct a story for it.
