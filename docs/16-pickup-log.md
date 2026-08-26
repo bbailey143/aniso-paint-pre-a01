@@ -295,3 +295,92 @@ measured and must not be guessed at.
 fast ones chatter. Part 3 measures the *opposite* sense — more frames per cell
 removes more. So the per-frame fault is real but it is not the whole of what he
 is seeing, and the rest is unaccounted for. Do not construct a story for it.
+
+---
+
+### E8 — Fixing it, and two wrong fixes on the way (2026-08-25)
+
+**Purpose.** Stop the pickup emptying the sheet (E7), without losing the carrying
+that E5 measured.
+
+**First — a correction to E7.** Part 3 of E7 used a harness that did not assert
+which medium was selected, and the pickup-off baseline it reported (film 0.256)
+came from a state I can no longer vouch for. Re-run with the medium asserted and
+each condition run twice, the same comparison is **starker**, not weaker:
+
+```
+                        mean film   % of cells burying the weave   tuft holds
+pickup off                 0.9299              55.0 %                  8 %
+pickup on  (1 frame/pt)    0.0634               0.0 %                516 %
+pickup on  (1 frame/12)    0.0912              11.0 %                504 %
+```
+
+E7's conclusion stands. Its part-3 figures should not be quoted.
+
+**Method.** Six overlapping strokes, oil, flat hog, Flow 3x, load 0.6, medium
+asserted before and during every run, every condition run twice. Cross-run
+comparison is NOT valid here — only rows inside one page load may be compared,
+which is what caught the fault below.
+
+**Wrong fix 1.** ~~Drop `dist`, keep `r * clamp(cover,0,1)`.~~ Film recovered,
+but the same stroke still gave 0.317 at one frame per point and 0.271 at one per
+twelve. Multiplying cannot be frame-independent: a slow hand simply gets more
+frames, each saturating the clamp.
+
+**Wrong fix 2, which looked right and was far worse.** ~~`1 - pow(1 - r,
+cover)`.~~ Compounding was the right idea applied to the wrong quantity. `cover`
+is not a distance — it sums one 0..1 coverage per hair track, and the flat hog
+lays **154 segments across 61 cells in a single frame at one cell of travel**,
+so a cell carries 2 to 6 tracks. Raised to that power it stripped 93 % of the
+film every frame: the stack came out at **0.063** against **0.930** with pickup
+off, and the tuft finished at **516 %** of its own capacity.
+
+**The fix.** Compound over TRAVEL, and let `cover` keep its ordinary meaning:
+
+```wgsl
+let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.0, 16.0);
+let r    = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose, 0.0, 0.9);
+let up   = 1.0 - pow(1.0 - r, dist);
+```
+
+`roomFraction` also had its 0.3 floor removed, so a full tuft now takes nothing
+and the brush cannot fill past its own capacity.
+
+**Raw result.** All six rows, both runs of each identical to four decimals:
+
+```
+                        mean film   % burying the weave   tuft holds
+pickup off                 0.2545          33.3 %             6 %
+pickup on  (1 frame/pt)    0.3176          66.5 %            51 %
+pickup on  (1 frame/12)    0.2678          25.8 %            68 %
+```
+
+And the carrying from E5 survives — blue along the orange trail past the
+crossing, two runs agreeing to three decimals:
+
+```
+x            265     300     340     380     420
+pickup off  1.019   0       0       0       0
+pickup on   1.290   0.0208  0.0190  0.0173  0.0162
+```
+
+**What it proves.** The sheet fills again — a third to two thirds of painted
+cells now bury the weave, against **none at all** before the fix — and the tuft
+stays between half and two thirds full instead of five times over. The brush
+still carries colour the length of a stroke.
+
+**What it does NOT prove.** Frame-independence is much better but not exact:
+0.318 against 0.268 across a twelvefold change in frame chunking, about 16 %.
+Some of that is the tuft solve and the deposit itself behaving differently when
+a stroke is chunked, not the pickup. Not chased further.
+
+**What it does NOT explain.** Still nothing on why Bartford sees slow strokes
+read as brush-like and fast ones chatter. Both wrong fixes and the right one
+leave that unaccounted for. Do not invent a mechanism for it.
+
+**A harness lesson, which cost most of the time here.** The pickup-off baseline
+read 0.2545 in one page load and 0.9299 in another, both with oil asserted and
+both internally reproducible to four decimals. Something else differs across
+loads and has not been identified. Compare rows WITHIN one load only, assert
+every precondition inside the harness, and run every condition twice — three
+readings in this session were nonsense until that was done.

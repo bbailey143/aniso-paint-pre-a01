@@ -276,10 +276,32 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // why the canvas never disappeared under the paint. Water media keep
         // the old gate untouched.
         var bridged = 0.0;
-        if (P.yieldStress > 0.0) { bridged = clamp(w0.y / max(P.toothAmp, 0.05), 0.0, 1.0); }
+        if (P.yieldStress > 0.0) {
+          /* A paste bridges the valleys before its raw height equals the full
+             paper-tooth range: viscosity is precisely its resistance to
+             sagging into those valleys. The old denominator was toothAmp alone,
+             so measured Oil film 0.018 on Cotton Duck 0.30 filled only 6% of
+             the gate per loaded pass and stamped the weave forever. Reuse the
+             shared viscosity row: high-viscosity body bridges sooner; every
+             zero-yield water medium keeps the old path exactly. [UNVERIFIED —
+             artist contact mapping, 2026-08-25.] */
+          let bridgeDepth = P.toothAmp * max(1.0 - clamp(P.viscosity, 0.0, 1.0), 0.05);
+          bridged = clamp(w0.y / max(bridgeDepth, 0.05), 0.0, 1.0);
+        }
         // Written out rather than `mix(base, 1.0, bridged)`: binding 3 in this
         // shader is called `mix`, which shadows the built-in of that name.
-        let base = smoothstep(need - 0.18, need + 0.18, ride);
+        /* Water washes need the broad C1 contact ramp: it prevents stippling.
+           A viscous body paint needs the opposite visual structure. Its light
+           contact is opaque fragments on the peaks with bare canvas between,
+           not a translucent average over every cell. Narrow the same sourced
+           ramp as viscosity rises; no pigment is created because `take` still
+           only distributes the amount already withdrawn from the hair.
+           [UNVERIFIED — artist scumble mapping, 2026-08-25.] */
+        var gateHalfWidth = 0.18;
+        if (P.yieldStress > 0.0) {
+          gateHalfWidth = 0.18 * max(1.0 - clamp(P.viscosity, 0.0, 1.0), 0.15);
+        }
+        let base = smoothstep(need - gateHalfWidth, need + gateHalfWidth, ride);
         let gate = base + (1.0 - base) * bridged;
         let take = f * gate;
         water = water + take * s.water;
@@ -324,22 +346,74 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
    * as it rises when one lays. The amount subtracted here is tallied and handed
    * to the reservoir, so the two sides are one subtraction, reported.
    *
-   * Rate is per CELL TRAVELLED, never per frame (invariant 2), and matches how
-   * `Reservoir.withdraw` charges the other direction: a brush held still still
-   * works at the paint a little, so distance floors at a quarter cell rather
-   * than falling to nothing.
+   * HOW MUCH, and the mistake that was in here first.
+   *
+   * [MEASURED, docs/16 E7] The first version multiplied by the frame's travel
+   * distance. That was wrong twice over. `cover` below is summed over EVERY
+   * hair segment that crossed this cell during the frame, so it already carries
+   * how far the brush moved — multiplying by distance on top counts the speed
+   * a second time, and it makes the same stroke lift twice as much when it
+   * happens to be cut into twice as many frames. That is a per-frame delta,
+   * which invariant 2 forbids outright.
+   *
+   * What it did to the painting: six stacked layers reached a film of 0.256
+   * with pickup off and 0.066 with it on, against a canvas whose tooth is 0.30.
+   * Three quarters of the paint taken straight back off, the sheet never
+   * covered, and the weave showing white through every layer. The artist saw it
+   * immediately and described the brush as "skipping along the canvas".
+   *
+   * So: no distance term. `cover` is the whole of it, clamped at one cell's
+   * worth, and the ceiling is what a single frame may ever take.
    */
   if (C.upRate > 0.0 && cover > 0.0 && C.brushTake > 0.0) {
-    /* Only what is not stuck down comes off — the same adhesion floor the
-       smear obeys, and the reason a second pass through a passage lifts less
-       than the first. teflonMin 1 (every dry medium) lifts nothing at all. */
-    let loose = clamp(1.0 - P.teflonMin, 0.0, 1.0);
-    let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.25, 4.0);
-    /* Capped at half a cell's worth per frame. A brush pulls paint off; it does
-       not strip a cell bare in one step, and leaving a share behind is what
-       makes the lift read as a gradual muddying rather than an erase. */
-    let up = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose * dist,
-                   0.0, 0.5);
+    /* Adhesion belongs to paint that is setting, not to fully workable oil.
+       Applying the whole teflon floor at wetness 1 left dark outlines of the
+       lower stroke beneath every crossing. Let a yielding body's existing
+       wetness continuum release that floor while it is workable; watercolour
+       retains the exact old route. [Codex, 2026-08-25 — kept: it addresses a
+       real artefact, and it is not what was emptying the sheet.] */
+    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0), P.yieldStress > 0.0);
+    let loose = clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
+    /* `brushTake` is the tuft's own grabbiness times the room it has left, and
+       it is the term that stops a brush filling past its capacity. It must not
+       be bypassed: ~~`max(C.brushTake, workableBody * viscosity)`~~ raised it
+       from about 0.2 to 0.85 whenever the paint was workable, which is every
+       oil stroke, and with the room clamp gone the tuft finished strokes
+       holding 158 % of what it can hold. Reverted 2026-08-25 with E7's numbers;
+       ~~`sqrt(cover)`~~ and the ceiling at 0.9 went with it for the same
+       reason. If the underlying want was "edge hairs should collect remnants",
+       that is a coverage question and belongs in `cover`, not in a term that
+       overrides how full the brush is. */
+    /* `r` is the share taken per ONE CELL TRAVELLED. What a frame takes is that
+     * applied `dist` times over, which compounds — it is not `r * dist`.
+     *
+     * Compounding is what makes this frame-independent: a stroke cut into more
+     * frames gives each frame a smaller `dist`, and the exponents add back up
+     * to the same total. Multiplying instead lets a slow hand take more from
+     * the same stroke, which is the per-frame delta invariant 2 forbids.
+     *
+     * TWO wrong versions stood here first, both measured, both recorded because
+     * the second looked like a fix and was worse:
+     *
+     * ~~`r * cover * dist`~~ counted the speed twice — see the block above.
+     *
+     * ~~`1 - pow(1 - r, cover)`~~ compounded over the wrong quantity. `cover`
+     * is NOT a distance: it sums one 0..1 coverage per hair track, and a tuft
+     * puts 2 to 6 tracks on a single cell in a single frame even at one cell of
+     * travel (measured on the flat hog: 154 segments over 61 cells). Raised to
+     * that power it stripped 93 % of the film every frame — the six-layer stack
+     * came out at 0.063 against 0.930 with pickup off, and the tuft finished
+     * holding 516 % of its own capacity.
+     *
+     * `cover` keeps its ordinary meaning here: how much of the cell is under
+     * hairs at all, one cell's worth at most.
+     *
+     * A brush held still lifts nothing, because `dist` is 0. That is a real
+     * simplification — a brush pressed and held does slowly load — but the
+     * alternative is a floor, and a floor is per-frame accumulation again. */
+    let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.0, 16.0);
+    let r = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose, 0.0, 0.9);
+    let up = 1.0 - pow(1.0 - r, dist);
 
     /* Take the share off what was here BEFORE the hairs added anything, and
        subtract exactly what `lift` reports rather than what was asked for. */
@@ -432,7 +506,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // ever lifted. As a share it means the same thing at any scale: teflonMin
     // 0.18 leaves 18 % stuck down, teflonMin 1 (every dry medium) leaves all
     // of it.
-    let loose = w0.y * clamp(1.0 - P.teflonMin, 0.0, 1.0);
+    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0), P.yieldStress > 0.0);
+    let loose = w0.y
+              * clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
     if (speed > 1.0e-4 && loose > 0.0) {
       // Share taken, from how far past yielding the hairs are pressing. Capped
       // at 0.6 — a brush shoves paint, it does not teleport it.

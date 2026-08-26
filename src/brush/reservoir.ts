@@ -14,9 +14,6 @@
 
 import type { ReservoirDef } from './types';
 
-/** What a brim-full tuft still picks up, as a share of what an empty one would.
- *  `[UNVERIFIED — tuning]` See `roomFraction`. */
-const FULL_STILL_TAKES = 0.3;
 
 export class Reservoir {
   readonly bristles: number;
@@ -220,13 +217,37 @@ export class Reservoir {
    * the same paint however finely it was resampled — which is the invariant the
    * card states, and it is also just true of brushes.
    */
-  withdraw(cell: number, contactFrac: number, out: Float32Array, travel = 1): number {
+  withdraw(cell: number, contactFrac: number, out: Float32Array, travel = 1,
+           bodyPaint = false): number {
     // A brush held still still bleeds into the paper, so distance never falls
     // to zero — it just stops being what drives the transfer.
     const STILL = 0.25;
     const dist = Math.max(STILL, travel);
-    const rate = Math.min(1, this.def.downRate * this.flow * dist)
-               * Math.max(0, Math.min(1, contactFrac));
+    const ordinaryRate = Math.min(1, this.def.downRate * this.flow * dist)
+                       * Math.max(0, Math.min(1, contactFrac));
+
+    /* A wash grows paler as less colour remains in the hair, so its release is
+       a fraction of what is left. A body paint does not turn into white paint
+       as a bristle runs dry: it leaves fewer loaded contacts, then none.
+
+       Give body paint one nominal packet from this reservoir cell, capped by
+       what is actually left. The packet is built only from the existing cell
+       capacity, down-rate, and actual hair contact — no new tuning constant.
+       Contact scales the VOLUME released, while water/vehicle and every pigment
+       lane still use ONE common fraction, so clear medium cannot carry on after
+       the pigment has stopped and a grazing hair cannot unload a full packet.
+
+       [UNVERIFIED — artist transfer mapping, 2026-08-25.] */
+    let rate = ordinaryRate;
+    if (bodyPaint) {
+      let pigmentHeld = 0;
+      for (let k = 0; k < 8; k++) pigmentHeld += this.pigment[cell * 8 + k];
+      const held = Math.max(this.water[cell], pigmentHeld);
+      const packet = this.capacity[cell]
+                   * Math.min(1, this.def.downRate * this.flow * dist)
+                   * Math.max(0, Math.min(1, contactFrac));
+      rate = held > 1e-12 ? Math.min(1, packet / held) : 0;
+    }
     const w = this.water[cell] * rate;
     this.water[cell] -= w;
     for (let k = 0; k < 8; k++) {
@@ -254,16 +275,26 @@ export class Reservoir {
    * How readily the tuft will take more on, 0..1.
    *
    * The deposit pass multiplies its pickup by this, which is what makes a
-   * thirsty brush drink and a laden one mostly shove. It throttles rather than
-   * hard-stops, for two separate reasons:
+   * thirsty brush drink and a laden one mostly shove.
    *
-   *   - A hard cap on the brush side would refuse paint the sheet had ALREADY
-   *     given up, and refused paint is paint destroyed. The clamp has to live
-   *     where the subtraction happens or the two sides drift apart.
-   *   - `[UNVERIFIED — tuning]` A brim-full tuft still exchanges paint at its
-   *     surface; it just takes far less. Letting this reach zero would make
-   *     Load a switch that silently turns picking-up off, which is the exact
-   *     dead-control failure this project's own rules warn about.
+   * It reaches **zero** at capacity, and that is the point. It used to floor at
+   * 0.3 on the reasoning that a brim-full tuft still exchanges paint at its
+   * surface, and that letting it hit zero would make Load a switch that
+   * silently turned picking-up off. Both halves of that were wrong:
+   *
+   *   - [MEASURED, docs/16 E7] With a floor, nothing ever stopped the brush
+   *     taking. It finished strokes holding **158 %** of its own capacity while
+   *     the sheet went bare — which is not a brush picking paint up, it is a
+   *     brush that cannot be filled.
+   *   - It is not a dead control either. A brush at the brim is laying paint
+   *     with every step, so it drops below full within a few cells and starts
+   *     taking again on its own. "Full brushes shove, emptying brushes drink"
+   *     is the behaviour, not a switch.
+   *
+   * The clamp still lives HERE and not in the shader's subtraction, because a
+   * cap applied on the brush side would refuse paint the sheet had already
+   * given up, and refused paint is paint destroyed. This throttles what is
+   * asked for; it never rejects what has already arrived.
    *
    * Occupancy is the WORSE of water and pigment rather than their sum, because
    * `charge` fills both to the same capacity at full load — a brush charged to
@@ -278,7 +309,7 @@ export class Reservoir {
     }
     if (cap <= 1e-6) return 0;
     const full = Math.max(0, Math.min(1, Math.max(water, pig) / cap));
-    return FULL_STILL_TAKES + (1 - FULL_STILL_TAKES) * (1 - full);
+    return 1 - full;
   }
 
   /**
