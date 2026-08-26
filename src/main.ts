@@ -88,7 +88,7 @@ async function main() {
     onPaperChange(paper) { engine.setPaper(paper); requestFrame(); }, onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
     /* One call, the whole row: viscosity, drag, yield stress, drying, the rim
        controls. The engine reads a material; it does not know their names. */
-    onWetMedium(medium) { engine.setWetMedium(medium); requestFrame(); },
+    onWetMedium(medium) { engine.setWetMedium(medium); stroke.setWetMedium(medium); requestFrame(); },
     onYieldChange(yieldStress) { engine.setFluid({ yieldStress }); },
     onSmearChange(smearStrength) { engine.setFluid({ smearStrength }); },
     onCoverChange(cover) { engine.setCover(cover); requestFrame(); },
@@ -109,7 +109,7 @@ async function main() {
     onRinse() { stroke.rinse(1); }, onRinseLoad() { stroke.rinse(1); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); },
     onReadouts(on) { watchGauges(on); },
   }, WATERCOLOR.evapRate);
-  engine.setPaper(PAPERS[1]); engine.setWetMedium(WATERCOLOR); engine.setMix(palette.recipe); if (palette.recipe.size === 0) palette.add('ultramarine-blue'); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
+  engine.setPaper(PAPERS[1]); engine.setWetMedium(WATERCOLOR); stroke.setWetMedium(WATERCOLOR); engine.setMix(palette.recipe); if (palette.recipe.size === 0) palette.add('ultramarine-blue'); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
   const cmd = new CommandPalette();
 
   // — Tools —
@@ -343,7 +343,7 @@ async function main() {
   if (document.body.classList.contains('st-readouts')) watchGauges(true);
 
   let gaugeTick = 0;
-  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
+  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake, stroke.brushGrab); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
   /* What the tuft lifts off the sheet goes back into the tuft. The engine
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);

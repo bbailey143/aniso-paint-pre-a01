@@ -463,6 +463,18 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // than a post-process. [UNVERIFIED — Card 4; bench it against real swatches.]
   let w0v = paint(wet0, uv);
   let w5v = paint(wet5, uv);
+  /* A bodied, covering paint is optically thicker than the same pigment amount
+     suspended in a stain. Use the material's existing Relief and Cover rows so
+     loaded Oil can actually bury the ground; Watercolour remains byte-for-byte
+     unchanged because both rows are zero. [UNVERIFIED visual mapping — artist
+     judgement against the 2026-08-25 cured-impasto references.] */
+  let standingBody = max(w0v.y, 0.0) * max(C.paintRelief, 0.0);
+  /* Partial body coverage is area, not white paint mixed into the pigment.
+     The square-root response lets a thin surviving Oil contact retain more of
+     its intrinsic colour while the sharpened deposit gate supplies the truly
+     bare gaps. It is display-only and flat media remain unchanged.
+     [UNVERIFIED — artist scumble mapping, 2026-08-25.] */
+  let opticalBody = 1.0 + max(C.hidesGround, 0.0) * sqrt(standingBody);
   // A surface film and water bound in paper fibre are not the same thing. Only
   // the former is glossy and strongly deepens the wash. Fibre-bound water keeps
   // a quiet damp darkening, but reads matte.
@@ -543,6 +555,24 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let inv1 = select(0.0, 1.0 / total1, has1);
   let invW = select(0.0, 1.0 / total, hasW);
 
+  /* Body paint needs more optical weight than a stain, but forcing every
+     surviving trace to one fixed opaque thickness erased depletion, tuft
+     variation, and visible mixing. Use a square-root response instead: it
+     strengthens thin paste without making all nonzero cells identical, and it
+     still tends continuously to zero as the brush runs dry. The only scale is
+     the material's existing Cover row. Every zero-relief / zero-cover wash
+     keeps its exact old thickness. [UNVERIFIED — artist coverage mapping,
+     2026-08-25.] */
+  let isBodyPaint = C.paintRelief > 0.0 && C.hidesGround > 0.0;
+  var thick2 = total2 * C.thickScale * opticalBody;
+  var thick1 = total1 * C.thickScale * opticalBody;
+  var thickW = total * C.thickScale * opticalBody;
+  if (isBodyPaint) {
+    thick2 = sqrt(max(thick2, 0.0) * C.hidesGround);
+    thick1 = sqrt(max(thick1, 0.0) * C.hidesGround);
+    thickW = sqrt(max(thickW, 0.0) * C.hidesGround);
+  }
+
   var XYZ = vec3f(0.0);
   for (var b = 0; b < N_BANDS; b = b + 1) {
     // Start at the sheet and build upward, one glaze at a time.
@@ -550,15 +580,15 @@ fn fs(in: VsOut) -> @location(0) vec4f {
 
     if (has2) {
       let ks2 = mixKS(amt2, inv2, b);
-      R = overLayer(R, ks2, total2 * C.thickScale);
+      R = overLayer(R, ks2, thick2);
     }
     if (has1) {
       let ks1 = mixKS(amt1, inv1, b);
-      R = overLayer(R, ks1, total1 * C.thickScale);
+      R = overLayer(R, ks1, thick1);
     }
     if (hasW) {
       let ksw = mixKS(amt, invW, b);
-      R = overLayer(R, ksw, total * C.thickScale);
+      R = overLayer(R, ksw, thickW);
     }
 
     // Saunderson forward (internal -> external), gloss via kInstrument.
@@ -586,7 +616,13 @@ fn fs(in: VsOut) -> @location(0) vec4f {
      throws no shadow either, so the same term fades the paper's slope out of
      the surface normal. */
   let laid = total + total1 + total2;
-  let seen = exp(-C.hidesGround * laid * C.thickScale * 2.0);
+  /* Opaque body hides the ground geometrically as well as optically. Previously
+     `seen` only knew pigment amount, so the Cotton Duck weave stayed embossed
+     through a standing oil ridge. Reuse the existing material's hidesGround
+     and relief rows: no new paint constant, and flat/staining media remain
+     exactly unchanged because one or both rows are zero. [UNVERIFIED visual
+     mapping — compare against the 2026-08-25 cured-impasto references.] */
+  let seen = exp(-C.hidesGround * (laid * C.thickScale + standingBody) * 2.0);
 
   // Relief lighting from the paper height gradient (tooth catches the light).
   //
@@ -654,13 +690,25 @@ fn fs(in: VsOut) -> @location(0) vec4f {
    *
    * Same tap count as before. This is a change of scale, not of cost.
    */
-  let ftex = max(texel, cellStep) * 2.0;
-  let fL = paint(wet0, uv - vec2f(ftex.x, 0.0)).y * 0.5;
-  let fR = paint(wet0, uv + vec2f(ftex.x, 0.0)).y * 0.5;
-  let fU = paint(wet0, uv - vec2f(0.0, ftex.y)).y * 0.5;
-  let fD = paint(wet0, uv + vec2f(0.0, ftex.y)).y * 0.5;
-  let gx = (hR - hL) * C.relief * seen + (fR - fL) * C.paintRelief;
-  let gy = (hD - hU) * C.relief * seen + (fD - fU) * C.paintRelief;
+  /* The cured-impasto references read in broad brush planes, not one highlight
+     per thread of canvas. Six cells spans the Cotton Duck repeat in the live
+     view and leaves the wider tuft ridge for the lamp to find. Divide the
+     sampled height by the same distance so Relief keeps its overall scale.
+     [UNVERIFIED — artist visual mapping, 2026-08-25.] */
+  let paintLightSpan = 6.0;
+  let ftex = max(texel, cellStep) * paintLightSpan;
+  let fL = paint(wet0, uv - vec2f(ftex.x, 0.0)).y / paintLightSpan;
+  let fR = paint(wet0, uv + vec2f(ftex.x, 0.0)).y / paintLightSpan;
+  let fU = paint(wet0, uv - vec2f(0.0, ftex.y)).y / paintLightSpan;
+  let fD = paint(wet0, uv + vec2f(0.0, ftex.y)).y / paintLightSpan;
+  /* Cotton Duck is physically coarse, but the old display strength made every
+     thread read as polished moulded plastic. Keep the solver's weave untouched;
+     this is only how strongly the room light reveals it. [UNVERIFIED — matched
+     by eye to the 2026-08-25 primed/cured impasto references.] */
+  let isCanvas = C.grainKind > 1.5 && C.grainKind < 2.5;
+  let visiblePaperRelief = C.relief * select(1.0, 0.30, isCanvas);
+  let gx = (hR - hL) * visiblePaperRelief * seen + (fR - fL) * C.paintRelief;
+  let gy = (hD - hU) * visiblePaperRelief * seen + (fD - fU) * C.paintRelief;
   let n = normalize(vec3f(-gx, -gy, 1.0));
   let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
   // The lamp is in the room, not on the paper. The tooth is part of the sheet
@@ -673,11 +721,10 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let lambert = clamp(dot(ns, lightDir), 0.0, 1.0);
   let shade = 0.82 + 0.18 * lambert;      // subtle; paper is not shiny
 
-  /* Sheen. A wet oil binder is glossy and a ridge of it catches a hard little
-   * highlight along its crest — which is most of how the eye reads thickness in
-   * a photograph of a painting. Driven by the medium's own gloss dial, so a
-   * matte material (kInstrument 1, which is watercolour) gets none of it and
-   * this whole term is zero. */
+  /* Sheen. The old result was added as raw white after the paint colour. Across
+   * canvas tooth and cell-scale ridges that read as clear gel or moulded plastic.
+   * Keep the same gloss/strength/width controls, but use the lobe to lift the
+   * paint's own reflected colour instead of painting white over it. */
   let gloss = clamp(1.0 - C.kInstrument, 0.0, 1.0) * clamp(C.paintRelief, 0.0, 1.0);
   var sheen = 0.0;
   if (gloss > 0.0) {
@@ -719,7 +766,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // and the line below is exactly what it always was.
   // `shade` already carries both surfaces: the paper's slope faded out by
   // covering, and the paint's added in. Applying it once is applying all of it.
-  rgb = rgb * mix(vec3f(1.0), sheetTone, seen) * shade + sheen;
+  rgb = rgb * mix(vec3f(1.0), sheetTone, seen) * shade * (1.0 + sheen);
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

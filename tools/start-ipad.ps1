@@ -1,6 +1,10 @@
 [CmdletBinding()]
 param(
-  [int]$Port = 5173,
+  # Must match `server.port` in vite.config.ts. This script passes the port to
+  # `npm run dev` on the command line, which OVERRIDES the config file — so a
+  # stale default here silently wins and the app comes up on a port nothing
+  # else expects. That is exactly how 5173 kept coming back.
+  [int]$Port = 5174,
   [switch]$Help
 )
 

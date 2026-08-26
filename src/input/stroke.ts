@@ -15,7 +15,7 @@ import { MAX_SEGS, SEG_FLOATS, DRY_SEG_FLOATS } from '../engine/fluid';
 import { Brush } from '../brush/brush';
 import type { BrushDef, BrushInput } from '../brush/types';
 import { DryTool } from '../media/dry-tool';
-import type { DryMedium } from '../media/types';
+import type { DryMedium, WetMedium } from '../media/types';
 
 /** The live outline of the selected tool where it meets the paper. */
 export type PaperContact = {
@@ -60,6 +60,9 @@ export class StrokeEngine {
   private capacityScale = 1;
   /** How fast the tuft gives that load up, as a multiple of the brush's row. */
   private flowScale = 1;
+  /** True for paste/body media. Derived from the material's existing yield
+   * stress, so the brush never needs to know a material name. */
+  private bodyTransfer = false;
   private layFlat = false;
 
   /** Cells per solve step — never let the tuft jump more than this. */
@@ -68,6 +71,13 @@ export class StrokeEngine {
   constructor(def: BrushDef, size: number) {
     this.size = size;
     this.brush = new Brush(def, size);
+    this.brush.setBodyTransfer(this.bodyTransfer);
+  }
+
+  setWetMedium(m: WetMedium) {
+    this.dry = null;
+    this.bodyTransfer = m.yieldStress > 0;
+    this.brush.setBodyTransfer(this.bodyTransfer);
   }
 
   get current(): Brush { return this.brush; }
@@ -76,6 +86,7 @@ export class StrokeEngine {
     this.size = size;
     this.dry = null;                       // back to a wet tool
     this.brush = new Brush(def, size);
+    this.brush.setBodyTransfer(this.bodyTransfer);
     this.brush.reservoir.setScale(this.capacityScale);
     this.brush.reservoir.setFlow(this.flowScale);
     this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
@@ -117,7 +128,9 @@ export class StrokeEngine {
     const minorRadius = Math.max(0.75, this.brush.tuftLength * 0.12);
     return {
       profile: 'chisel', minorRadius, majorRadius: halfWidth,
-      angle: s.tiltAzimuth + s.twist + 90,
+      // Lies the way the Pencil lies, hovering as well as touching, so the
+      // cursor previews the blade the stroke will actually lay.
+      angle: this.brush.contactAngle(s.tiltAzimuth, s.twist, s.tiltAngle),
     };
   }
 
@@ -173,6 +186,23 @@ export class StrokeEngine {
   }
 
   /**
+   * The same grabbiness WITHOUT the room term — how hard these bristles take
+   * hold of paint already on the sheet, whether or not they have anywhere to
+   * put it.
+   *
+   * `brushTake` above is this times the room left, and that product is what may
+   * be DRUNK. The rest of the grab does not stop existing when the tuft is
+   * full: it becomes a shove. The deposit pass needs both numbers to divide the
+   * one grab between the two outcomes, and it recovers the room fraction as
+   * `brushTake / brushGrab` rather than being sent a third number that could
+   * drift out of step with the first two.
+   */
+  get brushGrab(): number {
+    if (this.dry) return 0;
+    return this.brush.reservoir.upRate;
+  }
+
+  /**
    * Take up what the sheet just gave. Called by the engine after it has read
    * back what the deposit pass subtracted, so this is a credit for a debit that
    * has already happened — never a decision to make here.
@@ -219,7 +249,7 @@ export class StrokeEngine {
     // long stroke fade rather than run forever.
     this.brush.reservoir.charge(this.mix, this.loading, this.waterCharge);
     this.onBrushReset?.();
-    this.brush.begin(this.toInput(gx, gy, s, 0, 0));
+    this.brush.begin();
     this.last = { x: gx, y: gy, s };
   }
 

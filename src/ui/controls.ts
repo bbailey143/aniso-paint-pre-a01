@@ -165,7 +165,7 @@ export const RAIL_CONTROLS: RailControl[] = [
     initial: 1,
     format: (v) => `${v.toFixed(2)}×`,
     appliesTo: (t) => t.family === 'wet',
-    drives: 'Reservoir.setFlow — downRate, the share of the load given up per cell travelled.',
+    drives: 'Reservoir.setFlow — downRate, the paint released per cell travelled.',
   },
   {
     /* Solvent, for everything. Water is what watercolour happens to be thinned

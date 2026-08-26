@@ -79,11 +79,12 @@ export class CanvasEngine {
   /** How far a standing film of this material drags it toward mirror-wet.
    *  1 is the old behaviour, and is right for a water medium. */
   private filmGloss = 1.0;
-  /** How bright the highlight on a ridge of paint is. */
-  private sheenStrength = 0.55;
-  /** How broad it is. 0.632 reproduces the hard-coded tightness of 48 that this
-   *  replaced, so an untouched dial changes nothing. */
-  private sheenWidth = 0.632;
+  /** How bright the highlight on a ridge of paint is. [UNVERIFIED — artist
+   *  matched against the 2026-08-25 cured-impasto reference set.] */
+  private sheenStrength = 0.10;
+  /** Cured oil scatters a broad, quiet highlight rather than a varnish glint.
+   *  [UNVERIFIED — artist visual mapping, 2026-08-25.] */
+  private sheenWidth = 0.96;
   private valueShift = 0.0;
   /**
    * Debug display: show where the water is instead of the colour. Purely a
@@ -430,11 +431,14 @@ export class CanvasEngine {
    * and for the soak harness.
    *
    * `brushTake` is the tuft's side of the pickup exchange - see
-   * `StrokeEngine.brushTake`.
+   * `StrokeEngine.brushTake`. `brushGrab` is the same grab before the room
+   * clamp; the deposit pass uses the pair to split one grab between drinking
+   * and shoving - see `StrokeEngine.brushGrab`.
    */
   step(segments: Float32Array<ArrayBuffer>, segCount: number, dx = 0, dy = 0,
-       mix?: Float32Array<ArrayBuffer>, brushTake = 0): boolean {
-    return this.fluid.step(segments, segCount, mix ?? this.mixWeights_, dx, dy, brushTake);
+       mix?: Float32Array<ArrayBuffer>, brushTake = 0, brushGrab = 0): boolean {
+    return this.fluid.step(
+      segments, segCount, mix ?? this.mixWeights_, dx, dy, brushTake, brushGrab);
   }
 
   /** Where lifted paint goes. The host points this at the brush's reservoir. */

@@ -807,7 +807,7 @@ export class FluidEngine {
    * the host must space them <= 1 cell apart (Card 6; otherwise strokes bead).
    */
   step(segments: Float32Array<ArrayBuffer>, segCount: number, mixWeights: Float32Array<ArrayBuffer>,
-       travelX = 0, travelY = 0, brushTake = 0) {
+       travelX = 0, travelY = 0, brushTake = 0, brushGrab = 0) {
     // Do not continually simulate an untouched sheet. The first wet footprint
     // wakes the solver; after that the normal gauge decides when it may rest.
     if (segCount > 0) {
@@ -849,6 +849,10 @@ export class FluidEngine {
          block immediately before its own dispatch. */
       ctl[8] = Math.max(0, this.params.upRate);
       ctl[9] = Math.max(0, Math.min(1, brushTake));
+      /* The tuft's grab before the room clamp. Lane 10 is spare in both paths.
+         The shader divides lane 9 by this to recover how full the tuft is, so
+         the drink and the shove are two shares of ONE grab and cannot drift. */
+      ctl[10] = Math.max(0, Math.min(1, brushGrab));
       device.queue.writeBuffer(this.ctlBuf, 0, ctl);
 
       const denc = device.createCommandEncoder({ label: 'deposit-chunk' });

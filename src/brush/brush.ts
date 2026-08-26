@@ -64,6 +64,15 @@ const DRIVE = 0.35;
 const HOVER = 0.05;
 
 /**
+ * Below this lean, in degrees, the Pencil has no meaningful lean DIRECTION.
+ * `tiltAzimuth` is the arctangent of two components that are both near zero at
+ * that point, so it is noise, and anything steered by it jitters under a
+ * perfectly still hand. Was already the threshold for choosing a drag direction;
+ * the absolute blade angle now uses the same one rather than inventing a second.
+ */
+const UPRIGHT_TILT_DEG = 5;
+
+/**
  * How strongly each spine's lay-over direction leans outward across the blade,
  * against the direction of travel.
  *
@@ -101,6 +110,9 @@ export class Brush {
   /** Cells travelled in the current solve step — what the reservoir charges by. */
   private travel = 0;
   private started = false;
+  /** Body paint runs out by losing loaded contacts, not by making every
+   * contact increasingly transparent. Set from the selected medium row. */
+  private bodyTransfer = false;
 
   constructor(def: BrushDef, size: number) {
     this.def = def;
@@ -134,11 +146,45 @@ export class Brush {
 
   get tuftLength(): number { return this.def.length * this.scale; }
 
-  /* The pose is no longer needed here: each spine now records its own contact
-     point on its own first solve, so there is nothing for begin to seed. Kept in
-     the signature because it is the natural place to hang per-stroke state and
-     every caller already passes it. */
-  begin(_input?: BrushInput) {
+  setBodyTransfer(on: boolean) { this.bodyTransfer = on; }
+
+  private poseAngle(tiltAzimuth: number, twist: number): number {
+    return tiltAzimuth + twist + 90;
+  }
+
+  /**
+   * Flat-blade angle on the sheet, in degrees — ABSOLUTE to the hand's pose.
+   *
+   * Lean the Pencil and the blade lies the way the Pencil lies, whether or not
+   * it is touching the paper. The cursor can therefore show the blade before
+   * touch-down, because there is now something true to show.
+   * [Bartford, 2026-08-26: "make it absolute azimuth for now and we'll see how
+   * it feels." Judge it by hand; nothing here is measured.]
+   *
+   * ~~Previously `if (!this.started) return 0;`, then `poseAngle(...) -
+   * angleZero`, where `angleZero` was this same `poseAngle` captured from the
+   * pose at touch-down in `begin()`.~~ That calibration landed every blade
+   * horizontal however the hand held it — easier to control, but the angle did
+   * not exist until contact, so the cursor could only ever show flat, which
+   * reads as the cursor being broken. Restoring it is those three lines; the
+   * field itself is gone because the typechecker refuses an unread one, and a
+   * field kept "just in case" is how a comment starts lying.
+   *
+   * The low-tilt guard is not a new constant — see `UPRIGHT_TILT_DEG`. A pen
+   * standing straight up has no lean direction to follow, so the azimuth term
+   * is dropped there and only the barrel roll remains. Without it the blade
+   * spins under a still, upright hand.
+   */
+  contactAngle(tiltAzimuth: number, twist: number, tiltAngle = 90): number {
+    const raw = tiltAngle < UPRIGHT_TILT_DEG
+      ? this.poseAngle(0, twist)
+      : this.poseAngle(tiltAzimuth, twist);
+    return ((raw + 180) % 360 + 360) % 360 - 180;
+  }
+
+  /* Touch-down seeds the relative blade angle; each spine separately seeds its
+     own contact history on the first solve. */
+  begin() {
     this.started = true;
     // A new stroke has no history. The first step lays a touch-down, not a
     // smear from wherever the last stroke left the hairs.
@@ -155,7 +201,7 @@ export class Brush {
 
   /** Solve the tuft for one resampled stylus position. */
   solve(input: BrushInput) {
-    if (!this.started) this.begin(input);
+    if (!this.started) this.begin();
     this.travel = Math.hypot(input.dx, input.dy);
 
     const tilt = (input.tiltAngle * Math.PI) / 180;
@@ -205,19 +251,24 @@ export class Brush {
      * the other is well clear of the paper. That is how a flat brush draws a
      * thin line with its corner, and it was not possible.
      *
-     * `u` is square to the lean and horizontal; `v` is square to both, and tips
-     * out of the horizontal by exactly the lean. Rolling the barrel turns the
-     * blade from one toward the other, so an upright pen behaves precisely as
-     * it did (v never gets used when the tilt is zero) and a leaning one gains
-     * a low edge and a high edge.
+     * `u` begins with an exactly horizontal footprint and tilts in height only
+     * as needed to remain square to the handle. Changes in the hand's pose turn
+     * that footprint while a leaning brush still gains a low and a high edge.
      */
-    const roll = (input.twist * Math.PI) / 180;
-    const ux = -Math.sin(az), uy = Math.cos(az);
-    const vx = -azc * Math.cos(az), vy = -azc * Math.sin(az), vz = Math.sin(tilt);
-    const cr = Math.cos(roll), sr = Math.sin(roll);
-    const bx = ux * cr + vx * sr;
-    const by = uy * cr + vy * sr;
-    const bz = vz * sr;
+    const bladeAngle = this.contactAngle(
+      input.tiltAzimuth, input.twist, input.tiltAngle) * Math.PI / 180;
+    /* Touch-down calibrates the current hand pose to horizontal. After that,
+       changes in tilt azimuth or barrel twist turn this x/y direction, so the
+       blade follows the hand rather than staying nailed to the screen. Height
+       alone is adjusted to keep the blade square to the handle. */
+    let ux = Math.cos(bladeAngle);
+    let uy = Math.sin(bladeAngle);
+    let uz = -(ax * ux + ay * uy) / azc;
+    const ulen = Math.hypot(ux, uy, uz) || 1;
+    ux /= ulen; uy /= ulen; uz /= ulen;
+    const bx = ux;
+    const by = uy;
+    const bz = uz;
     const halfWidth = 0.5 * this.def.widthRatio * L;
     /* Leaning the brush must not also press it deeper. Without this, tipping a
        blade onto its corner drives the whole ferrule down by half a blade and
@@ -228,7 +279,7 @@ export class Brush {
     // Preferred drag direction — the anisotropy axis. The pen's lean is the
     // natural pull direction; upright pens fall back to the blade axis.
     let px = Math.cos(az), py = Math.sin(az);
-    if (input.tiltAngle < 5) { px = bx; py = by; }
+    if (input.tiltAngle < UPRIGHT_TILT_DEG) { px = bx; py = by; }
 
     const dir: [number, number, number] = [-ax, -ay, -azc];
 
@@ -332,7 +383,8 @@ export class Brush {
           // the paper. This is what makes a light touch skip the valleys.
           const press = Math.max(0, Math.min(1, 1 - p.z / SLAB));
           const cell = b * J + s;
-          const w = this.reservoir.withdraw(cell, press, this.draw, this.travel);
+          const w = this.reservoir.withdraw(
+            cell, press, this.draw, this.travel, this.bodyTransfer);
           let pig = 0;
           for (let k = 0; k < 8; k++) pig += this.draw[k];
 

@@ -47,6 +47,11 @@ struct Ctl {
    * rather than there so that what the sheet loses and what the brush gains
    * cannot drift apart. */
   brushTake: f32,
+  /** The SAME grab with the room term left out. `brushTake / brushGrab` is
+   * therefore how much room the tuft has, and `1 -` that is how laden it is:
+   * the share of its grab that cannot be drunk and is shoved instead. Sent as
+   * the pair rather than as a separate fullness so the two cannot disagree. */
+  brushGrab: f32,
 };
 
 /**
@@ -523,10 +528,51 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          The ceiling stays as a conservation guard, but it should now be rare
          for it to bind at all — when it was doing the deciding, the smear was
          not a physical quantity, it was a clip. */
-      let carried = min(
-        loose * share * min(speed, 4.0) * clamp(cover, 0.0, 1.0)
-          * max(C.smear, 0.0) * SMEAR_RATE,
-        w0.y * 0.9);
+      let pressCarried = loose * share * min(speed, 4.0) * clamp(cover, 0.0, 1.0)
+                       * SMEAR_RATE;
+
+      /* THE GRAB THAT CANNOT BE DRUNK.
+       *
+       * The pickup above is `upRate * brushTake * …`, and `brushTake` is the
+       * tuft's grab times the room it has left. So a laden tuft drinks almost
+       * nothing — measured 0.052 with the brush 85 % full — and that is right.
+       * What was wrong is that its grab then did nothing at all: the shove
+       * above does not know how full the brush is, so at the moment the tuft is
+       * fullest, and shoves hardest in life, the engine was at its weakest on
+       * BOTH routes. Blue sat untouched under a yellow stroke that crossed it.
+       * [Artist, 2026-08-26: "the blue paint underneath the yellow stroke did
+       * not leave the canvas. It stayed right in place."]
+       *
+       * So: one grab, two outcomes, and they hand over to each other. The share
+       * the tuft has room for is drunk. The remaining `1 - room` is shoved.
+       * `room` is recovered from the two numbers the host already sends, rather
+       * than being a third that could drift out of step with them.
+       *
+       * No new constant: `upRate` is the material row, `brushGrab` the tuft
+       * row, and the split is the room the tuft itself reports. Compounded over
+       * distance for the same reason the pickup is — multiplying instead lets a
+       * slow hand shove more from the same stroke, which is the per-frame delta
+       * invariant 2 forbids.
+       *
+       * This is NOT the mechanism that emptied the canvas on 2026-08-25. That
+       * was `lift()` removing paint into the brush and breaking what the sheet
+       * held. This moves paint between neighbouring cells through the same
+       * matched give/receive ledger as the shove above: the paint stays on the
+       * canvas, it just stops sitting under the stroke.
+       *
+       * [UNVERIFIED — artist feel, 2026-08-26.] `smearStrength` is the dial to
+       * turn if the amount is wrong; the mechanism is the claim here. */
+      let room = select(
+        0.0, clamp(C.brushTake / max(C.brushGrab, 1.0e-6), 0.0, 1.0), C.brushGrab > 0.0);
+      let laden = clamp(1.0 - room, 0.0, 1.0);
+      let grabShare = clamp(
+        C.upRate * C.brushGrab * laden * clamp(cover, 0.0, 1.0), 0.0, 0.9);
+      let grabCarried = loose * (1.0 - pow(1.0 - grabShare, min(speed, 4.0)));
+
+      // One ceiling over both, and the artist's dial governs both — a control
+      // labelled "how hard the brush shoves" that moved only half the shoving
+      // would be a dial that lies about its own range.
+      let carried = min((pressCarried + grabCarried) * max(C.smear, 0.0), w0.y * 0.9);
       let u = travel / speed;
       // Split across the two faces the direction points at. The parts sum to
       // exactly `carried`, so the split cannot invent or lose paint.
