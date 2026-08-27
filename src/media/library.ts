@@ -96,11 +96,18 @@ export const OIL: WetMedium = {
   // Oil covers. Two loaded strokes and the canvas is gone - which is what an
   // opaque paint is FOR, and what the artist reported missing on 2026-08-24:
   // "it should only take one, maybe two thick strokes to cover the canvas."
-  // Starts deliberately strong. The artist's report on 2026-08-24 was that the
-  // canvas "shows through at all levels, never disappears under the paint", and
-  // the Cover dial is right there to bring it back down once it is visibly too
-  // much. Erring quiet is what wasted the last two rounds.
-  hidesGround: 3,
+  // Set deliberately strong at 3 on 2026-08-24, on the principle that erring
+  // quiet had already wasted two rounds. Brought down to 2 by the artist at the
+  // easel on 2026-08-26: "leave cover at 2, that seems to be good."
+  //
+  // The order matters. That judgement was made AFTER the paint got a shadow of
+  // its own (the shade floor in composite.wgsl). Until then a covered passage
+  // had no surface left to look at, because coverage multiplies the weave out
+  // of the lighting as well as the ground's colour — so Cover was carrying the
+  // blame for a missing surface, which is also why turning it off "suddenly
+  // looks more like paint". See docs/HANDOFF.md E11. Re-judging it against the
+  // old flat shading would give the wrong answer.
+  hidesGround: 2,
   downRate: 0.55, upRate: 0.42, teflonMin: 0.18,
   // 48 hours, straight off the harvested material row. Watercolour is 90
   // seconds. That ratio is the whole difference in how the two are worked.
