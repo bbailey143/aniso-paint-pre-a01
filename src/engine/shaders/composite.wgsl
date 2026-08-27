@@ -707,8 +707,13 @@ fn fs(in: VsOut) -> @location(0) vec4f {
      by eye to the 2026-08-25 primed/cured impasto references.] */
   let isCanvas = C.grainKind > 1.5 && C.grainKind < 2.5;
   let visiblePaperRelief = C.relief * select(1.0, 0.30, isCanvas);
-  let gx = (hR - hL) * visiblePaperRelief * seen + (fR - fL) * C.paintRelief;
-  let gy = (hD - hU) * visiblePaperRelief * seen + (fD - fU) * C.paintRelief;
+  // Kept apart so the shading below can tell which surface it is looking at.
+  let paperGx = (hR - hL) * visiblePaperRelief * seen;
+  let paperGy = (hD - hU) * visiblePaperRelief * seen;
+  let paintGx = (fR - fL) * C.paintRelief;
+  let paintGy = (fD - fU) * C.paintRelief;
+  let gx = paperGx + paintGx;
+  let gy = paperGy + paintGy;
   let n = normalize(vec3f(-gx, -gy, 1.0));
   let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
   // The lamp is in the room, not on the paper. The tooth is part of the sheet
@@ -719,7 +724,34 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // At rot = 0 this is the identity, so the unturned picture is untouched.
   let ns = vec3f(n.x * cr - n.y * sr, n.x * sr + n.y * cr, n.z);
   let lambert = clamp(dot(ns, lightDir), 0.0, 1.0);
-  let shade = 0.82 + 0.18 * lambert;      // subtle; paper is not shiny
+  /* How dark a slope facing away from the lamp is allowed to go.
+   *
+   * 0.82 is a PAPER number — "subtle; paper is not shiny" — and it is right for
+   * a weave. But paint relief rides the same term at `relief 26`, so a thick oil
+   * ridge was being shaded with a range chosen for canvas threads: it could be
+   * lit but it could not be darkened by more than 18%, while `sheen` multiplies
+   * brightness up through `(1 + sheen)` with no such limit. The result was a
+   * highlight with no shadow beside it, which the eye reads as a white line
+   * drawn around the paint instead of as paint standing up.
+   * [Bartford, 2026-08-26, on a screenshot of exactly that edge: "should that
+   * actually be shadow because that would make the height start to make sense".]
+   *
+   * So the floor drops for paint and stays put for paper. `paintShare` is how
+   * much of this pixel's tilt comes from the paint rather than the weave, so a
+   * bare sheet is untouched arithmetic-for-arithmetic, a flat passage keeps the
+   * paper floor (it has no slope to shadow anyway), and only an actual ridge
+   * gets the deeper range. The medium gate is belt-and-braces: at `relief 0`
+   * the paint gradient is already zero, so watercolour cannot reach this.
+   *
+   * [UNVERIFIED — artist's number, 2026-08-26.] 0.45 was chosen by eye against
+   * the white-outline screenshot, not measured. It is the one dial here: lower
+   * is a deeper shadow, 0.82 restores the old picture exactly. */
+  let paintTilt = length(vec2f(paintGx, paintGy));
+  let totalTilt = length(vec2f(gx, gy));
+  let paintShare = clamp(paintTilt / max(totalTilt, 1.0e-5), 0.0, 1.0)
+                 * clamp(C.paintRelief, 0.0, 1.0);
+  let shadeFloor = mix(0.82, 0.45, paintShare);
+  let shade = shadeFloor + (1.0 - shadeFloor) * lambert;
 
   /* Sheen. The old result was added as raw white after the paint colour. Across
    * canvas tooth and cell-scale ridges that read as clear gel or moulded plastic.
