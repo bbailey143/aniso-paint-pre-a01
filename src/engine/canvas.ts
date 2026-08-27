@@ -8,6 +8,8 @@ import type { Gpu } from './gpu';
 import { createColorLibrary, PIGMENT_COUNT } from '../color/library';
 import { PIGMENTS } from '../color/pigment-palette';
 import type { WetMedium } from '../media/types';
+// The reference material for workability. See `setWetMedium`.
+import { WATERCOLOR } from '../media/library';
 import type { Recipe } from '../color/km';
 import type { Paper } from '../substrate/papers';
 import { GRAIN_KIND } from '../substrate/papers';
@@ -269,6 +271,29 @@ export class CanvasEngine {
   /** Select a wet material by feeding its data row into the shared solver. */
   setWetMedium(m: WetMedium) {
     this.fluid.setParams({
+      /* How long this material stays WORKABLE, from its own row.
+       *
+       * `dryRate` runs the wetness continuum `w` down from 1 to 0, and `w` is
+       * what releases the `teflonMin` adhesion floor — so it decides how long
+       * paint can still be scrubbed, lifted and pushed around. It was an
+       * engine-wide constant that no material could override, which put oil on
+       * watercolour's clock: about eleven seconds at 60 fps, against the 48
+       * hours its own row states. [Bartford, 2026-08-26: "the eleven second
+       * timer - definitely not appropriate for an oil medium."]
+       *
+       * Watercolour is the reference pair — its 90 s `openTime` alongside
+       * `DEFAULT_FLUID.dryRate` — and every other material scales against it.
+       * That is not a new convention: oil's own `evapRate` row is already
+       * written as watercolour's rate divided by the same ratio ("48 hours
+       * against watercolour's 90 seconds is the same 1920x"). Watercolour
+       * therefore comes out byte-for-byte unchanged, which is what keeps every
+       * watercolour result on the record still standing.
+       *
+       * A material with no stated open time keeps the old constant rather than
+       * dividing by zero. */
+      dryRate: m.openTime > 0
+        ? DEFAULT_FLUID.dryRate * (WATERCOLOR.openTime / m.openTime)
+        : DEFAULT_FLUID.dryRate,
       viscosity: m.viscosity,
       drag: m.drag,
       gravityResponse: m.gravityResponse,
