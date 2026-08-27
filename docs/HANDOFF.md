@@ -195,6 +195,58 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
+## E12 — the snakeskin is the BLADE's angle to travel, not the screen axis (2026-08-26)
+
+**Artist report.** "See how clean the vertical strokes are - and then the
+horizontal strokes. These were approximately same pressure, just vertical is
+smooth and horizontal is snakeskin."
+
+**A wrong fix first, retracted.** The session before this read the joint-count
+ramp (5 of 30 joints touching across the whole comfortable pressure range) and
+put a `pressure^0.45` curve on the wet path. The reading was real; the diagnosis
+was not. Pressure knows nothing about which way the hand is travelling and
+cannot produce a directional pattern. Reverted to raw at the artist's request;
+`PEN_GAMMA` is kept as a documented identity in `input/stroke.ts`.
+
+**Method.** Matched strokes, same pressure 0.6, same tilt 35°, 160 cells long,
+ripple measured as the variation of the cross-stroke mean ALONG the stroke —
+i.e. how much the mark pulses down its length. Every condition run twice, all
+pairs agreeing to every digit.
+
+| | ripple |
+|---|---|
+| travel horizontal, blade broadside | 0.153 |
+| travel vertical, blade broadside | 0.133 |
+| travel horizontal, blade edge-on | 0.091 |
+| travel vertical, blade edge-on | 0.091 |
+
+**What it proves.** The pattern follows the blade's angle to the direction of
+travel, NOT the screen axis. Dragged broadside the mark ripples; dragged edge-on
+it does not, and the two edge-on cases agree exactly. The artist's vertical and
+horizontal strokes almost certainly differed in how the blade was held, not in
+which way they ran.
+
+**Not the ground.** Ripple ratio is 1.45–1.47 on Cotton Duck, on Flat White
+(smooth), on Medium Texture (watercolour), and with `toothAmp` forced to 0. The
+paper generator is exonerated.
+
+**What it does NOT prove — the mechanism is still open.** The obvious suspect is
+Card 6 beading: broadside, the contact patch is long across the stroke and thin
+along it, so each resampled step advances by nearly its own thickness and the
+stamps touch instead of overlapping. But the step sweep does not behave:
+
+  maxStep 0.90 -> 0.155     0.45 -> 0.121     0.225 -> 0.128     0.113 -> 0.172
+
+Halving helps, quartering and eighth make it worse again. Non-monotonic means
+something else moves with step count — the reservoir depleting per step is the
+first thing to rule out. **Do not ship a resampling change on this.**
+
+**NEXT ACTION on the snakeskin.** Establish why finer steps stop helping. Lay
+one broadside stroke at each maxStep with the reservoir recharged to identical
+load per unit distance rather than per step, and see whether the curve becomes
+monotonic. If it does, the fix is to scale the step by the patch's along-travel
+extent; if it does not, look at the per-hair footprint accumulation instead.
+
 ## E11 — why Cover made the paint stop looking like paint (2026-08-26)
 
 **Artist observation, from a screen recording.** "When cover is off completely,

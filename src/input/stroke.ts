@@ -48,10 +48,21 @@ import type { DryMedium, WetMedium } from '../media/types';
  * Dry media are untouched: they run through `DryTool` and already have their
  * own `pressureExp` per material, tuned against raw pressure.
  *
- * [UNVERIFIED] The exponent is a feel number, chosen to land a normal press in
- * the measured 10-joint band. 1.0 restores raw hardware pressure exactly.
+ * ~~0.45~~ **RETRACTED 2026-08-26, back to 1.0 — raw hardware pressure.**
+ * Bartford: "go ahead and set it back to where it was." The joint-count reading
+ * above is real and stands, but it was not the cause of the snakeskin, and the
+ * evidence is direction: at the same pressure, with the blade held at the same
+ * angle, his VERTICAL strokes come out clean and his HORIZONTAL strokes come
+ * out scaled. A pressure curve cannot produce that — pressure knows nothing
+ * about which way the hand is travelling. Raising it made every mark heavier
+ * and left the pattern where it was.
+ *
+ * Kept as a named identity rather than deleted, because the measurement was
+ * worth having and this is where it goes if a curve is ever wanted: 0.45 lands
+ * a normal press in the ten-joint band, and it costs the no-contact bottom of
+ * the ramp (a 0.02-0.05 feather touch stops being nothing).
  */
-const PEN_GAMMA = 0.45;
+const PEN_GAMMA = 1.0;
 
 function penPressure(raw: number): number {
   return Math.pow(Math.max(0, Math.min(1, raw)), PEN_GAMMA);
