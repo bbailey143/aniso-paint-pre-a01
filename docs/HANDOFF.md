@@ -195,6 +195,54 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
+## E13 — the pickup gate was shut, not throttled (2026-08-26)
+
+**The artist's standard.** "Paint strokes need to pick each other up, mix each
+other around, blend on the canvas… The orange paint simply lays on top, it
+doesn't pick up bottom layers almost at all. While there should be some
+resistance to that, it shouldn't be a ton."
+
+**Method.** Blue band, then a fully-charged yellow Flat Hog dragged across it.
+Blue removal counted only in the cells the yellow actually reached — measuring
+the whole region understates it badly, since most of the blue is never touched.
+Every row run twice, agreeing to every digit.
+
+| room floor | blue lifted where touched | brush holding |
+|---|---|---|
+| 0 (as shipped) | 10.7 % | 97.5 % |
+| 0.2 | 20.1 % | 98.1 % |
+| 0.5 | 34.4 % | 98.9 % |
+
+**Why it was shut.** `roomFraction` gates pickup and reaches zero at capacity.
+The code assumed a full brush "drops below full within a few cells and starts
+taking again on its own". Measured over a 150-cell stroke, its room opened from
+0 to **0.038** — a charged tuft holds far more than one stroke lays, so the gate
+stays shut for the whole stroke. With no floor, pickup is not throttled, it is
+off. Removal at floor 0 is 10.7 % locally and **0.5 % across the region**, which
+is the artist's "almost at all" in one number.
+
+**The revert that caused it was aimed at the wrong culprit.** The floor was
+removed because a brush once finished strokes holding 158 % — even 516 % — of
+capacity while the sheet went bare. That was real, but it happened alongside a
+deposit that charged per frame and counted the hand's speed twice, fixed in
+`5cf482c`. Re-measured with the charging correct, **six scrubs through wet paint
+with no recharge, holding never exceeds 100 % at any floor tried** (97.5 / 98.1 /
+98.9 %). The overfill does not recur. The floor was reverted for a fault that
+belonged to something else, and the note in `reservoir.ts` arguing against it is
+struck through there.
+
+**Applied.** `SURFACE_EXCHANGE = 0.35` — a brim-full tuft still trades paint at
+its surface even with no room to net-gain any. On a heavier blue field that
+gives **29.8 %** lifted where touched, blue reaching the brush, holding at 98 %.
+
+**[UNVERIFIED] and it is a feel number.** Artist verdict owed: 0.35 against the
+standard "some resistance, but not a ton". The table above is the dial — 0
+restores the shut gate exactly, 0.5 lifts about a third.
+
+**Watch for, when judging it:** pickup and deposit both scale with contact, so a
+brush that lifts more also blends more of what it lifted back out. If crossings
+now go muddy rather than mixed, that is the place to look, not the floor.
+
 ## E12 — the snakeskin is the BLADE's angle to travel, not the screen axis (2026-08-26)
 
 **Artist report.** "See how clean the vertical strokes are - and then the

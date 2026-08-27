@@ -14,6 +14,34 @@
 
 import type { ReservoirDef } from './types';
 
+/**
+ * How willingly a tuft with NO room left still trades paint at its surface.
+ *
+ * A brush that has run down drinks; a brim-full one mostly shoves — but "mostly"
+ * is not "not at all". The outer film of a bristle exchanges with the paint it
+ * is dragged through whether or not there is capacity inside to net-gain any,
+ * and that exchange is how a stroke picks the layer beneath it up and carries
+ * it. Without a floor, `roomFraction` sits at zero for an entire stroke and the
+ * pickup gate is not throttled, it is shut. See the retraction in
+ * `roomFraction` for why the floor was removed and why that was wrong.
+ *
+ * MEASURED 2026-08-26, blue band crossed by a fully-charged yellow Flat Hog,
+ * counting only the cells the yellow actually reached. Every row run twice and
+ * agreeing to every digit (docs/HANDOFF.md E13):
+ *
+ *   floor 0     10.7 % of the blue lifted   holding 97.5 %
+ *   floor 0.2   20.1 %                      holding 98.1 %
+ *   floor 0.5   34.4 %                      holding 98.9 %
+ *
+ * Holding is the guard rail the old revert was worried about, measured across
+ * six scrubs with no recharge: it never exceeds 100 % at any of these.
+ *
+ * [UNVERIFIED] The value is a feel number. The artist's standard is "there
+ * should be some resistance to that, it shouldn't be a ton", which is why this
+ * starts nearer the middle than the top. 0 restores the shut-gate behaviour
+ * exactly.
+ */
+const SURFACE_EXCHANGE = 0.35;
 
 export class Reservoir {
   readonly bristles: number;
@@ -277,19 +305,29 @@ export class Reservoir {
    * The deposit pass multiplies its pickup by this, which is what makes a
    * thirsty brush drink and a laden one mostly shove.
    *
-   * It reaches **zero** at capacity, and that is the point. It used to floor at
-   * 0.3 on the reasoning that a brim-full tuft still exchanges paint at its
-   * surface, and that letting it hit zero would make Load a switch that
-   * silently turned picking-up off. Both halves of that were wrong:
+   * It floors at `SURFACE_EXCHANGE`, because a brim-full tuft still trades
+   * paint at its surface even when it has no room to net-gain any.
    *
-   *   - [MEASURED, docs/16 E7] With a floor, nothing ever stopped the brush
-   *     taking. It finished strokes holding **158 %** of its own capacity while
-   *     the sheet went bare — which is not a brush picking paint up, it is a
-   *     brush that cannot be filled.
-   *   - It is not a dead control either. A brush at the brim is laying paint
-   *     with every step, so it drops below full within a few cells and starts
-   *     taking again on its own. "Full brushes shove, emptying brushes drink"
-   *     is the behaviour, not a switch.
+   * ~~It reaches zero at capacity, and that is the point.~~ **RETRACTED
+   * 2026-08-26, and the reasoning that removed the floor is retracted with it.**
+   * Both halves are now measured wrong, on the current engine:
+   *
+   *   - ~~"With a floor, nothing ever stopped the brush taking — it finished
+   *     strokes holding 158 % of its own capacity while the sheet went bare."~~
+   *     That was real, but it was NOT the floor's doing. It happened alongside
+   *     a deposit that charged per frame and counted the hand's speed twice,
+   *     fixed in `5cf482c`. Re-measured with the floor restored and the
+   *     charging correct — six scrubs through wet paint with no recharge —
+   *     holding never exceeds **100 %** at any floor tried: 97.5 % at floor 0,
+   *     98.1 % at 0.2, 98.9 % at 0.5. The overfill does not recur. The floor
+   *     was reverted for a fault that belonged to something else.
+   *   - ~~"A brush at the brim drops below full within a few cells and starts
+   *     taking again on its own."~~ **False in practice.** A charged tuft holds
+   *     far more than one stroke lays: measured over a 150-cell stroke, its
+   *     room opened from 0 to **0.038**. The gate is shut for the whole stroke,
+   *     so with no floor the pickup is not throttled, it is off. That is the
+   *     artist's report of 2026-08-26 — "the orange paint simply lays on top,
+   *     it doesn't pick up bottom layers almost at all" — in one number.
    *
    * The clamp still lives HERE and not in the shader's subtraction, because a
    * cap applied on the brush side would refuse paint the sheet had already
@@ -309,7 +347,7 @@ export class Reservoir {
     }
     if (cap <= 1e-6) return 0;
     const full = Math.max(0, Math.min(1, Math.max(water, pig) / cap));
-    return 1 - full;
+    return Math.max(SURFACE_EXCHANGE, 1 - full);
   }
 
   /**
