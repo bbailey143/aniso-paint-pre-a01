@@ -195,6 +195,46 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
+## STOP HERE — the instruments are the next job, not the paint (2026-08-26)
+
+**Read this before running any experiment.** Five measurements went wrong in one
+session, each producing a confident, plausible, wrong number. Every one was
+caught only by the artist looking at the screen. The pattern is not bad luck:
+
+1. The browser console keeps WGSL errors from shader versions that no longer
+   exist — a fixed shader looked broken through two reloads.
+2. A step sweep fed more stylus samples as it shrank the step, so it also ran
+   `engine.step()` more often and measured fluid relaxation, not sampling.
+3. `Reservoir.take` floors travel at `STILL = 0.25`, so any finer step lays 75 %
+   more paint per cell and the readings invert.
+4. `CanvasEngine.onPickUp` is a setter with NO getter, so reading it returns
+   undefined; a probe "found" the credit path unwired when it was fine, then
+   broke it by overwriting.
+5. Pickup was measured over a whole region including cells the brush never
+   touched, understating it by 20x.
+
+And a sixth that is a process fault rather than a code trap: the runs set the
+medium through the engine API and never touched the UI, so **the tool bar read
+"Watercolour / Round Sable" while the solver ran oil.** The physics was right and
+the labels were lying — confirmed from `fluid.params` — but it cost trust, and
+the pickup runs also failed to pin the paper, so they were not identical setups.
+
+**NEXT ACTION — build the bench before tuning anything else.** A command in
+`tools/`, beside `brush-bench.mjs`. It must: take medium, brush and paper
+explicitly and **assert them**, so a run that is not what it claims fails loudly;
+measure the artist-facing quantities (how much of the layer beneath is lifted,
+how patchy a stroke is, how much body it holds); and emit the render beside every
+number, so a figure that disagrees with the picture is caught at once instead of
+three steps later. Ad-hoc console probes are how this session lost its afternoon.
+
+**OPEN, and the reason the bench comes first.** `SURFACE_EXCHANGE = 0.35` shipped
+in `1643d2a` and measures 29.8 % of the lower layer lifted where the brush
+touches, up from 10.7 %. The artist reports **no visible change**. The floor is
+confirmed live (a full brush reports room 0.35, `brushTake` 0.119, against ~0.00
+before), so either the effect is invisible at this value or his page was stale —
+untested when the session ended. Do not tune the floor until that is resolved: a
+number nobody can see is the exact failure the bench exists to prevent.
+
 ## E13 — the pickup gate was shut, not throttled (2026-08-26)
 
 **The artist's standard.** "Paint strokes need to pick each other up, mix each
