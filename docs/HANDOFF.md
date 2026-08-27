@@ -195,6 +195,53 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
+## E10 — the body-field premise, measured before building it (2026-08-26)
+
+Bartford asked for a body field and the eleven-second timer fixed. The timer is
+done (`26b7370`). The body field is NOT started, deliberately, because measuring
+first changed what it should be.
+
+**Method.** Four stacked Oil passes with the Flat Hog, load 1.0, then 600 idle
+steps, reading peak and mean film straight from a `wet0` dump.
+
+| | peak film | mean film |
+|---|---|---|
+| 1 pass | 0.5624 | 0.0724 |
+| 2 passes | 0.8145 | 0.1010 |
+| 3 passes | 0.9386 | 0.1180 |
+| 4 passes | 1.0159 | 0.1295 |
+| after 600 idle steps | 1.0151 | 0.1304 |
+
+**What it proves.** Oil height accumulates across passes and then HOLDS — 0.08%
+lost over 600 idle steps. It is not leaking, not slumping (its slopes are far
+under `yieldStress` 0.34) and not evaporating. What made a stroke read as a thin
+wash was the 90° blade bug fixed in `8d43c41`, which halved film depth per cell.
+
+**So a second height field is probably the wrong build.** The paste solver flows
+`wet0.y`; adding a parallel `h_p` would give oil two heights and leave the solver
+moving the one that is no longer the paint. On the retired branch that split made
+sense because paint sat in a water film. Here the film IS the paint.
+
+**Two things the measurement did surface, both real:**
+
+1. **It saturates.** Each pass adds less: +0.56, +0.25, +0.12, +0.08. Real oil
+   keeps building. This is the likeliest remaining cause of "doesn't hold body",
+   and it is also the old "should only take one or two thick strokes to cover"
+   complaint wearing different clothes. Cause not yet established — candidates
+   are the deposit's own tooth/bridge gate closing as height rises, and the
+   brush exchanging out as much as it lays.
+2. **Oil can never cure.** `justDried` fires only when `hf <= WET_EPS`, and
+   oil's film never leaves, so the transition is unreachable. `bodyShrink 0.85`
+   therefore cannot fire even if it were wired. With the timer fixed this is
+   now mostly academic — `w` takes ~5.9 hours of painting frames to reach zero,
+   which for a session means oil correctly never sets — but any future
+   cure-driven behaviour has to be driven by `w`, not by the film vanishing.
+
+**NEXT ACTION on body, pending the artist's look.** Bartford is to paint Oil
+with the blade fix and the timer in place and say whether it now has body. If it
+still does not, chase the saturation in (1) — instrument the deposit gate under
+a stacked pass and find which term is closing — before adding any field.
+
 ## E9 — the shove now scales, and it is NOT enough (2026-08-26)
 
 **Applied.** `deposit.wgsl` splits one grab into two outcomes: the share the tuft
