@@ -273,9 +273,14 @@ axis — from 0.90 edge-on to 0.30 broadside. Matched strokes, each run twice:
 | edge-on, either way | 0.091 | 0.092 |
 
 A 10–23% reduction, edge-on untouched, at about 2.7x the footprint segments on a
-broadside stroke (5283 against 1952). **Artist verdict owed: is that visible, and
-is it worth the cost on an iPad?** If it is not visible, revert it rather than
-carrying the cost — the mechanism being right does not make the fix worth having.
+broadside stroke (5283 against 1952).
+
+**ARTIST VERDICT — REVERTED, 2026-08-26.** "It's no different, so just revert."
+The code is back to a flat 0.9; the two instrument faults and the mechanism are
+kept in the comment on `StrokeEngine.maxStep` and here, because both are worth
+more than the fix was. **The lesson to carry: the mechanism being right does not
+make a fix worth having.** A measurable 23% that costs 2.7x and is invisible at
+the easel is a bad trade, and the only way to find that out was to ask.
 
 **Still open.** Ripple does not go to zero. Whatever remains at 0.118 is not the
 sub-step, since the sweep's floor of ~0.064 turned out to be fluid relaxation
