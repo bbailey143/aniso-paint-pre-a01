@@ -230,22 +230,57 @@ which way they ran.
 (smooth), on Medium Texture (watercolour), and with `toothAmp` forced to 0. The
 paper generator is exonerated.
 
-**What it does NOT prove — the mechanism is still open.** The obvious suspect is
-Card 6 beading: broadside, the contact patch is long across the stroke and thin
-along it, so each resampled step advances by nearly its own thickness and the
-stamps touch instead of overlapping. But the step sweep does not behave:
+**The mechanism, settled.** It is Card 6 beading arriving on the other axis:
+broadside, the contact patch is long across the stroke and thin along it, so
+each resampled step advances by nearly its own thickness and the stamps touch
+instead of overlapping.
 
-  maxStep 0.90 -> 0.155     0.45 -> 0.121     0.225 -> 0.128     0.113 -> 0.172
+~~The step sweep does not behave — 0.90 -> 0.155, 0.45 -> 0.121, 0.225 -> 0.128,
+0.113 -> 0.172, non-monotonic.~~ **RESOLVED: that was a broken instrument, twice
+over, and both faults were mine.**
 
-Halving helps, quartering and eighth make it worse again. Non-monotonic means
-something else moves with step count — the reservoir depleting per step is the
-first thing to rule out. **Do not ship a resampling change on this.**
+**Fault 1 — the STILL floor.** `Reservoir.take` floors travel at `STILL = 0.25`
+of a cell so a held brush still bleeds. Any step under 0.25 therefore charges as
+though the hand had moved further than it did. Measured:
 
-**NEXT ACTION on the snakeskin.** Establish why finer steps stop helping. Lay
-one broadside stroke at each maxStep with the reservoir recharged to identical
-load per unit distance rather than per step, and see whether the curve becomes
-monotonic. If it does, the fix is to scale the step by the patch's along-travel
-extent; if it does not, look at the per-hair footprint accumulation instead.
+| maxStep | paint per cell | ripple |
+|---|---|---|
+| 0.90 | 0.0677 | 0.141 |
+| 0.45 | 0.0686 | 0.074 |
+| 0.30 | 0.0695 | 0.065 |
+| 0.25 | 0.0693 | 0.064 |
+| **0.20** | **0.1212** | 0.113 |
+
+Above the floor, deposition per unit distance is invariant within 2.7% and
+ripple falls monotonically. At 0.20 the brush lays 75% more paint per cell and
+the reading is meaningless. **Never take a resampling step below 0.25 without
+changing that floor too.**
+
+**Fault 2 — the sweep changed two things.** It fed more stylus samples as it
+shrank the step, so it also called `engine.step()` more times and the paste
+relaxed between those extra frames. Most of the apparent gain was extra fluid
+iterations, not better sampling. Holding the sample count fixed and varying only
+the sub-step gives a much smaller, honest number.
+
+**Fix applied, and its real size.** `StrokeEngine.stepFor` scales the sub-step by
+how broadside the blade is — `|sin|` of the angle between travel and the blade
+axis — from 0.90 edge-on to 0.30 broadside. Matched strokes, each run twice:
+
+| | before | after |
+|---|---|---|
+| broadside, horizontal | 0.153 | 0.118 |
+| broadside, vertical | 0.133 | 0.120 |
+| edge-on, either way | 0.091 | 0.092 |
+
+A 10–23% reduction, edge-on untouched, at about 2.7x the footprint segments on a
+broadside stroke (5283 against 1952). **Artist verdict owed: is that visible, and
+is it worth the cost on an iPad?** If it is not visible, revert it rather than
+carrying the cost — the mechanism being right does not make the fix worth having.
+
+**Still open.** Ripple does not go to zero. Whatever remains at 0.118 is not the
+sub-step, since the sweep's floor of ~0.064 turned out to be fluid relaxation
+rather than sampling. The per-hair footprint accumulation is the next place to
+look.
 
 ## E11 — why Cover made the paint stop looking like paint (2026-08-26)
 

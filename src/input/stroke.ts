@@ -119,6 +119,44 @@ export class StrokeEngine {
   /** Cells per solve step — never let the tuft jump more than this. */
   private maxStep = 0.9;
 
+  /**
+   * The same, for a blade being dragged BROADSIDE.
+   *
+   * A flat brush pulled edge-on has a long contact patch lying along its own
+   * path, so consecutive steps overlap heavily and 0.9 of a cell is plenty.
+   * Turn it broadside and the patch becomes thin in the direction of travel:
+   * each step advances by roughly its own thickness, the stamps touch instead
+   * of overlapping, and the mark comes out scaled. That is the Card 6 beading
+   * trap arriving on the other axis. [Artist, 2026-08-26: "vertical is smooth
+   * and horizontal is snakeskin" — it was the blade's angle, not the screen's.]
+   *
+   * MEASURED, matched Oil strokes with the Flat Hog, each run twice and
+   * agreeing to every digit. Ripple = how much the cross-stroke mean pulses
+   * along the length (docs/HANDOFF.md E12):
+   *
+   *   blade broadside, horizontal   0.153 -> 0.118
+   *   blade broadside, vertical     0.133 -> 0.120
+   *   blade edge-on, either way     0.091 -> 0.092   (untouched, as intended)
+   *
+   * Real but modest, and it costs about 2.7x the footprint segments on a
+   * broadside stroke — 5283 against 1952. Worth knowing before turning it up.
+   *
+   * `[TRAP, my own]` A first sweep read 0.90 -> 0.141 and 0.30 -> 0.065 and
+   * looked like a much bigger win. That sweep fed MORE STYLUS SAMPLES as it
+   * shrank the step, so it also ran `engine.step()` more times, and the paste
+   * relaxed between those extra frames. Most of that smoothing was extra fluid
+   * iterations, not better sampling, and it is not the resampler's to give.
+   * The numbers above hold the sample count fixed and vary only the sub-step.
+   *
+   * `[TRAP]` **Do not take this below 0.25.** `Reservoir.take` floors travel at
+   * `STILL = 0.25` of a cell so a held brush still bleeds, so a step under that
+   * charges as though the hand had moved further than it did. Measured at 0.20:
+   * paint per cell jumps from 0.069 to 0.121 — 75 % more paint — and the ripple
+   * gets WORSE, not better. That artefact is what made an earlier sweep look
+   * non-monotonic and nearly bought a wrong fix.
+   */
+  private broadsideStep = 0.30;
+
   constructor(def: BrushDef, size: number) {
     this.size = size;
     this.brush = new Brush(def, size);
@@ -324,6 +362,26 @@ export class StrokeEngine {
     };
   }
 
+  /**
+   * How far the tuft may jump between solves, for THIS step of THIS stroke.
+   *
+   * The cost is real — a broadside step of 0.30 is three times the solves of
+   * 0.90 — so it is spent only where the measurement says it buys something:
+   * on a flat blade being dragged across its own width. A round tip has no
+   * width to be dragged across, and an edge-on blade already overlaps itself,
+   * so both keep the cheap step. See `broadsideStep` for the numbers.
+   */
+  private stepFor(s: StylusSample, dx: number, dy: number, dist: number): number {
+    if (this.dry || dist < 1e-6) return this.maxStep;
+    if (this.brush.def.kind !== 'flat') return this.maxStep;
+    const blade = (this.brush.contactAngle(s.tiltAzimuth, s.twist, s.tiltAngle) * Math.PI) / 180;
+    // |sin| of the angle between travel and the blade axis, via the cross
+    // product of two unit vectors: 0 dragging edge-on, 1 dragging broadside.
+    const across = Math.abs(
+      (dx / dist) * Math.sin(blade) - (dy / dist) * Math.cos(blade));
+    return this.maxStep + (this.broadsideStep - this.maxStep) * across;
+  }
+
   /** Add a stylus sample (already in grid space) and lay down its footprint. */
   add(gx: number, gy: number, s: StylusSample) {
     if (!this.last) { this.begin(gx, gy, s); }
@@ -333,7 +391,7 @@ export class StrokeEngine {
     const dist = Math.hypot(dx, dy);
 
     // Standing still still deposits — a held brush keeps bleeding into the paper.
-    const steps = Math.max(1, Math.ceil(dist / this.maxStep));
+    const steps = Math.max(1, Math.ceil(dist / this.stepFor(s, dx, dy, dist)));
 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
