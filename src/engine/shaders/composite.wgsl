@@ -743,14 +743,26 @@ fn fs(in: VsOut) -> @location(0) vec4f {
    * gets the deeper range. The medium gate is belt-and-braces: at `relief 0`
    * the paint gradient is already zero, so watercolour cannot reach this.
    *
-   * [UNVERIFIED — artist's number, 2026-08-26.] 0.45 was chosen by eye against
-   * the white-outline screenshot, not measured. It is the one dial here: lower
-   * is a deeper shadow, 0.82 restores the old picture exactly. */
+   * [UNVERIFIED — artist's number, 2026-08-26.] Taken to 0.0 at his request:
+   * "I'd like to see that shadow far deeper than .45, but I don't know the
+   * range. Make it all the way dark." 0.0 is the end of the range — a face
+   * turned fully from the lamp goes to black, with no ambient fill at all — so
+   * this is deliberately the extreme rather than a proposed resting place.
+   * ~~0.45~~ ~~0.82~~ are the two previous values; 0.82 restores the original
+   * picture exactly.
+   *
+   * There is a second reason to want this range, found the same evening: with
+   * Cover up, `seen` multiplies the WEAVE out of the lighting as well as the
+   * ground's colour, so a covered passage has only the paint's own surface left
+   * to look at. At a floor of 0.82 that surface had a 18% tonal range and the
+   * passage read as flat colour — which is why turning Cover off made the paint
+   * suddenly look like paint. The deeper this floor, the more the paint's own
+   * relief can carry a covered passage on its own. */
   let paintTilt = length(vec2f(paintGx, paintGy));
   let totalTilt = length(vec2f(gx, gy));
   let paintShare = clamp(paintTilt / max(totalTilt, 1.0e-5), 0.0, 1.0)
                  * clamp(C.paintRelief, 0.0, 1.0);
-  let shadeFloor = mix(0.82, 0.45, paintShare);
+  let shadeFloor = mix(0.82, 0.0, paintShare);
   let shade = shadeFloor + (1.0 - shadeFloor) * lambert;
 
   /* Sheen. The old result was added as raw white after the paint colour. Across

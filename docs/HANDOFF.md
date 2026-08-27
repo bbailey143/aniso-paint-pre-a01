@@ -195,6 +195,39 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
+## E11 — why Cover made the paint stop looking like paint (2026-08-26)
+
+**Artist observation, from a screen recording.** "When cover is off completely,
+the paint suddenly looks more like paint. I dunno, something to consider." In
+the recording the same scumbled blue passage reads as thin oil over canvas at
+Cover `stains`, and as flat slabs of blue at Cover `1.06x`.
+
+**Cause, from the source.** Coverage does not only hide the ground's colour, it
+multiplies the ground's TEXTURE out of the lighting as well:
+
+```
+seen = exp(−hidesGround × (laid × thickScale + standingBody) × 2)
+gx   = (paper slope) × visiblePaperRelief × seen + (paint slope) × paintRelief
+```
+
+So a covered passage loses the weave from its shading — and nothing replaced it,
+because the paint's own relief was capped at an 18% tonal swing by the `0.82`
+shade floor. A covered passage therefore had almost no surface left to look at.
+Turning Cover off brought the weave back and it did the job the paint's own
+surface should have been doing.
+
+**This is the same finding as the white-outline note, from the other side.** Both
+say the paint's own relief has no tonal range to work with. The shade floor for
+paint is now `0.0` at the artist's request (`400bc52`, then this commit) — the
+end of the range, so the resting place can be found by coming back down from a
+known extreme rather than guessing upward.
+
+**What it does NOT prove.** Nothing here says `hidesGround 3` is wrong. The
+opacity may be right and only the surface missing. Judge them separately: with
+the deeper shadow in place, look again at whether Cover up still flattens the
+paint. If it does, the next suspect is that `seen` gates the weave to nothing
+long before the paint is thick enough to justify it.
+
 ## E10 — the body-field premise, measured before building it (2026-08-26)
 
 Bartford asked for a body field and the eleven-second timer fixed. The timer is
