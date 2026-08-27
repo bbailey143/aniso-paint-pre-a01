@@ -17,6 +17,46 @@ import type { BrushDef, BrushInput } from '../brush/types';
 import { DryTool } from '../media/dry-tool';
 import type { DryMedium, WetMedium } from '../media/types';
 
+/**
+ * How hard the hand is pressing, as the brush should feel it.
+ *
+ * The wet path had no curve at all: raw hardware pressure went straight to the
+ * tuft. That is not neutral, it is a choice, and it was the wrong one — a
+ * comfortable resting press on a Pencil sits around 0.3–0.5, and
+ * `tools/brush-bench.mjs ramp` shows what the tuft does with that:
+ *
+ *   pressure 0.02–0.05   0 of 30 joints touching
+ *   pressure 0.10–0.50   5 of 30          <- where a normal press landed
+ *   pressure 0.65–0.80  10 of 30
+ *   pressure 1.00       10 of 30
+ *
+ * So an ordinary press put five bristle joints on the sheet. Five contact
+ * points skipping across a woven ground is exactly the scaly, snakeskin mark
+ * the artist reported on 2026-08-26 — it is not a texture, it is too little of
+ * the brush touching.
+ *
+ * `PEN_GAMMA` 0.45 lifts a 0.40 press to 0.66, which crosses into the 10-joint
+ * band: double the tuft in contact for the same hand. Full pressure still maps
+ * to full, and a feather touch is still a feather touch, so the ramp keeps its
+ * direction — but it is no longer flat across the whole comfortable range.
+ *
+ * NOT the depth knob. `DRIVE` in brush.ts was raised to 1.0 once for this same
+ * complaint and pulled back to 0.35 because the tuft kinks — folds back on
+ * itself — above that. Contact has to come from the hand pressing, not from
+ * driving the ferrule deeper. See the measured table in that file.
+ *
+ * Dry media are untouched: they run through `DryTool` and already have their
+ * own `pressureExp` per material, tuned against raw pressure.
+ *
+ * [UNVERIFIED] The exponent is a feel number, chosen to land a normal press in
+ * the measured 10-joint band. 1.0 restores raw hardware pressure exactly.
+ */
+const PEN_GAMMA = 0.45;
+
+function penPressure(raw: number): number {
+  return Math.pow(Math.max(0, Math.min(1, raw)), PEN_GAMMA);
+}
+
 /** The live outline of the selected tool where it meets the paper. */
 export type PaperContact = {
   profile: 'round' | 'chisel';
@@ -261,7 +301,9 @@ export class StrokeEngine {
 
   private toInput(x: number, y: number, s: StylusSample, dx: number, dy: number): BrushInput {
     // A pen reports real pressure; a mouse reports 0.5 while held.
-    const pressure = s.pointerType === 'mouse' ? 0.65 : Math.max(s.pressure, 0.01);
+    const pressure = s.pointerType === 'mouse'
+      ? 0.65                                   // already an effective value, not raw
+      : penPressure(Math.max(s.pressure, 0.01));
     return {
       x, y, pressure,
       tiltAngle: s.tiltAngle,
