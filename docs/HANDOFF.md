@@ -265,6 +265,12 @@ is the route. `vite.config.ts` allows `.ts.net` and `.trycloudflare.com` hosts.
 
 **Repo state:** `tuft-fill`, working tree clean.
 
+**Also on file:** `docs/18-oil-body.md` — the artist believes oil is missing
+body/mass and asked for suggestions documented, nothing built. It argues the
+mass variable already exists (`w0.y`), names the Part A exchange as the prime
+suspect for the E10 stacking saturation, and queues a one-run discriminator
+plus a berm proposal. Read it before touching oil thickness.
+
 ## E13 — the pickup gate was shut, not throttled (2026-08-26)
 
 **The artist's standard.** "Paint strokes need to pick each other up, mix each
