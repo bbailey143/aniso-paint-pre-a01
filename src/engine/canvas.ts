@@ -101,6 +101,16 @@ export class CanvasEngine {
    * guessed from its lighting. Set through `setContourStep`, which enforces the
    * half-float floor. */
   contourStep = 0;
+  /** 1 = read the paint as a landscape instead of as a picture: elevation
+   *  colour, exaggerated hillshade, contours over the top. A debug view, like
+   *  `waterView`, and it replaces the colour rather than tinting it. */
+  heightView = false;
+  /** The film height that maps to the TOP of the terrain colour ramp.
+   *
+   *  0.30 by default because that is Cotton Duck's tooth: at the ceiling the
+   *  paint is exactly as tall as the weave it is sitting on, which is the
+   *  comparison that matters for "does this bury the canvas". */
+  heightCeiling = 0.30;
 
   /**
    * View transform. `zoom = 1` fits the whole sheet; `(panX, panY)` is the
@@ -345,6 +355,8 @@ export class CanvasEngine {
   setContourStep(v: number) {
     this.contourStep = v <= 0 ? 0 : Math.max(0.0005, v);
   }
+  /** Top of the terrain colour ramp, in film-height units. */
+  setHeightCeiling(v: number) { this.heightCeiling = Math.max(0.01, v); }
   /** How completely the material covers the sheet. Drives the same row
    *  `setWetMedium` sets; the dial simply lets the artist find it faster. */
   setCover(v: number) { this.hidesGround = Math.max(0, v); }
@@ -530,6 +542,10 @@ export class CanvasEngine {
     // Rides in the first of the three pads this struct already reserved, so the
     // buffer is still 144 and nothing above had to move.
     dv.setFloat32(132, this.contourStep, true);
+    // The last two pads. This struct is now FULL at 144 bytes: anything further
+    // has to grow the buffer here, the size in createBuffer, AND struct Comp.
+    dv.setFloat32(136, this.heightView ? 1 : 0, true);
+    dv.setFloat32(140, this.heightCeiling, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

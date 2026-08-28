@@ -163,6 +163,25 @@ async function main() {
      on a linear dial is worse than stepping through it. */
   const CONTOUR_STEPS = [0.05, 0.02, 0.01, 0.005, 0.002];
   cmd.register({ id: 'act-contours', name: 'Toggle Paint Contours', group: 'Actions', hint: 'Topographic lines over the paint height', keywords: 'contour topographic relief height debug oil impasto', action: () => { engine.setContourStep(engine.contourStep > 0 ? 0 : CONTOUR_STEPS[1]); requestFrame(); } });
+  /* The terrain view brings its own contours on, because elevation colour with
+     no lines reads as a heat map rather than a map. Turning it off puts the
+     picture back exactly as it was. */
+  cmd.register({ id: 'act-terrain', name: 'Toggle Terrain View', group: 'Actions', hint: 'Read the paint as a landscape: elevation colour, hillshade, contours', keywords: 'terrain topographic elevation hillshade height map debug oil impasto', action: () => {
+    engine.heightView = !engine.heightView;
+    engine.setContourStep(engine.heightView ? CONTOUR_STEPS[1] : 0);
+    requestFrame();
+  } });
+  const CEILINGS = [0.60, 0.30, 0.15, 0.08, 0.04];
+  cmd.register({ id: 'act-terrain-ceiling-down', name: 'Terrain: Lower the Ceiling', group: 'Actions', hint: 'Spread the colour ramp over thinner paint', keywords: 'terrain ceiling elevation range colour ramp', action: () => {
+    const i = CEILINGS.findIndex((s) => Math.abs(s - engine.heightCeiling) < 1e-9);
+    engine.setHeightCeiling(CEILINGS[Math.min(CEILINGS.length - 1, (i < 0 ? 1 : i) + 1)]);
+    requestFrame();
+  } });
+  cmd.register({ id: 'act-terrain-ceiling-up', name: 'Terrain: Raise the Ceiling', group: 'Actions', hint: 'Spread the colour ramp over thicker paint', keywords: 'terrain ceiling elevation range colour ramp', action: () => {
+    const i = CEILINGS.findIndex((s) => Math.abs(s - engine.heightCeiling) < 1e-9);
+    engine.setHeightCeiling(CEILINGS[Math.max(0, (i < 0 ? 1 : i) - 1)]);
+    requestFrame();
+  } });
   cmd.register({ id: 'act-contours-finer', name: 'Paint Contours: Finer', group: 'Actions', hint: 'Closer spacing between height lines', keywords: 'contour topographic finer closer height', action: () => {
     const i = CONTOUR_STEPS.findIndex((s) => Math.abs(s - engine.contourStep) < 1e-9);
     engine.setContourStep(CONTOUR_STEPS[Math.min(CONTOUR_STEPS.length - 1, (i < 0 ? 0 : i) + 1)]);

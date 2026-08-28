@@ -95,9 +95,40 @@ struct Comp {
    * this struct already had to reserve, so the buffer is still 144 bytes and
    * `canvas.ts` did not have to move anything. Added 2026-08-28. */
   contourStep: f32,
-  _pad4: f32,
-  _pad5: f32,
+  /** TERRAIN VIEW — 0 = normal picture, 1 = read the paint as a landscape.
+   *  Replaces the colour entirely: hypsometric tint, exaggerated hillshade,
+   *  contours over the top. See `terrain_ramp` and the block at the end. */
+  heightView: f32,
+  /** The film height that maps to the TOP of the colour ramp. */
+  heightCeiling: f32,
 };
+
+/* Hypsometric tint — the colour a height gets in the terrain view.
+ *
+ * A classic elevation ramp rather than anything perceptual, because the artist
+ * asked for a topographic map and that is the language he is reading it in:
+ * low ground blue-green, then green, straw, tan, and snow at the top. Five
+ * stops, linearly blended, `h` normalised 0..1.
+ *
+ * These are DISPLAY (sRGB) colours — what they should look like on screen. The
+ * caller must `srgb_decode` them, because everything downstream of it works in
+ * linear light and the last line of the shader encodes once. Skipping that
+ * decode double-encodes the ramp and every colour comes out washed pale; it is
+ * how the first version shipped and the bare sheet read 241 where it should
+ * have read 224. `srgb_decode` is declared below this, so the decode happens at
+ * the call site rather than here — WGSL has no forward declarations. */
+fn terrain_ramp(h: f32) -> vec3f {
+  let x = clamp(h, 0.0, 1.0);
+  let c0 = vec3f(0.180, 0.396, 0.412);   // deep — the lowest paint
+  let c1 = vec3f(0.482, 0.671, 0.514);   // green
+  let c2 = vec3f(0.855, 0.839, 0.588);   // straw
+  let c3 = vec3f(0.722, 0.545, 0.400);   // tan
+  let c4 = vec3f(0.980, 0.980, 0.973);   // snow — the ceiling
+  if (x < 0.25) { return mix(c0, c1, x / 0.25); }
+  if (x < 0.50) { return mix(c1, c2, (x - 0.25) / 0.25); }
+  if (x < 0.75) { return mix(c2, c3, (x - 0.50) / 0.25); }
+  return mix(c3, c4, (x - 0.75) / 0.25);
+}
 @group(0) @binding(0) var<uniform> C: Comp;
 @group(0) @binding(1) var<storage, read> ks: array<vec2f>;      // (K,S) pigment-major, per band
 @group(0) @binding(2) var<storage, read> cie: array<vec4f>;     // [X,Y,Z,0] per band
@@ -867,47 +898,108 @@ fn fs(in: VsOut) -> @location(0) vec4f {
    * not the lighting's exaggeration of it. The numbers on these lines are the
    * numbers the bench prints, which is the point.
    */
-  /* [TRAP, cost two compiles — and `npm run build` passed through both.]
-     No derivative — `fwidth`, `dpdx`, `dpdy` — may be called from anywhere the
-     compiler cannot prove is UNIFORM control flow, because it differences a
-     value against the neighbouring pixels in the quad and those neighbours must
-     have taken the same path to get there. Wrapping this in `if (hRaw > 1e-4)`
-     was rejected, and so was the uniform-looking `if (C.contourStep > 0.0)`
-     once this far down a fragment shader that has already branched.
+  /* ---- TERRAIN VIEW and CONTOURS ------------------------------------------
+   *
+   * [TRAP, cost two compiles — and `npm run build` waved both through.]
+   * `fwidth`/`dpdx`/`dpdy` may only be called from control flow the compiler
+   * can prove UNIFORM: they difference against neighbouring pixels in the quad,
+   * and those neighbours must have taken the same path. Both of these were
+   * rejected and left the composite pipeline invalid WHOLE — the sheet simply
+   * does not draw and nothing is thrown:
+   *
+   *     if (hRaw > 1e-4)          { ... fwidth(n) ... }   // varies per pixel
+   *     if (C.contourStep > 0.0)  { ... fwidth(n) ... }   // not provably uniform
+   *
+   * So every rate here is differenced BY HAND. `npm run build` is
+   * `tsc --noEmit && vite build` and never compiles a shader; load the page.
+   *
+   * ---- THE SMOOTHING, which is the compromise the artist asked about --------
+   *
+   * [MEASURED 2026-08-28] Contouring the raw film was unusable: ten times the
+   * lines bought five percent more ink, because at fit zoom one cell is ~1.5
+   * screen pixels and cell-scale bristle roughness merges every line. Real
+   * terrain data is smooth; wet paint is not.
+   *
+   * So the height is read through a 3x3 kernel at TWO-cell spacing — a ±2 cell
+   * neighbourhood — before it is contoured or shaded. That is a real loss and
+   * it is deliberate: furrows narrower than about four cells are averaged away.
+   * This view answers "what shape is this passage", NOT "what is in this cell".
+   * For the latter read `wet0.y` off the bench, which is unfiltered.
+   *
+   * The same nine taps give the gradient, by differencing the smoothed outer
+   * columns and rows — so the hillshade is filtered identically to the
+   * contours and the two cannot disagree.
+   */
+  let tOn = C.heightView > 0.5;
+  if (tOn || C.contourStep > 0.0) {
+    let s = cellStep * 2.0;
+    let h00 = paint(wet0, uv + vec2f(-s.x, -s.y)).y;
+    let h10 = paint(wet0, uv + vec2f( 0.0, -s.y)).y;
+    let h20 = paint(wet0, uv + vec2f( s.x, -s.y)).y;
+    let h01 = paint(wet0, uv + vec2f(-s.x,  0.0)).y;
+    let h11 = paint(wet0, uv).y;
+    let h21 = paint(wet0, uv + vec2f( s.x,  0.0)).y;
+    let h02 = paint(wet0, uv + vec2f(-s.x,  s.y)).y;
+    let h12 = paint(wet0, uv + vec2f( 0.0,  s.y)).y;
+    let h22 = paint(wet0, uv + vec2f( s.x,  s.y)).y;
+    let hS = (h00 + h10 + h20 + h01 + h11 + h21 + h02 + h12 + h22) / 9.0;
+    // Smoothed gradient, in height per cell, from the same nine taps.
+    let gx = ((h20 + h21 + h22) - (h00 + h01 + h02)) / (3.0 * 4.0);
+    let gy = ((h02 + h12 + h22) - (h00 + h10 + h20)) / (3.0 * 4.0);
+    let ceil0 = max(C.heightCeiling, 1.0e-4);
+    // Anything above a whisker of film counts as ground; the bare sheet is left
+    // alone so the painted passage is what the eye picks out.
+    let painted = step(1.0e-4, hS);
 
-     Rather than fight the uniformity analysis in a debug overlay, the rate is
-     differenced BY HAND from four neighbouring samples one screen pixel out.
-     `texel` is exactly that step and is already in scope for the relief
-     lighting. Same quantity `fwidth` would have returned, no analysis to
-     satisfy, and it costs four texture reads only while the overlay is on.
+    if (tOn) {
+      /* HILLSHADE. Expressed in ceilings-per-cell so the exaggeration is a
+         pure number and does not have to be retuned when the ceiling moves.
+         Paint is millimetres of relief over centimetres of ground, so it needs
+         far more exaggeration than a real DEM — hence 60, not 2. Lamp at the
+         cartographer's north-west, which is what makes ridges read as ridges
+         rather than trenches. [UNVERIFIED — a look, matched to the artist's
+         reference; move it if ridges invert.] */
+      let EXAG = 60.0;
+      let nT = normalize(vec3f(-gx / ceil0 * EXAG, -gy / ceil0 * EXAG, 1.0));
+      let lampT = normalize(vec3f(-0.6, -0.6, 0.53));
+      let lam = clamp(dot(nT, lampT), 0.0, 1.0);
+      // Floor well above black: on a map the shaded side still shows its tint.
+      let shadeT = 0.35 + 0.65 * lam;
+      // Decoded to linear here: the ramp's stops are display colours and the
+      // final line of this shader encodes once. See the note on `terrain_ramp`.
+      let tintS = terrain_ramp(hS / ceil0);
+      let tint = vec3f(srgb_decode(tintS.r), srgb_decode(tintS.g), srgb_decode(tintS.b));
+      // Bare sheet stays a quiet paper grey rather than taking the low colour,
+      // so "no paint" and "lowest paint" cannot be confused.
+      let paperS = vec3f(0.88, 0.87, 0.85);
+      let paperL = vec3f(srgb_decode(paperS.r), srgb_decode(paperS.g), srgb_decode(paperS.b));
+      rgb = mix(paperL, tint * shadeT, painted);
+    }
 
-     Remember this project does NOT compile WGSL at build time — `npm run build`
-     is `tsc --noEmit && vite build` and never sees a shader. Load the page. */
-  if (C.contourStep > 0.0) {
-    let hRaw = paint(wet0, uv).y;
-    let n = hRaw / C.contourStep;
-    let hx0 = paint(wet0, uv - vec2f(texel.x, 0.0)).y;
-    let hx1 = paint(wet0, uv + vec2f(texel.x, 0.0)).y;
-    let hy0 = paint(wet0, uv - vec2f(0.0, texel.y)).y;
-    let hy1 = paint(wet0, uv + vec2f(0.0, texel.y)).y;
-    // Height change per ONE screen pixel: central differences span two, so halve.
-    // This keeps a line about a pixel wide at any zoom instead of letting it
-    // thicken into a band as the view comes close.
-    let rate = max((abs(hx1 - hx0) + abs(hy1 - hy0)) * 0.5 / C.contourStep, 1.0e-6);
-    let f = fract(n);
-    let distLines = min(f, 1.0 - f) / rate;
-    // Every fifth line heavier, so depth is countable without a readout.
-    let nearest = round(n);
-    let isMajor = abs(nearest * 0.2 - round(nearest * 0.2)) < 0.001;
-    let halfWidth = select(0.5, 1.1, isMajor);
-    let line = 1.0 - smoothstep(halfWidth, halfWidth + 1.0, distLines);
-    // Bare sheet has no topography. Without this every unpainted pixel sits on
-    // the zero contour and the whole canvas floods with line.
-    let painted = step(1.0e-4, hRaw);
-    // Ink that survives both a dark passage and a pale one.
-    let lum = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-    let ink = select(vec3f(1.0), vec3f(0.0), lum > 0.45);
-    rgb = mix(rgb, ink, line * painted * select(0.55, 0.85, isMajor));
+    if (C.contourStep > 0.0) {
+      let n = hS / C.contourStep;
+      // Height change per ONE screen pixel: cells per pixel, times height per
+      // cell. Central differences span two cells, hence the halving in gx/gy.
+      let cellsPerPx = max(texel.x / cellStep.x, texel.y / cellStep.y);
+      let perPx = (abs(gx) + abs(gy)) * cellsPerPx;
+      let rate = max(perPx / C.contourStep, 1.0e-6);
+      let f = fract(n);
+      let distLines = min(f, 1.0 - f) / rate;
+      let nearest = round(n);
+      let isMajor = abs(nearest * 0.2 - round(nearest * 0.2)) < 0.001;
+      let halfWidth = select(0.35, 0.9, isMajor);
+      let line = 1.0 - smoothstep(halfWidth, halfWidth + 1.0, distLines);
+      /* In terrain view the lines are a fine dark contour like a map's; over
+         the real picture they still have to survive both a dark passage and a
+         pale one, so they flip against the local tone. */
+      let lum = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+      let ink = select(vec3f(1.0), vec3f(0.0), lum > 0.45);
+      let inkS = vec3f(0.15, 0.13, 0.11);
+      let inkL = vec3f(srgb_decode(inkS.r), srgb_decode(inkS.g), srgb_decode(inkS.b));
+      let inkT = select(ink, inkL, tOn);
+      let strength = select(0.55, 0.85, isMajor) * select(1.0, 0.7, tOn);
+      rgb = mix(rgb, inkT, line * painted * strength);
+    }
   }
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);

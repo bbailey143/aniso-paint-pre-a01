@@ -921,7 +921,7 @@ per slot; TransferPigment already clamps to 1.0), so this cannot distort paintin
 
 ---
 
-## Paint contours — a topographic overlay on the film height (2026-08-28)
+## Paint contours and the terrain view (2026-08-28)
 
 **Why.** The artist asked for a way to SEE what the oil film is doing rather
 than infer its shape from how it happens to be lit: *"draw topographic relief
@@ -1017,3 +1017,75 @@ build` and never compiles a shader. The only honest check is loading the page
 and reading `getCompilationInfo()` — and note the browser console keeps stale
 shader errors from modules that no longer exist, so compile the module fresh in
 an error scope rather than trusting what is already printed there.
+
+### Terrain view — reading the paint as a landscape (2026-08-28)
+
+**Why the first version was not enough.** Contour lines over the painting were
+measured unusable at fit zoom (the table above: ten times the lines for five
+percent more ink). The artist sent a proper topographic map as the target —
+hillshade, contours, and hypsometric tint together — and made the point that
+unlocks it: *"I'm not worried about color and in fact, color can be used to
+effectively indicate elevation."* Once colour and shading carry the elevation,
+the lines stop having to do all the work and can be sparse.
+
+**How to use it.** Command palette (Alt+K):
+
+- **Toggle Terrain View** — replaces the picture with the landscape, and turns
+  contours on with it, because elevation colour with no lines reads as a heat
+  map rather than a map.
+- **Terrain: Raise / Lower the Ceiling** — `0.60, 0.30, 0.15, 0.08, 0.04`. The
+  film height that maps to the TOP of the ramp. Default 0.30 because that is
+  Cotton Duck's tooth: at the ceiling the paint is exactly as tall as the weave
+  it sits on, which is the comparison "does this bury the canvas" needs.
+- **Paint Contours: Finer / Coarser** — as before.
+
+From code: `engine.heightView`, `engine.setHeightCeiling(v)`,
+`engine.setContourStep(v)`.
+
+**The compromise, stated plainly because the artist asked for it up front.** The
+height is read through a 3x3 kernel at TWO-cell spacing — a ±2 cell
+neighbourhood — before it is contoured or shaded. Real terrain data is smooth;
+wet paint is not, and unsmoothed the lines merged into mush. **Furrows narrower
+than about four cells are averaged away.** This view answers *what shape is this
+passage*, NOT *what is in this cell*. For the latter read `wet0.y` off the
+bench, which is unfiltered. The same nine taps produce the gradient, so the
+hillshade and the contours cannot disagree with each other.
+
+Hillshade exaggeration is 60x, expressed in ceilings-per-cell so it does not
+need retuning when the ceiling moves. Paint is millimetres of relief over
+centimetres of ground, so it needs far more than a real DEM's 2x. Lamp at the
+cartographer's north-west. **[UNVERIFIED — a look, matched to the artist's
+reference; move it if ridges start reading as trenches.]**
+
+**[TRAP] The ramp's stops are DISPLAY colours and must be `srgb_decode`d.**
+Everything downstream works in linear light and the last line of the shader
+encodes once. The first version skipped the decode, double-encoded the whole
+ramp, and every colour came out washed pale — the bare sheet read 241 where it
+should have read 224. `paperTone` already had this right; follow it.
+
+**[MEASURED] What was verified, by scanning the rendered rows.** Four bands of
+1, 2, 3 and 4 Oil passes, peaks 0.0915 / 0.1390 / 0.2416 / 0.3135, ceiling 0.30:
+
+- 81 of 120 sampled rows read the paper grey **exactly** (224,222,217), so the
+  sRGB fix is confirmed and bare sheet cannot be mistaken for lowest paint.
+- The four bands appear as four distinct stripes whose colour climbs the ramp
+  with thickness: the thinnest reads `rgb(47,98,99)`, which is the ramp's low
+  stop to within a couple of units, and the thickest reaches straw
+  `rgb(180,187,133)`.
+
+**[NOT VERIFIED — say so rather than assume.]** Whether the contour lines still
+read well ON TOP of the terrain tint could not be measured. Canvas readback in
+that session lagged a frame and intermittently captured the empty UI background
+(a "100% of pixels are dark" reading over a region that is plainly not dark),
+and with the app's `requestAnimationFrame` stubbed the capture went completely
+stale — every comparison returned 0.0%, including a terrain tint that the row
+scan proves differs from the picture. **A canvas grab that returns 0.0% for a
+change you can prove happened is a broken instrument, not a finding.** The
+shader compiles clean and the pipeline validates; the lines themselves need an
+eye on a real display.
+
+**Predicted, and worth checking first:** near a stroke's edge the smoothed
+gradient is around 0.03 per cell, which at fit zoom puts contours less than a
+pixel apart — so edges may ink solid while interiors show separated lines. That
+is what a real map does at a cliff, and it is informative rather than wrong, but
+if it reads as a dark wash go coarser or zoom in before assuming a bug.

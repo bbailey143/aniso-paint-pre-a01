@@ -152,6 +152,23 @@ say why.
 **Last updated:** 2026-08-28
 **By:** Codex, continuing the relay.
 
+## NEW INSTRUMENT — paint contours, then the terrain view (2026-08-28, Claude)
+
+**Terrain view is the usable one.** Contours alone were measured unusable at fit
+zoom; the artist sent a topographic map as the target and pointed out that
+colour can carry elevation. **Toggle Terrain View** in the command palette
+replaces the picture with hypsometric tint + exaggerated hillshade + contours.
+Ceiling defaults to 0.30 — Cotton Duck's tooth — so the ramp's top is "as tall
+as the weave it sits on".
+
+The compromise is a ±2 cell smoothing before contouring and shading: furrows
+narrower than about four cells are averaged away. It answers *what shape is this
+passage*, not *what is in this cell*. Unfiltered height is still on the bench.
+
+**NOT VERIFIED:** whether the lines read well over the tint. Canvas readback
+lagged a frame and went stale when rAF was stubbed — every comparison returned
+0.0%, including one the row scan proves differs. Needs an eye on a real display.
+
 ## NEW INSTRUMENT — paint contours (2026-08-28, Claude)
 
 A topographic overlay on the film height, so the paint's shape can be READ
