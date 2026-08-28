@@ -137,7 +137,7 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-08-27
 **By:** Claude, continuing the relay. Codex's 2026-08-25 entries below stand
 unchanged; only this block is new.
 
@@ -195,7 +195,7 @@ per cell whatever the brush is holding. So at the moment the brush is fullest,
 and shoving hardest in real life, the engine is at its weakest on both routes.
 That is why the blue stays put.
 
-## STOP HERE — the instruments are the next job, not the paint (2026-08-26)
+## The instrument traps — still binding, all six (2026-08-26)
 
 **Read this before running any experiment.** Five measurements went wrong in one
 session, each producing a confident, plausible, wrong number. Every one was
@@ -219,25 +219,51 @@ medium through the engine API and never touched the UI, so **the tool bar read
 the labels were lying — confirmed from `fluid.params` — but it cost trust, and
 the pickup runs also failed to pin the paper, so they were not identical setups.
 
-**NEXT ACTION — read `docs/17-pickup-rework.md` and execute it in order.**
-It is the full review of why a stroke cannot pull the layer beneath it — the
-take is a product of three fractions (0.42 × 0.34 × 0.35 ≈ 0.05 per cell), the
-credit is diluted ~200:1 across the tuft, and the laid colour is re-tinted by
-the whole-tuft average at a scalar bottleneck (`brushMix`), so even a perfect
-lift is invisible by construction. The doc carries the three-part fix (exchange
-instead of room-gated intake; a surface layer on the reservoir; laid colour =
-colour of what was withdrawn this frame), with anchors, safety re-tests, and
-the bench that must be built FIRST — including step 0, reproducing the artist's
-null result at `SURFACE_EXCHANGE` 0 vs 0.35 so the rework has honest "before"
-images. Ad-hoc console probes are how the previous session lost its afternoon.
+**NEXT ACTION — `docs/17` is DONE. Read `docs/16` E9, then take the artist's
+verdict on the crossing before touching a dial.**
 
-**OPEN, and the reason the bench comes first.** `SURFACE_EXCHANGE = 0.35` shipped
-in `1643d2a` and measures 29.8 % of the lower layer lifted where the brush
-touches, up from 10.7 %. The artist reports **no visible change**. The floor is
-confirmed live (a full brush reports room 0.35, `brushTake` 0.119, against ~0.00
-before), so either the effect is invisible at this value or his page was stale —
-untested when the session ended. Do not tune the floor until that is resolved: a
-number nobody can see is the exact failure the bench exists to prevent.
+## WHERE WE STOPPED — 2026-08-27, docs/17 executed, three things still wrong
+
+All three parts of `docs/17-pickup-rework.md` are built, benched and committed:
+`55a57f0` (bench + step 0), `8e4b0d9` (Part A — contact is an exchange,
+`SURFACE_EXCHANGE` retired), `fe57146` (Parts B and C — surface film on the
+reservoir; laid colour is the colour of what was withdrawn this frame).
+
+**It works.** Contacted blue lifted went 24.5 % → 33–37 %; blue in the trail ten
+cells past the crossing went 1.6 % → 44–50 %. Artist confirmed by eye: yellow
+enters pure, crosses, comes out green, carries it forward, and the band is
+visibly thinned where crossed. His words: *"the lower layers are behaving far
+better."* The full table, method and traps are `docs/16` **E9** — read it, it
+carries the reasoning these three lines do not.
+
+**The three open faults, in priority order. E9 has the detail and the
+discriminators; do not re-derive them.**
+
+1. **The carried colour never fades.** 44–50 % and flat past 10 cells; target was
+   ≥10 % decaying. **[UNVERIFIED]** hypothesis in E9: the trail figure is a
+   ratio, and it may have risen because *less yellow* is arriving, not more blue
+   — removal actually fell from Part A's 57.5 % while the trail rose 50×.
+   Measure absolute blue AND yellow laid per cell, plus the film's own blue
+   fraction, before believing either story.
+2. **It probably picks up far too much.** The artist's only accepted carry number
+   is **"3 % feels correct"** (2026-08-26, ARTIST VERDICT above). 45 % is fifteen
+   times past it. His eye may have moved — ask, do not assume, and do not tune to
+   a number. Dial is `SURFACE_SHARE` (`reservoir.ts:105`, 0.08); judge it after
+   (1) is understood.
+3. **Holding reaches 100.7 % against a 100.5 % guard.** Paint is being created.
+   **[UNVERIFIED]** first suspect: the film's capacity may not be subtracted from
+   the rooms', so film + overflow can exceed 100 %. Check `surfaceCapacity`
+   against `totals()`. This is a bug, not a dial — fix before tuning anything.
+
+**Harness limit:** readings spread ~10 % run to run (async GPU pickup tally).
+A 5 % move means nothing.
+
+**Serving the iPad:** `tailscale serve --bg 5174` publishes the dev server at
+**https://bfamily.tail5d46e0.ts.net/** with a real certificate — stable across
+sessions, unlike the cloudflare tunnels. WebGPU needs the secure context, so this
+is the route. `vite.config.ts` allows `.ts.net` and `.trycloudflare.com` hosts.
+
+**Repo state:** `tuft-fill`, working tree clean.
 
 ## E13 — the pickup gate was shut, not throttled (2026-08-26)
 

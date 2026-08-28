@@ -384,3 +384,84 @@ both internally reproducible to four decimals. Something else differs across
 loads and has not been identified. Compare rows WITHIN one load only, assert
 every precondition inside the harness, and run every condition twice — three
 readings in this session were nonsense until that was done.
+
+---
+
+### E9 — docs/17 executed; the stroke pulls the layer beneath it (2026-08-27)
+
+**Purpose.** Run `docs/17-pickup-rework.md` end to end and record what the three
+parts actually bought, plus what is still wrong. Written at the artist's request
+before he stepped away: *"take note of what you think is wrong ... so we can
+pick up where we left off."*
+
+**Method.** The asserting bench, `src/bench/pickup-bench.ts` (`55a57f0`), not
+console probes. Oil / Flat Hog / **cotton duck** verified against `fluid.params`
+(`yieldStress === 0.34`, `hasCurrent === false`) — the run throws if the engine
+is not what the harness claims. Blue band, charged yellow crossing at pressure
+0.7, tilt 35°. Removal is over **contacted cells only**. Every condition twice.
+
+**Raw result.**
+
+| condition | contacted blue lifted | blue in the trail, 10 cells past |
+|---|---|---|
+| step 0 — the build the artist tested | 24.5 % | 1.6 % |
+| Part A alone (`8e4b0d9`) | 57.5 % | 0.8 % |
+| A + B + C (`fe57146`) | 33–37 % | 44–50 % |
+
+Step 0 reproduces the artist's null result: `SURFACE_EXCHANGE` 0 vs 0.35 are
+visually indistinguishable, so the 29.8 % figure that closed the last session
+was real and invisible, exactly as the baton feared.
+
+**What it proves.** The three dilutions named in docs/17 were all real and all
+load-bearing. Part A alone lifts more than twice as much blue but shows *less*
+of it in the trail — because the third dilution (`brushMix`, the whole-tuft
+average) was still throwing the lift away at the scalar bottleneck. Only with C
+does the lift reach the canvas. Artist confirmed by eye: yellow enters pure,
+crosses, comes out green, carries the green forward, and the blue band is
+visibly thinned where crossed. **The mechanism works.**
+
+---
+
+**Three things are still wrong. None is tuned; all are handed forward.**
+
+**(1) The carried colour never fades.** Target was ≥ 10 % blue decaying over
+~20 cells. Measured: 44–50 % and **flat** out past 10 cells. A real brush spends
+what it picks up within a few inches. This one does not.
+
+**[UNVERIFIED] hypothesis, and the discriminator that settles it.** The trail
+number is a *ratio*, and a ratio rises either because the blue rose or because
+the yellow fell. `withdraw` now draws surface-first: for the cells right after a
+crossing the brush may be laying mostly *film*, and the film is mostly blue —
+which would produce ~45 % without any extra blue being lifted at all, and would
+stay flat for as long as the film keeps being topped up by the cells still being
+crossed. It also fits the shape of the table: removal went **down** from Part A
+(57.5 % → 35 %) while the trail went **up** 50×. That is not more blue arriving;
+that is less yellow arriving.
+
+To settle it, measure two things per cell past the crossing, not one:
+the film's own blue fraction, and the **absolute** blue and yellow laid. If the
+film decays but the trail ratio does not, the fault is downstream in `brushMix`.
+If the absolute yellow is what collapsed, the surface-first rule in `withdraw`
+is starving the body of the tuft and needs a blend, not a priority.
+
+**(2) It almost certainly picks up far too much.** The artist's carry verdict of
+**"3 % feels correct"** (2026-08-26, on record in HANDOFF Part B) still stands as
+the only accepted number, and 45 % is fifteen times past it. He has since said
+the lower layers are *"behaving far better"*, so his eye may well have moved —
+but nobody has asked. **Do not tune this to a number.** Show him a crossing and
+take the verdict. `SURFACE_SHARE` (`reservoir.ts:105`, 0.08) is the dial if he
+wants it weaker; it interacts with (1) and should be judged after (1) is
+understood, not before.
+
+**(3) The brush ends a scrub holding 100.7 %, against a 100.5 % guard.** Six
+no-recharge scrubs, no recharge, and it finishes with more than it started.
+Small, but paint is being created, and this class of fault grows. **[UNVERIFIED]**
+first place to look: the surface film's capacity is `SURFACE_SHARE` × the tuft
+capacity but may not be *subtracted* from the rooms' capacity, so
+credit-to-film + overflow-to-rooms can together exceed 100 %. Check
+`Reservoir.surfaceCapacity` against `totals()`. This is a bug, not a dial.
+
+**A harness limit that bounds everything above.** Numbers spread ~10 % run to
+run because the GPU pickup tally returns asynchronously and a frame's credit can
+land a frame late. The bench cannot resolve a difference smaller than that.
+Do not read meaning into a 5 % move.
