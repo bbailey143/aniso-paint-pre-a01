@@ -92,11 +92,7 @@ fn lift(v: f32, lane: u32) -> f32 {
 // ping-pongs, so a skipped cell would lose its contents), but only cells the
 // hairs can actually reach pay for the segment loop.
 @group(0) @binding(2) var<uniform> C: Ctl;
-/* 4 x vec4 = 16 slot weights in two halves. `mix[0..1]` is the colour LEAVING
-   the brush this frame, which sets the colour of the mark. `mix[2..3]` is the
-   tuft's steady LOAD, which the pickup pass compares against the cell. They are
-   deliberately different numbers — see `StrokeEngine.brushMix`. */
-@group(0) @binding(3) var<storage, read> mix: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> mix: array<vec4<f32>>;  // 2 x vec4 = 8 slot weights
 @group(0) @binding(4) var wet0_in: texture_2d<f32>;
 @group(0) @binding(5) var wet1_in: texture_2d<f32>;
 @group(0) @binding(6) var wet2_in: texture_2d<f32>;
@@ -496,17 +492,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * "probably picks up far too much". */
     let presentPig = gloBefore.x + gloBefore.y + gloBefore.z + gloBefore.w
                    + ghiBefore.x + ghiBefore.y + ghiBefore.z + ghiBefore.w;
-    /* Compared against the tuft's LOAD (`mix[2..3]`), never against what it is
-       laying. [MEASURED — the laid mix feeds back on itself and shuts the
-       exchange off after one touch; the numbers are in `StrokeEngine.brushMix`.]
-       An empty or rinsed brush has an all-zero load and gets no discount, which
-       is the safe default: it is not "like" anything. */
-    let loadSum = mix[0].x + mix[0].y + mix[0].z + mix[0].w
+    /* Compared against what the brush is DEPOSITING, which is what `mix` is.
+       [MEASURED — sending the tuft's steady load instead recycles paint; the
+       numbers are on `StrokeEngine.brushMix`.] An empty brush has an all-zero
+       vector and gets no discount, which is the safe default: it is not "like"
+       anything. */
+    let laidSum = mix[0].x + mix[0].y + mix[0].z + mix[0].w
                 + mix[1].x + mix[1].y + mix[1].z + mix[1].w;
     var unlike = 1.0;
-    if (presentPig > WET_EPS && laidPigHere > WET_EPS && loadSum > WET_EPS) {
-      let dLo = abs(gloBefore / presentPig - mix[0] / loadSum);
-      let dHi = abs(ghiBefore / presentPig - mix[1] / loadSum);
+    if (presentPig > WET_EPS && laidPigHere > WET_EPS && laidSum > WET_EPS) {
+      let dLo = abs(gloBefore / presentPig - mix[0] / laidSum);
+      let dHi = abs(ghiBefore / presentPig - mix[1] / laidSum);
       unlike = clamp(0.5 * (dLo.x + dLo.y + dLo.z + dLo.w
                           + dHi.x + dHi.y + dHi.z + dHi.w), 0.0, 1.0);
     }
