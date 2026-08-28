@@ -36,12 +36,22 @@ import type { ReservoirDef } from './types';
  * Holding is the guard rail the old revert was worried about, measured across
  * six scrubs with no recharge: it never exceeds 100 % at any of these.
  *
- * [UNVERIFIED] The value is a feel number. The artist's standard is "there
- * should be some resistance to that, it shouldn't be a ton", which is why this
- * starts nearer the middle than the top. 0 restores the shut-gate behaviour
- * exactly.
+ * **NOW 0, AND THAT IS THE ANSWER, NOT A RETREAT.** ~~0.35~~ was a stand-in for
+ * surface trading during the week this was the only lever available. The trade
+ * is now modelled where it belongs — in `deposit.wgsl`, as an exchange route
+ * that skips the room gate and is capped at what the brush actually laid into
+ * that cell (docs/17 Part A). With that in place a floor here is not a second
+ * opinion, it is a SECOND, UNCAPPED route: it invents room the tuft does not
+ * have, so `rIntake` is no longer bounded by real capacity and the swap cap
+ * cannot see it. Measured — six scrubs, no recharge — holding hit **101.2 %**
+ * with exchange and no cap, **100.9 %** with the cap but this floor still at
+ * 0.35, and only comes back under 100 % with the floor at zero. Overfilling
+ * the tuft is exactly the 2026-08-25 failure this project has now met twice.
+ *
+ * Kept as a named zero rather than deleted so the retraction stays legible: if
+ * anyone reaches for a room floor again, this is why it is the wrong tool.
  */
-const SURFACE_EXCHANGE = 0.35;
+const SURFACE_EXCHANGE = 0;
 
 export class Reservoir {
   readonly bristles: number;

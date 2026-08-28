@@ -228,6 +228,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   /** Vehicle laid into this cell by this pass. The levelling may move this and
    *  no more: paint already on the sheet has come to rest. */
   var laidHere = 0.0;
+  /** Pigment laid into THIS cell this frame. The exchange below may trade only
+   *  what it gave, so it needs the giving side in scope. */
+  var laidPigHere = 0.0;
 
   let count = i32(C.count);
   let inBox = f32(c.x) >= C.minX && f32(c.x) <= C.maxX
@@ -317,6 +320,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     laidHere = water;
+    laidPigHere = pig;
     if (water > 0.0 || pig > 0.0) {
       w0.y = w0.y + water;          // h_f
       w0.x = 1.0;                   // M — wet
@@ -370,7 +374,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
    * So: no distance term. `cover` is the whole of it, clamped at one cell's
    * worth, and the ceiling is what a single frame may ever take.
    */
-  if (C.upRate > 0.0 && cover > 0.0 && C.brushTake > 0.0) {
+  // `brushTake` is deliberately NOT in this gate any more: a full brush has a
+  // brushTake near zero and must still be able to EXCHANGE. Both rates below
+  // come out zero on their own when they should, so nothing runs that should not.
+  if (C.upRate > 0.0 && cover > 0.0) {
     /* Adhesion belongs to paint that is setting, not to fully workable oil.
        Applying the whole teflon floor at wetness 1 left dark outlines of the
        lower stroke beneath every crossing. Let a yielding body's existing
@@ -417,8 +424,62 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * simplification — a brush pressed and held does slowly load — but the
      * alternative is a floor, and a floor is per-frame accumulation again. */
     let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.0, 16.0);
-    let r = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose, 0.0, 0.9);
-    let up = 1.0 - pow(1.0 - r, dist);
+
+    /* INTAKE — drinking, and it is limited by how much room the tuft has left.
+       Unchanged, and it is the only route a water medium ever takes. */
+    let rIntake = clamp(C.upRate * C.brushTake * clamp(cover, 0.0, 1.0) * loose, 0.0, 0.9);
+
+    /* EXCHANGE — swapping, which needs no room at all.
+     *
+     * A brush laying paint into a cell while dragging through it is TRADING,
+     * not filling: what it takes goes where what it gave just left. The room
+     * gate is the right throttle on drinking and the wrong one on trading, and
+     * because it multiplies into the same product it took the whole take with
+     * it. Measured: material 0.42 x tuft 0.34 x room 0.35 = 0.05 per cell, so a
+     * crossing lifted a quarter of what it touched at best, and with the room
+     * term at its true value for a charged brush — 0.0 to 0.038 across an
+     * entire stroke — it lifted 5 %. That is the artist's "it doesn't pick up
+     * bottom layers almost at all", in arithmetic. See docs/17.
+     *
+     * So a workable body paint gets a second route with the room term and the
+     * tuft's own grabbiness both out of it. `workableBody` is the gate: it is
+     * `select(0.0, …, P.yieldStress > 0.0)`, hence exactly 0 for every water
+     * medium, so `max` below returns `rIntake` unchanged and watercolour is
+     * byte-for-byte what it was. It also fades as the paint sets, which is
+     * right — cured oil should not trade.
+     *
+     * [UNVERIFIED] Dropping the tuft factor as well as the room term is the
+     * strong form. If this proves too eager, the weaker form multiplies by the
+     * brush row again; that needs the tuft's grab passed down, which this Seg
+     * struct does not currently carry. Judge by eye first. */
+    let rExchange = clamp(C.upRate * clamp(cover, 0.0, 1.0) * loose * workableBody, 0.0, 0.9);
+
+    /* THE SWAP CAP — what keeps a trading brush from filling.
+     *
+     * Exchange with the room gate removed is not free: measured without this,
+     * six scrubs took the tuft to 101.2 % of its own capacity, which is the
+     * 2026-08-25 failure in miniature. A cap on the RECEIVING side is not
+     * available — refused paint is paint destroyed (see `Reservoir.pickUp`) —
+     * so the limit has to be here, on the asking.
+     *
+     * A trade can only move what was traded. This cell knows both halves in the
+     * same invocation: `laidPigHere` is what the tuft just gave it, and
+     * `presentPig` is what was there to take. So drinking may use whatever real
+     * room the tuft has, and trading may take at most as much as it laid.
+     *
+     * No new constant, and it self-limits in the right way: a brush running dry
+     * lays less, so it trades less, and stops scouring the sheet exactly when it
+     * has nothing left to swap. */
+    let presentPig = gloBefore.x + gloBefore.y + gloBefore.z + gloBefore.w
+                   + ghiBefore.x + ghiBefore.y + ghiBefore.z + ghiBefore.w;
+    let swapCap = select(
+      0.0, clamp(laidPigHere / max(presentPig, WET_EPS), 0.0, 1.0), presentPig > WET_EPS);
+
+    let upIntake = 1.0 - pow(1.0 - rIntake, dist);
+    let upBoth = 1.0 - pow(1.0 - max(rIntake, rExchange), dist);
+    // Never more than "the room I had" plus "what I just gave". Watercolour has
+    // `rExchange` 0, so `upBoth` is `upIntake` and this min changes nothing.
+    let up = min(upBoth, upIntake + swapCap);
 
     /* Take the share off what was here BEFORE the hairs added anything, and
        subtract exactly what `lift` reports rather than what was asked for. */
