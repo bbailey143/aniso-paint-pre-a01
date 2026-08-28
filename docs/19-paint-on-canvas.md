@@ -118,3 +118,238 @@ per-pixel cost. Artist's call, at the easel.
 3. The ground shadow (§3c) — the strongest cue, one screen-space term.
 4. Slope compression (§3d) only if the ring survives 2 and 3.
 5. The lamp (§3e) last, artist judging at the easel.
+
+---
+
+## 6. Artist review — first live pass (2026-08-28)
+
+The first live pass produced useful rejection criteria:
+
+- The ridge read as raised canvas rather than paint sitting flat with the
+  canvas. The relief response is too strong for the surface treatment.
+- Broad, smooth paint shapes read as a tube squeezed from a nozzle. The top of
+  the paint should show brush-sculpted ridges and valleys, not a smooth rolling
+  hill.
+- A darkened area was visible where the canvas should have remained unaffected.
+  Source inspection found that the first ground-shadow mask was inverted: it
+  darkened covered paint instead of bare canvas beside the ridge. This is now
+  corrected.
+- Small dotted/cross-like marks near the strokes are still unexplained. Treat
+  them as an open visual artefact investigation; do not assume they are paint
+  texture or change the solver to hide them.
+- The repeated fine weave was described as a “snakeskin” appearance. This is a
+  later visual discussion item: determine whether it is the paper relief scale,
+  the paint-light sampling, or a separate cursor/readout overlay before tuning
+  it away.
+
+The next review should judge the corrected shadow placement and the shorter,
+weaker paint-light response together. If the mark still reads as a rounded
+tube, inspect the stored body-height profile and brush footprint before adding
+more lighting tricks.
+
+### Directional snakeskin follow-up (2026-08-28)
+
+**Artist report.** With the same Flat Hog, Oil, and Cotton Duck, vertical
+strokes can look smooth and convincing while horizontal/broadside strokes form
+a repeated chattered snakeskin. The solution must respect the interaction of
+surface, brush, and medium rather than hiding the symptom in one box.
+
+**Existing evidence recovered.** Handoff E12 already ran matched broadside and
+edge-on strokes on Cotton Duck, Flat White, and watercolor paper. The ripple
+followed the blade angle to travel and remained in nearly the same ratio on all
+three grounds. This rules out the canvas weave as the root generator, though
+the weave and relief lighting make the height pulses much easier to see.
+
+**New brush measurement.** The first brush-bench result was stale and is
+retracted. Rebuilt from current source, at pressure 0.75 the shared overlap
+paints 53% of the Flat Hog footprint; the proposed hog overlap paints 60%.
+Track-spacing variation remains 205% in both runs. That is a bounded 13% gain
+in connected coverage without regularising the coarse tuft. Increasing the
+hair count is not the lever because represented bundles correctly get thinner
+as more are packed in. The first artist-test correction is therefore a Flat
+Hog `bundleOverlap` row: coarse represented bundles overlap slightly more when
+loaded, while their irregular roots, lengths, bends, and separate tracks
+remain. Oil still decides that the resulting surface remains as body; Cotton
+Duck still gates contact against its own tooth. Nothing is blurred after the
+fact and no screen direction is special-cased.
+
+**Artist test owed.** Repeat one edge-on and one broadside stroke at similar
+pressure on Cotton Duck. Pass means the broadside stroke becomes a connected
+paint film with irregular brush furrows rather than repeated scales, while the
+edge-on stroke remains crisp and the canvas still breaks a genuinely light or
+dry contact. If both strokes simply become smooth blocks, reduce the overlap;
+do not add a directional blur.
+
+### Reset hypothesis tested and retracted (2026-08-28)
+
+The artist noticed the bars in both Flat Hog and Flat Sable and asked whether
+the brush repeatedly resets upright instead of remaining pulled. The shared
+spine solver does start every equilibrium solve from a laid-back rest seed, so
+the hypothesis was plausible and deserved a direct contact test.
+
+A new `brush-bench pulse` probe records contacting spine joints and paint laid
+at every 0.9-cell solve, in both travel directions, for both flats. Run twice,
+the Flat Sable held 10 contacting joints throughout and its laid-paint variation
+was only 0.036–0.038. The Flat Hog did periodically fall from 10 to 5 contacts
+in its broadside direction, but not in the other direction.
+
+Continuing from the previous solved shape instead of the rest seed was tried.
+It did nothing to either Sable reading and made the Hog contact drop more often
+(roughly every 10 steps rather than every 20–23). **REVERTED.** Therefore the
+Hog has a real contact-loss wrinkle, but brush reset is not the shared cause of
+the visible bars across both flats.
+
+The common fault must be sought after the CPU footprint: frame batching,
+body-paint deposit/levelling, or relief rendering. Both brushes hand the engine
+a smoothly changing amount while the picture shows discrete transverse bands.
+Next instrument the stored film height before lighting, and compare band
+spacing to frame boundaries. If the stored height is banded, inspect the
+once-per-frame body levelling in `deposit.wgsl`; if height is smooth but the
+image bands, return to `composite.wgsl`.
+
+### E1 — the shared snakeskin is frame-stepped paint shoving (2026-08-28)
+
+**Purpose.** Decide whether the transverse bars live in the actual Oil film or
+are added later by relief lighting, then separate fresh-paint levelling from
+the brush's shove.
+
+**Method.** `src/bench/banding-bench.ts` lays the same Flat Sable, Oil, Cotton
+Duck stroke from `(120,250)` to `(392,250)`, pressure 0.75, tilt 35 degrees,
+azimuth 90 degrees, with 68 identical input reports four cells apart. The only
+first-test change is frame grouping: one report per engine frame versus four
+reports per frame. It reads `wet0.y` directly, sums film across the brush width,
+removes only the slow load-depletion trend, and phase-averages the remaining
+ridge/valley shape around known frame boundaries. A second A/B keeps the
+four-report rhythm but sets Smear to zero; fresh-deposit levelling remains on.
+Every condition was run twice on the live WebGPU page at
+`http://127.0.0.1:5175/?banding=2`.
+
+**Raw result.** Paired identical runs:
+
+| submission | stored-body ripple | frame-locked ridge span |
+|---|---:|---:|
+| 1 report/frame, 4-cell frames, Smear 1 | 0.0236 / 0.0234 | 0.0513 / 0.0506 |
+| 4 reports/frame, 16-cell frames, Smear 1 | 0.0484 / 0.0484 | 0.1992 / 0.1992 |
+| 4 reports/frame, 16-cell frames, Smear 0 | 0.0177 / 0.0177 | 0.0568 / 0.0568 |
+
+The four-report repeat differed by 0 at the reported precision. Disabling
+Smear cut total short-scale body ripple 63% and the frame-locked ridge span
+71%, while leaving the levelling path active.
+
+**What it proves.** The common Flat Sable/Flat Hog snakeskin is not primarily a
+brush reset and is not generated by Cotton Duck or by the compositor. The bars
+already exist in stored paint height and their cadence follows frame grouping.
+Most of the repeatable seam comes from the brush's frame-wide paint-shoving
+term in `deposit.wgsl`, which is handed one travel vector and one shove for the
+whole frame. Canvas relief and paint lighting reveal those ridges; they do not
+create them. This is exactly the cross-system relationship the artist expected:
+brush travel creates the contact, Oil lets the displaced film stand, and the
+canvas/compositor makes that standing ridge visible.
+
+**What it does NOT prove.** Smear should not simply be removed. A wet loaded
+brush must still push and mix paint, and the artist already rejected a build in
+which underlying blue stayed put. The remaining 0.0568 frame-phase span also
+means levelling/deposit has a smaller residual or the phase instrument includes
+ordinary bristle texture. The fix must make the shove depend on the brush's
+resampled local travel rather than browser-frame packaging, then preserve the
+same total movement and pickup ledger before artist review.
+
+### E2 — Smear now follows resampled contact, not browser frames (2026-08-28)
+
+**Purpose.** Remove the stored transverse ridge without weakening the brush's
+ability to push, lift, and carry paint.
+
+**Method.** First, the E1 four-report condition was split by passing
+`brushTake = brushGrab = 0`, which leaves only the pressure shove. Its
+frame-locked span was 0.1239 against 0.1992 for the complete shove and 0.0568
+with Smear entirely off: both the pressure and laden-brush routes contributed.
+
+The wet footprint was then extended with the local `dx/dy` and a monotonically
+increasing id for every <=0.9-cell brush solve. `deposit.wgsl` gathers coverage,
+pressure, and direction for each such solve separately. Their conservative
+fractions are combined as `1 - product(1-q)` inside one GPU dispatch, so four
+contacts bundled into one browser frame carry the same share as the same four
+contacts submitted separately. The existing material yield/adhesion, tuft
+grabbiness and room, Smear dial, paper gate, and matched pigment/film flux all
+remain active. No direction is special-cased and no blur is applied.
+
+**Raw result.** Paired identical Flat Sable/Oil/Cotton Duck runs after the fix:
+
+| submission | stored-body ripple | frame-locked ridge span |
+|---|---:|---:|
+| 1 report/frame, Smear 1 | 0.0151 / 0.0149 | 0.0310 / 0.0307 |
+| 4 reports/frame, Smear 1 | 0.0153 / 0.0153 | 0.0607 / 0.0607 |
+| 4 reports/frame, pressure shove only | 0.0144 / 0.0144 | 0.0467 / 0.0467 |
+| 4 reports/frame, Smear 0 | 0.0177 / 0.0177 | 0.0568 / 0.0568 |
+
+The body-ripple result that doubled before the fix is now effectively the same
+(`0.0151` versus `0.0153`). The remaining four-report phase span is at the
+levelling-only floor rather than the old Smear seam (`0.0607` versus `0.0568`,
+old complete-Smear value `0.1992`).
+
+The live paired regression suite also passed: Oil crossing lift 30.1% / 30.1%,
+blue trail 19.6 -> 11.8 -> 6.8 -> 4.2 -> 3.1%, stacked-body last/first gain
+0.899 / 0.899, and brush holding 92.6% / 92.6%. The Watercolour control was
+found to inherit the preceding brush/paper and to leave pickup asynchronous,
+so its old absolute 32.9182 reference was not self-contained. It now fixes Flat
+Hog/Cotton Duck explicitly, disables pickup for the conservation control, and
+measures total-pigment drift: 47.2381 / 47.2381 initially and 0.000004 /
+0.000004 drift after twenty shared-fluid frames. Build and fresh WebGPU load
+passed with no browser errors.
+
+**What it proves.** Smear strength and colour carry survive while the broadside
+body pulse no longer follows browser timing. Brush, medium, and surface remain
+coupled: the brush supplies local contact and pull; the medium decides what
+gives way and stays raised; canvas controls contact and reveals the relief.
+
+**What it does NOT prove.** The remaining contact texture is artist-approved,
+or that Flat Hog and Flat Sable now feel right under a Pencil. The normal page
+is left on Oil / Flat Hog / Cotton Duck for matched broadside and edge-on review.
+
+### E3 — lighter-pressure clue exposes a stepped flat-brush ramp (2026-08-28)
+
+**Purpose.** Follow the artist's report that lighter strokes show much less
+snakeskin, and distinguish a heavy pen curve from the flat brush abruptly
+changing how much of its blade is down.
+
+**Method.** First, `tools/brush-bench.ts` was repaired to read the current
+12-float wet-footprint stride (`SEG_FLOATS`); its old hard-coded 8-float stride
+made it stale after E2. The current `ramp`, `drive`, and `pulse` probes were then
+run twice for Flat Hog and Flat Sable. Source inspection separately confirmed
+that the wet pen mapping is identity (`PEN_GAMMA = 1.0`).
+
+The artist authorized trying the pressure lead. A brush-row
+`pressureExponent` was added rather than changing the hardware-wide pen curve.
+Both flat rows use 1.6 for this `[UNVERIFIED artist trial]`; Round Sable remains
+linear. This maps input 0.75 to effective 0.631 while preserving 0 and 1. Oil's
+body, pickup and shove rules and Cotton Duck's contact gate are unchanged.
+
+**Raw result.** Before the trial, both flat ramps changed from 5/30 contacting
+spine joints at input 0.50 to 10/30 at 0.65. At that same transition, Hog's
+measured footprint width changed 29.81 -> 19.52 cells and Sable's changed
+13.60 -> 7.49 cells: more pressure made the blade abruptly narrower, not
+smoothly wider. Paired runs were identical at the reported precision.
+
+The pulse probe also reproduced: Flat Sable held 10 contacts in both travel
+directions (contact CV 0); Flat Hog horizontal held 10, while vertical briefly
+dipped 10 -> 5 (CV 0.097). The occasional Hog dip therefore occurs in the
+direction the artist reports as visually cleaner, so it cannot explain the
+shared broadside snakeskin.
+
+With exponent 1.6, Hog remains at 5 contacts through input 0.65 and reaches 10
+at 0.80; its paired readings reproduced. Sable is more sensitive and still
+reaches 10 at 0.65. `npm.cmd run build` passed. The live full regression suite
+finished twice internally with paired values: Oil crossing lift 36% / 36%,
+trail 15.8 -> 7.1 -> 4.0 -> 2.5 -> 1.9%, stacking 0.937 / 0.937, holding
+92.6% / 92.6%, and Watercolour drift 0 / -0.000002 after twenty frames.
+
+**What it proves.** The stylus curve is not secretly amplifying pressure. Both
+flat brushes do have a coarse mid-pressure contact transition, and softening
+the brush's own response moves that transition while preserving the existing
+brush-medium-paper route. The brush reset is not the common cause.
+
+**What it does NOT prove.** The pressure transition is the dominant visible
+snakeskin, that exponent 1.6 is the right feel, or that moving the step is an
+adequate final substitute for making contact continuous. The E2 numerical fix
+was also real but visually rejected, so this remains an artist trial until a
+matched Hog/Sable broadside comparison is judged on the live page.

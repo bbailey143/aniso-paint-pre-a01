@@ -622,7 +622,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
      and relief rows: no new paint constant, and flat/staining media remain
      exactly unchanged because one or both rows are zero. [UNVERIFIED visual
      mapping — compare against the 2026-08-25 cured-impasto references.] */
-  let seen = exp(-C.hidesGround * (laid * C.thickScale + standingBody) * 2.0);
+  let opticalCover = exp(-C.hidesGround * (laid * C.thickScale + standingBody) * 2.0);
 
   // Relief lighting from the paper height gradient (tooth catches the light).
   //
@@ -695,7 +695,10 @@ fn fs(in: VsOut) -> @location(0) vec4f {
      view and leaves the wider tuft ridge for the lamp to find. Divide the
      sampled height by the same distance so Relief keeps its overall scale.
      [UNVERIFIED — artist visual mapping, 2026-08-25.] */
-  let paintLightSpan = 6.0;
+  // Six cells made a loaded stroke read like a smooth tube. Keep the lighting
+  // local enough to reveal brush-made ridges and valleys instead of inventing
+  // one broad rolling hill across the whole tuft.
+  let paintLightSpan = 3.0;
   let ftex = max(texel, cellStep) * paintLightSpan;
   let fL = paint(wet0, uv - vec2f(ftex.x, 0.0)).y / paintLightSpan;
   let fR = paint(wet0, uv + vec2f(ftex.x, 0.0)).y / paintLightSpan;
@@ -708,10 +711,19 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let isCanvas = C.grainKind > 1.5 && C.grainKind < 2.5;
   let visiblePaperRelief = C.relief * select(1.0, 0.30, isCanvas);
   // Kept apart so the shading below can tell which surface it is looking at.
-  let paperGx = (hR - hL) * visiblePaperRelief * seen;
-  let paperGy = (hD - hU) * visiblePaperRelief * seen;
-  let paintGx = (fR - fL) * C.paintRelief;
-  let paintGy = (fD - fU) * C.paintRelief;
+  // A thin film hides colour optically before it buries the physical tooth.
+  // Keep a little of the canvas relief showing until the body is genuinely
+  // tall enough to cover it. This is display-only; the paint field is unchanged.
+  let toothBurial = 1.0 - exp(-max(standingBody, 0.0) / 0.30);
+  let surfaceTooth = mix(1.0, opticalCover, toothBurial);
+  let paperGx = (hR - hL) * visiblePaperRelief * surfaceTooth;
+  let paperGy = (hD - hU) * visiblePaperRelief * surfaceTooth;
+  // On canvas, relief is a restrained surface cue. The paint is still stored
+  // at its full physical height; this only prevents it reading like raised
+  // canvas or a tube sitting above the cloth.
+  let reliefDisplay = C.paintRelief * select(1.0, 0.35, isCanvas);
+  let paintGx = (fR - fL) * reliefDisplay;
+  let paintGy = (fD - fU) * reliefDisplay;
   let gx = paperGx + paintGx;
   let gy = paperGy + paintGy;
   let n = normalize(vec3f(-gx, -gy, 1.0));
@@ -809,7 +821,19 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // and the line below is exactly what it always was.
   // `shade` already carries both surfaces: the paper's slope faded out by
   // covering, and the paint's added in. Applying it once is applying all of it.
-  rgb = rgb * mix(vec3f(1.0), sheetTone, seen) * shade * (1.0 + sheen);
+  // A small amount of the ridge's shade is allowed to land on the canvas just
+  // beyond its foot. The sample is toward the lamp, so the darkening appears
+  // on the far side of a raised mark rather than ringing it on every side.
+  // [UNVERIFIED visual mapping] deliberately short and soft; this is a ground
+  // cue, not a second outline.
+  let shadowStep = cellStep * 2.0;
+  let shadowSource = paint(wet0, uv + lightDir.xy * shadowStep).y;
+  let shadowHeight = max(shadowSource - paint(wet0, uv).y, 0.0);
+  // Only bare canvas receives the spill. The previous inverse factor darkened
+  // the paint itself, which made an otherwise unaffected stroke look dirty.
+  let groundShadow = clamp(shadowHeight * 3.0, 0.0, 0.10) * opticalCover;
+  rgb = rgb * mix(vec3f(1.0), sheetTone, opticalCover) * shade
+      * (1.0 - groundShadow) * (1.0 + sheen);
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

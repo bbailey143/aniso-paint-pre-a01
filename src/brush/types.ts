@@ -75,6 +75,15 @@ export interface BrushDef {
    */
   drive?: number;
 
+  /**
+   * Shapes hand pressure before it drives the ferrule into the sheet.
+   * 1 is linear; above 1 gives a longer light-to-working-pressure range while
+   * preserving both zero and full pressure. This belongs to the brush row,
+   * because a flat blade and a round point do not compress under the hand in
+   * the same way. The stylus mapping remains hardware-neutral.
+   */
+  pressureExponent?: number;
+
   /** Chain segments per spine. VL: at least 4. */
   segments: number;
   /** Tuft length in grid cells at size 1. */
@@ -100,6 +109,14 @@ export interface BrushDef {
    *  with paint in it barely moved between 40 hairs and 180, because the drawn
    *  thickness follows the packing. Geometry only, never simulated. */
   bristles: number;
+
+  /**
+   * How much neighbouring represented bristle bundles overlap in the mark.
+   * 1.15 is the shared packed-tuft default. A coarse split-prone hog can use a
+   * little more: each simulated hair represents a bundle of real bristles,
+   * and those bundles press into one another when loaded with paste.
+   */
+  bundleOverlap?: number;
 
   /** Where those hairs sit and how they differ from one another. Absent means
    *  the round default in `tuft.ts` — which is a filled bundle, not the ring

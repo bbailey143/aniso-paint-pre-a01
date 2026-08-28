@@ -25,6 +25,7 @@ import { BRUSHES } from '../brush/library';
 // slips this file exists to make impossible.
 import { PAPERS, CANVASES } from '../substrate/papers';
 import { OIL, WATERCOLOR } from '../media/library';
+import { SEG_FLOATS } from '../engine/fluid';
 
 /** Everything the standard crossing holds fixed. Change these and old numbers
  *  stop being comparable, so they live in one place and are reported back. */
@@ -101,17 +102,29 @@ async function stroke1(engine: AnyRec, stroke: AnyRec,
     add(x: number, y: number, p: unknown): void;
     end(): void;
     drain(): { data: Float32Array; count: number; dx: number; dy: number };
-    brushMix: Float32Array; brushTake: number;
+    brushMix: Float32Array; brushTake: number; brushGrab: number;
   };
   const e = engine as AnyRec & {
-    step(d: Float32Array, c: number, dx: number, dy: number, m: Float32Array, t: number): void;
+    step(d: Float32Array, c: number, dx: number, dy: number, m: Float32Array,
+         t: number, g: number): void;
   };
+  let cpuPigment = 0;
+  let cpuWater = 0;
+  let cpuSegments = 0;
   s.begin(x0, y0, pen(az));
   const N = SETUP.samplesPerStroke;
   for (let k = 1; k <= N; k++) {
     s.add(x0 + ((x1 - x0) * k) / N, y0 + ((y1 - y0) * k) / N, pen(az));
     const d = s.drain();
-    e.step(d.data, d.count, d.dx, d.dy, s.brushMix, s.brushTake);
+    for (let i = 0; i < d.count; i++) {
+      cpuWater += d.data[i * SEG_FLOATS + 5];
+      cpuPigment += d.data[i * SEG_FLOATS + 6];
+    }
+    cpuSegments += d.count;
+    /* Match main.ts exactly. This bench predated the laden-brush shove and was
+       still omitting brushGrab, so its "standard crossing" silently exercised
+       only half of the live Smear route. */
+    e.step(d.data, d.count, d.dx, d.dy, s.brushMix, s.brushTake, s.brushGrab);
     // Yield to the browser so the async pickup readback can land. Without this
     // the credit arrives after the measurement and the brush reads empty.
     await new Promise((r) => setTimeout(r, 0));
@@ -119,9 +132,10 @@ async function stroke1(engine: AnyRec, stroke: AnyRec,
   s.end();
   for (let q = 0; q < SETUP.settleSteps; q++) {
     const d = s.drain();
-    e.step(d.data, d.count, 0, 0, s.brushMix, 0);
+    e.step(d.data, d.count, 0, 0, s.brushMix, 0, 0);
     await new Promise((r) => setTimeout(r, 0));
   }
+  return { cpuPigment, cpuWater, cpuSegments };
 }
 
 /**
@@ -310,20 +324,49 @@ export async function watercolourControl(engine: AnyRec, stroke: AnyRec) {
   const e = engine as AnyRec & {
     clear(): void; setMix(m: Map<string, number>): void; mixWeights: Float32Array;
     setWetMedium(m: unknown): void; sampleGauges(): Promise<AnyRec>; render(): void;
+    step(d: Float32Array, c: number, dx: number, dy: number, m: Float32Array,
+         t: number, g: number): void;
   };
   const s = stroke as AnyRec & { setWetMedium(m: unknown): void;
-                                 charge(m: Float32Array, l: number, w: number): void };
-  e.setWetMedium(wc); s.setWetMedium(wc);
-  const p = ((engine as AnyRec).fluid as AnyRec).params as AnyRec;
-  if (p.yieldStress !== 0) throw new Error('pickup-bench: watercolour control is not on watercolour');
-  e.clear();
-  e.setMix(new Map([['ultramarine-blue', 1]]));
-  s.charge(e.mixWeights, 1.0, 0.6);
-  await stroke1(engine, stroke, 180, 240, 360, 240, 90);
-  const g = await e.sampleGauges();
-  e.render();
-  return { medium: 'watercolour', pigment: +(g.pigment as number).toFixed(4),
-           water: +(g.water as number).toFixed(4), wetCells: g.wetCells };
+                                 charge(m: Float32Array, l: number, w: number): void;
+                                 drain(): { data: Float32Array; count: number };
+                                 brushMix: Float32Array };
+  /* This uses stroke1(), which yields between every input so pickup callbacks
+     can settle. The other benches already silence main.ts's animation loop
+     around that yield; this control accidentally did not, so a live URL harness
+     advanced uncounted frames and identical runs returned 47.4107 / 47.533.
+     That is an instrument failure, not a Watercolour result. */
+  return quietApp(async () => {
+    // Fix the inherited brush and sheet first. The old control silently used
+    // whatever the preceding console command left selected, so its 32.9182
+    // reference became stale when Flat Hog bundle coverage changed.
+    const setup = assertSetup(engine, stroke);
+    e.setWetMedium(wc); s.setWetMedium(wc);
+    const p = ((engine as AnyRec).fluid as AnyRec).params as AnyRec;
+    if (p.yieldStress !== 0) throw new Error('pickup-bench: watercolour control is not on watercolour');
+    return withUpRate(engine, 0, async () => {
+      e.clear();
+      e.setMix(new Map([['ultramarine-blue', 1]]));
+      s.charge(e.mixWeights, 1.0, 0.6);
+      const laid = await stroke1(engine, stroke, 180, 240, 360, 240, 90);
+      const g = await e.sampleGauges();
+      // Total pigment must remain fixed while the shared Watercolour transport
+      // advances. Pickup is deliberately off so an asynchronous brush receipt
+      // cannot make two otherwise identical controls diverge.
+      for (let i = 0; i < 20; i++) {
+        const d = s.drain();
+        e.step(d.data, d.count, 0, 0, s.brushMix, 0, 0);
+      }
+      const after = await e.sampleGauges();
+      e.render();
+      return { medium: 'watercolour', setup, pigment: +(g.pigment as number).toFixed(4),
+               water: +(g.water as number).toFixed(4), wetCells: g.wetCells,
+               pigmentAfter20: +(after.pigment as number).toFixed(4),
+               pigmentDrift: +((after.pigment as number) - (g.pigment as number)).toFixed(6),
+               cpuPigment: +laid.cpuPigment.toFixed(4), cpuWater: +laid.cpuWater.toFixed(4),
+               cpuSegments: laid.cpuSegments };
+    });
+  });
 }
 
 /**

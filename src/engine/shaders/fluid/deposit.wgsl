@@ -20,6 +20,9 @@ struct Seg {
   water: f32,       // water deposited at the centreline
   pigment: f32,     // pigment deposited at the centreline
   reach: f32,       // 0..1 how deep into the paper's tooth this hair reaches
+  drag: vec2<f32>,  // this resampled solve step's local hand travel
+  stepId: f32,      // segments sharing one resampled brush solve share this id
+  _pad: f32,
 };
 
 struct Ctl {
@@ -191,6 +194,32 @@ fn segDist(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
   return distance(p, a + ab * t);
 }
 
+/** One resampled contact's conservative shove fraction and direction.
+ *
+ * A browser frame may contain one contact or many. Combining the contacts as
+ * successive fractions (`1 - product(1-q)`) gives the same total fraction in
+ * either packaging, without paying for a full-sheet GPU pass per sub-cell
+ * solve. Coverage saturates inside each contact, so adding represented hairs
+ * fills the contact rather than inventing force. */
+fn shoveStep(coverRaw: f32, reach: f32, motionSum: vec2<f32>, motionWeight: f32,
+             laden: f32) -> vec3<f32> {
+  if (motionWeight <= 1.0e-6 || reach <= P.yieldStress) {
+    return vec3<f32>(0.0);
+  }
+  let motion = motionSum / motionWeight;
+  let speed = length(motion);
+  if (speed <= 1.0e-4) { return vec3<f32>(0.0); }
+  let contact = clamp(coverRaw, 0.0, 1.0);
+  let pressureShare = clamp(
+    (reach - P.yieldStress) / max(0.05, 1.0 - P.yieldStress), 0.0, 0.6);
+  let pressurePart = pressureShare * min(speed, 4.0) * contact * SMEAR_RATE;
+  let grabShare = clamp(C.upRate * C.brushGrab * laden * contact, 0.0, 0.9);
+  let grabPart = 1.0 - pow(1.0 - grabShare, min(speed, 4.0));
+  let fraction = clamp(
+    (pressurePart + grabPart) * max(C.smear, 0.0), 0.0, 0.9);
+  return vec3<f32>((motion / speed) * fraction, fraction);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let n = i32(P.grid);
@@ -231,6 +260,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   /** Pigment laid into THIS cell this frame. The exchange below may trade only
    *  what it gave, so it needs the giving side in scope. */
   var laidPigHere = 0.0;
+  /* Accumulate one resampled contact at a time. The segments are emitted in
+     solve order, so a changing id closes the previous contact. */
+  var stepId = -1.0;
+  var stepCover = 0.0;
+  var stepReach = 0.0;
+  var stepMotion = vec2<f32>(0.0);
+  var stepMotionWeight = 0.0;
+  var shoveDirection = vec2<f32>(0.0);
+  var shoveRemaining = 1.0;
+  let tuftRoom = select(
+    0.0, clamp(C.brushTake / max(C.brushGrab, 1.0e-6), 0.0, 1.0), C.brushGrab > 0.0);
+  let tuftLaden = clamp(1.0 - tuftRoom, 0.0, 1.0);
 
   let count = i32(C.count);
   let inBox = f32(c.x) >= C.minX && f32(c.x) <= C.maxX
@@ -249,6 +290,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     for (var i = 0; i < count; i = i + 1) {
       let s = segs[i];
+      if (stepId >= 0.0 && s.stepId != stepId) {
+        let action = shoveStep(
+          stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
+        shoveDirection = shoveDirection + action.xy;
+        shoveRemaining = shoveRemaining * (1.0 - action.z);
+        stepCover = 0.0;
+        stepReach = 0.0;
+        stepMotion = vec2<f32>(0.0);
+        stepMotionWeight = 0.0;
+      }
+      stepId = s.stepId;
       let d = segDist(pos, s.a, s.b);
       if (d < s.radius + 0.5) {
         // Cell COVERAGE times the hair's own pressure profile.
@@ -316,7 +368,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         pig = pig + take * s.pigment;
         press = max(press, clamp(s.reach, 0.0, 1.0));
         cover = cover + f;
+        stepCover = stepCover + f;
+        stepReach = max(stepReach, clamp(s.reach, 0.0, 1.0));
+        stepMotion = stepMotion + s.drag * f;
+        stepMotionWeight = stepMotionWeight + f;
       }
+    }
+    if (stepId >= 0.0) {
+      let action = shoveStep(
+        stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
+      shoveDirection = shoveDirection + action.xy;
+      shoveRemaining = shoveRemaining * (1.0 - action.z);
     }
 
     laidHere = water;
@@ -617,8 +679,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
    * does, and the share below falls out of the same arithmetic. A material that
    * holds its shape resists; one that does not, does not. */
   if (press > P.yieldStress) {
-    let travel = vec2<f32>(C.travelX, C.travelY);
-    let speed = length(travel);
+    /* Each resampled contact has already contributed above. This direction is
+       their pressure/grab-weighted pull; the combined fraction below is what
+       the same contacts would carry if submitted one at a time. */
+    let speed = length(shoveDirection);
     // The film that will not come off, as a SHARE of what is there rather than
     // an absolute height. The lab's floor is a height in its own deposit units,
     // and transplanting that number into this engine's film units set it above
@@ -630,22 +694,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let loose = w0.y
               * clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
     if (speed > 1.0e-4 && loose > 0.0) {
-      // Share taken, from how far past yielding the hairs are pressing. Capped
-      // at 0.6 — a brush shoves paint, it does not teleport it.
-      let share = clamp((press - P.yieldStress) / max(0.05, 1.0 - P.yieldStress), 0.0, 0.6);
-      /* A brush standing still smears nothing, and one that crosses four cells
-         in a frame drags four times what one crossing a single cell does —
-         scaled by DISTANCE, not by frames, or the same gesture would smear
-         differently on a fast machine than a slow one. Bounded at four cells so
-         one stalled frame cannot fling the paint across the sheet.
-
-         A hair barely grazing the cell smears in proportion to what it covers.
-         The ceiling stays as a conservation guard, but it should now be rare
-         for it to bind at all — when it was doing the deciding, the smear was
-         not a physical quantity, it was a clip. */
-      let pressCarried = loose * share * min(speed, 4.0) * clamp(cover, 0.0, 1.0)
-                       * SMEAR_RATE;
-
       /* THE GRAB THAT CANNOT BE DRUNK.
        *
        * The pickup above is `upRate * brushTake * …`, and `brushTake` is the
@@ -677,18 +725,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
        *
        * [UNVERIFIED — artist feel, 2026-08-26.] `smearStrength` is the dial to
        * turn if the amount is wrong; the mechanism is the claim here. */
-      let room = select(
-        0.0, clamp(C.brushTake / max(C.brushGrab, 1.0e-6), 0.0, 1.0), C.brushGrab > 0.0);
-      let laden = clamp(1.0 - room, 0.0, 1.0);
-      let grabShare = clamp(
-        C.upRate * C.brushGrab * laden * clamp(cover, 0.0, 1.0), 0.0, 0.9);
-      let grabCarried = loose * (1.0 - pow(1.0 - grabShare, min(speed, 4.0)));
-
-      // One ceiling over both, and the artist's dial governs both — a control
-      // labelled "how hard the brush shoves" that moved only half the shoving
-      // would be a dial that lies about its own range.
-      let carried = min((pressCarried + grabCarried) * max(C.smear, 0.0), w0.y * 0.9);
-      let u = travel / speed;
+      /* `shoveRemaining` already combines the pressure and laden-grab routes,
+         with the artist's Smear dial applied to each local contact before the
+         contacts are compounded. One ceiling still governs their shared
+         conservative ledger. */
+      let carried = min(
+        loose * clamp(1.0 - shoveRemaining, 0.0, 0.9), w0.y * 0.9);
+      let u = shoveDirection / speed;
       // Split across the two faces the direction points at. The parts sum to
       // exactly `carried`, so the split cannot invent or lose paint.
       let w = abs(u.x) + abs(u.y);

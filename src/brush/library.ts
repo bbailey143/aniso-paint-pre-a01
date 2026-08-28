@@ -70,6 +70,11 @@ export const BRUSHES: BrushDef[] = [
        neither edge is doing.
        Cost is five chain relaxations instead of two, all CPU, ~90 numbers. */
     spines: 5,
+    /* [UNVERIFIED artist trial, 2026-08-28.] Both flat brushes jump from five
+       to ten contacting spine joints near linear pressure 0.65. A 1.6 response
+       maps a common firm 0.75 input to 0.631, immediately below that measured
+       step, but still reaches full depth at full pressure. */
+    pressureExponent: 1.6,
     segments: 5,
     length: 24,
     widthRatio: 0.95,     // a chisel, much wider than it is thick
@@ -116,6 +121,10 @@ export const BRUSHES: BrushDef[] = [
        gains less than the sable does — but it is the same tool shape and there
        is no reason to give it a coarser blade. */
     spines: 5,
+    /* Same measured mid-pressure contact step as the Flat Sable. Keep this a
+       shared flat-brush response; Oil and paper still determine what that
+       contact deposits, moves, and reveals. [UNVERIFIED artist trial.] */
+    pressureExponent: 1.6,
     // A hog bristle brush, which is what oil is moved with. Everything below is
     // the same handful of rows the sables use, turned the other way: where a
     // sable is soft, springy, absorbent and fine, a hog is stiff, blunt, coarse
@@ -157,6 +166,13 @@ export const BRUSHES: BrushDef[] = [
     friction: { mu: 0.92, cEta: 0.62, k: 1.7 },
     // Fewer and thicker than a sable, and far less evenly dressed.
     bristles: 72,
+    /* Each drawn hair stands for a bundle of coarse hog bristles. At the shared
+       packed-tuft overlap the working footprint was only 61% painted, and the
+       broad face arrived as disconnected pulses which body paint preserved as
+       the longstanding snakeskin. Let loaded bundles press into one another
+       without regularising their roots or adding more simulated hairs.
+       [UNVERIFIED artist mapping — 2026-08-28.] */
+    bundleOverlap: 1.45,
     tuft: {
       section: 3,
       thickRatio: 0.30,      // bristle is fatter; a hog is a chunky tool

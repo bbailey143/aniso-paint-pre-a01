@@ -12,6 +12,7 @@
 //
 import { StrokeEngine } from '../src/input/stroke';
 import { BRUSH_BY_SLUG } from '../src/brush/library';
+import { SEG_FLOATS } from '../src/engine/fluid';
 import type { StylusSample } from '../src/input/pointer';
 
 const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
@@ -22,7 +23,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -50,12 +51,12 @@ function paintStroke(y: number, frames = 12, perFrame = 10, lift = true) {
     }
     const { data, count } = stroke.drain();
     let frameWater = 0;
-    for (let i = 0; i < count; i++) frameWater += data[i * 8 + 5];
+    for (let i = 0; i < count; i++) frameWater += data[i * SEG_FLOATS + 5];
     perFrameWater.push(+frameWater.toFixed(3));
     segs += count;
     worstFrameSegs = Math.max(worstFrameSegs, count);
     for (let i = 0; i < count; i++) {
-      const o = i * 8;
+      const o = i * SEG_FLOATS;
       laidWater += data[o + 5];
       laidPig += data[o + 6];
       minRadius = Math.min(minRadius, data[o + 4]);
@@ -66,7 +67,7 @@ function paintStroke(y: number, frames = 12, perFrame = 10, lift = true) {
     if (count > 0) {
       const first: [number, number] = [data[0], data[1]];
       if (lastEnd) gaps.push(Math.hypot(first[0] - lastEnd[0], first[1] - lastEnd[1]));
-      const o = (count - 1) * 8;
+      const o = (count - 1) * SEG_FLOATS;
       lastEnd = [data[o + 2], data[o + 3]];
     }
   }
@@ -131,7 +132,7 @@ function shape(pressure: number, size: number, slug2: string, deg = 0, twist = 0
   let segLen = 0;
   const last = { x: 0, y: 0 };
   for (let i = 0; i < count; i++) {
-    const o = i * 8;
+    const o = i * SEG_FLOATS;
     for (const [x, y] of [[data[o], data[o + 1]], [data[o + 2], data[o + 3]]]) {
       minA = Math.min(minA, x); maxA = Math.max(maxA, x);   // along  = x, the travel
       minC = Math.min(minC, y); maxC = Math.max(maxC, y);   // across = y
@@ -165,7 +166,7 @@ function shape(pressure: number, size: number, slug2: string, deg = 0, twist = 0
   let angSum = 0, angN = 0;
   const hist = [0, 0, 0];   // 0-30, 30-60, 60-90 degrees off the travel
   for (let i = 0; i < count; i++) {
-    const o = i * 8;
+    const o = i * SEG_FLOATS;
     const vx = data[o + 2] - data[o], vy = data[o + 3] - data[o + 1];
     const len = Math.hypot(vx, vy);
     if (len < 1e-4) continue;                       // degenerate: no direction
@@ -176,7 +177,7 @@ function shape(pressure: number, size: number, slug2: string, deg = 0, twist = 0
   }
 
   let rMax = 0, rSum = 0;
-  for (let i = 0; i < count; i++) { const r = data[i * 8 + 7]; rMax = Math.max(rMax, r); rSum += r; }
+  for (let i = 0; i < count; i++) { const r = data[i * SEG_FLOATS + 7]; rMax = Math.max(rMax, r); rSum += r; }
   return {
     segs: count,
     reach: [+(rSum / Math.max(count, 1)).toFixed(3), +rMax.toFixed(3)],
@@ -261,7 +262,7 @@ if (MODE === 'field') {
     for (let k = 0; k < 8; k++) { x += ux; y += uy; st.add(x, y, sample({ pressure: 0.65 })); }
     const { data, count } = st.drain();
     for (let i = 0; i < count; i++) {
-      const o = i * 8, r = data[o + 4], w = data[o + 5];
+      const o = i * SEG_FLOATS, r = data[o + 4], w = data[o + 5];
       const ax = data[o], ay = data[o + 1], bx = data[o + 2], by = data[o + 3];
       const lo = Math.max(0, Math.floor(Math.min(ax, bx) - r - 1));
       const hi = Math.min(N - 1, Math.ceil(Math.max(ax, bx) + r + 1));
@@ -320,6 +321,43 @@ if (MODE === 'turn') {
   }
 }
 
+/* --------------------------------------------------------------- pulse --
+ * Does a flat tuft periodically lose contact or paint as it is pulled? The
+ * artist sees repeated bars square across broadside strokes and asked whether
+ * the brush is resetting to rest. Report each solve, not a rendered image, so
+ * contact loss and reservoir cadence cannot hide behind canvas lighting. */
+if (MODE === 'pulse') {
+  const run = (which: string, dx: number, dy: number) => {
+    const st = new StrokeEngine(BRUSH_BY_SLUG.get(which)!, 1.0);
+    const m = new Float32Array(8); m[0] = 1;
+    st.charge(m, 1.0, 0);
+    let x = 100, y = 100;
+    st.begin(x, y, sample({ pressure: 0.65 }));
+    const rows: { contact: number; laid: number; segs: number }[] = [];
+    for (let i = 0; i < 80; i++) {
+      x += dx; y += dy;
+      st.add(x, y, sample({ pressure: 0.65, time: i }));
+      const { data, count } = st.drain();
+      let laid = 0;
+      for (let j = 0; j < count; j++) laid += data[j * SEG_FLOATS + 5];
+      rows.push({
+        contact: (st as any).brush.contactJoints(),
+        laid: +laid.toFixed(5), segs: count,
+      });
+    }
+    const cv = (vals: number[]) => {
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      return Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length) / (mean || 1);
+    };
+    console.log(`${which} ${dx ? 'horizontal' : 'vertical'}: contact ${Math.min(...rows.map(r => r.contact))}-${Math.max(...rows.map(r => r.contact))}, contact CV ${cv(rows.map(r => r.contact)).toFixed(3)}, laid CV ${cv(rows.map(r => r.laid)).toFixed(3)}`);
+    console.log(rows.map(r => `${r.contact}/${r.laid}`).join(' '));
+  };
+  for (const which of ['flat-sable', 'flat-hog']) {
+    run(which, 0.9, 0);
+    run(which, 0, 0.9);
+  }
+}
+
 /* Which row is turning the hairs off the stroke? Vary one at a time and watch
  * the angle at 90 degrees, where the fault is worst. */
 if (MODE === 'blame') {
@@ -374,7 +412,7 @@ if (MODE === 'legs') {
       st.add(20 + cell, 200, sample({ pressure: 0.65 }));
       const { data, count } = st.drain();
       let w = 0;
-      for (let i = 0; i < count; i++) w += data[i * 8 + 5];
+      for (let i = 0; i < count; i++) w += data[i * SEG_FLOATS + 5];
       laid += w;
       if (cell <= 5) first = Math.max(first, w);
       if (!fade && cell > 5 && w < first * 0.2) fade = cell;
@@ -939,7 +977,7 @@ if (MODE === 'drive') {
     b.begin(dpose({ pressure: 0 }));
     let x = 0;
     for (let i = 1; i <= 10; i++) b.solve(dpose({ x, pressure: (i / 10) * press }));
-    const buf = new Float32Array(4096 * 8);
+    const buf = new Float32Array(4096 * SEG_FLOATS);
     /* Emit after EVERY solve, as the real loop does. A hair's mark is the ground
        it covered since the last step, so a single emit at the end has no history
        to measure against and every track comes out exactly zero -- which is what
@@ -952,7 +990,7 @@ if (MODE === 'drive') {
     }
     let lo = Infinity, hi = -Infinity, len = 0, water = 0, bite = 0;
     for (let i = 0; i < n; i++) {
-      const o = i * 8;
+      const o = i * SEG_FLOATS;
       len += Math.hypot(buf[o + 2] - buf[o], buf[o + 3] - buf[o + 1]);
       lo = Math.min(lo, buf[o + 1], buf[o + 3]);
       hi = Math.max(hi, buf[o + 1], buf[o + 3]);
@@ -1072,7 +1110,7 @@ if (MODE === 'fill') {
       b.begin(fpose2({ pressure: 0 }));
       let x = 0;
       for (let i = 1; i <= 10; i++) b.solve(fpose2({ x, pressure: (i / 10) * pr }));
-      const buf = new Float32Array(8192 * 8);
+      const buf = new Float32Array(8192 * SEG_FLOATS);
       let n = 0;
       for (let i = 0; i < 6; i++) {
         x += 0.9;
@@ -1085,7 +1123,7 @@ if (MODE === 'fill') {
       // own outline -- the band a disc paints outside the edge otherwise reads
       // as more than a full mark and measures the rim, not the middle.
       const pts: number[][] = [];
-      for (let i = 0; i < n; i++) { const o = i * 8; pts.push([buf[o], buf[o + 1]], [buf[o + 2], buf[o + 3]]); }
+      for (let i = 0; i < n; i++) { const o = i * SEG_FLOATS; pts.push([buf[o], buf[o + 1]], [buf[o + 2], buf[o + 3]]); }
       let frac = 0;
       if (pts.length >= 3) {
         const C = 0.15;

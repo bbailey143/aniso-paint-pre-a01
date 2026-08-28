@@ -149,9 +149,92 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-08-27
-**By:** Claude, continuing the relay. Codex's 2026-08-25 entries below stand
-unchanged; only this block is new.
+**Last updated:** 2026-08-28
+**By:** Codex, continuing the relay.
+
+## LIVE CHECKPOINT — directional Flat Hog snakeskin
+
+**Build/browser state.** `npm.cmd run build` passes. The live D: checkout is
+served at `http://127.0.0.1:5175/`; a fresh reload produced no new WebGPU
+errors. The tree is deliberately dirty and uncommitted. Do not push without
+Bartford's fresh authorization.
+
+**Current objective.** Remove the broadside Flat Hog's repeated scale/chatter
+without blurring away brush furrows or making a screen-direction special case.
+Active evidence is `docs/19-paint-on-canvas.md` §6.
+
+**IN FLIGHT.** The `[UNVERIFIED]` Flat Hog `bundleOverlap: 1.45` remains because
+Bartford reports it improved the Hog, but both flat brushes still band. A new
+`tools/brush-bench.ts pulse` probe is kept. The attempted shared spine
+continuation was measured, worsened Hog contact cadence, and was fully reverted.
+`composite.wgsl` and docs/19 also carry the preceding paint-grounding pass.
+The post-footprint test is complete and retained as
+`src/bench/banding-bench.ts`; load `?banding=2` to repeat it. It changes nothing
+without that query parameter.
+
+Bartford authorized the frame-invariant Smear fix. It is implemented and all
+paired automated gates pass; details are `docs/19-paint-on-canvas.md` E2. The
+normal browser page is open on Oil / Flat Hog / Cotton Duck for artist review.
+
+**DECISIVE RESULT — reproduced.** Same Flat Sable/Oil/Cotton Duck path, one
+report per frame versus four: stored-body ripple rose 0.0235 -> 0.0484 and the
+height pattern locked to the 16-cell frame boundaries at 0.1992. Turning only
+Smear off, with fresh-paint levelling still on, reduced that lock to 0.0568
+(71% lower) and body ripple to 0.0177 (63% lower). Paired runs reproduced.
+The common snakeskin is stored-height stepping caused mainly by the frame-wide
+shove in `deposit.wgsl`, not a brush reset, canvas generator, or compositor.
+Full entry: `docs/19-paint-on-canvas.md` E1.
+
+**NEXT ACTION — make Smear independent of browser frames, not weaker.** Keep
+pickup and total paint movement intact. First split the two shove contributions
+in `deposit.wgsl:644-687` under the same four-report bench: pressure-carried
+versus laden-brush `grabCarried`. Then replace the guilty frame-wide use of
+`Ctl.travelX/Y` with travel measured from the resampled footprint step(s), or
+fixed sub-batches whose boundaries do not depend on requestAnimationFrame.
+Acceptance: the 1-report and 4-report `wet0.y` profiles agree closely and the
+four-report frame-locked span falls near the 0.05 baseline with Smear still 1;
+run each twice, then confirm blue is still pushed through yellow before asking
+Bartford to judge Flat Sable and Flat Hog broadside strokes.
+
+**COMPLETED.** Both shove routes contributed (pressure-only span 0.1239,
+complete 0.1992, Smear-off 0.0568). Wet footprint segments now carry their own
+<=0.9-cell travel and solve id; `deposit.wgsl` combines each resampled contact's
+pressure/grab fraction inside the frame. Afterward, 1-report versus 4-report
+stored-body ripple is 0.0151 versus 0.0153; the four-report phase span is 0.0607,
+at the 0.0568 levelling-only floor rather than the old 0.1992 seam.
+
+**ARTIST VERDICT — E2 IS NOT A VISIBLE FIX.** Bartford reports no visible change
+in either flat brush. The frame-dependent stored-height seam was real and the
+instrument shows it removed, but it was not the dominant visible snakeskin.
+Do not call the symptom solved. Lighter-pressure strokes show much less of the
+pattern, which makes the pressure/contact ramp the current lead.
+
+**CURRENT NEXT ACTION — artist check of the flat-brush pressure trial.** The
+instrument's stale 8-float stride is repaired and all pressure probes reproduced.
+The pen curve is linear; the brush response is stepped. Both flats jumped from
+five to ten contacting spine joints around the middle/firm part of the dial, and
+their mark width snapped narrower rather than spreading naturally. The reset
+hypothesis is still rejected: Sable contact never pulsed, while Hog's pulse was
+in the direction the artist says already looks better.
+
+Both flat brush rows now carry an `[UNVERIFIED] pressureExponent: 1.6`; Round
+Sable is untouched. This makes mid-pressure gentler without changing zero or
+full pressure, and moves Hog's 5-to-10 contact transition from 0.65 to 0.80 in
+the paired ramp. Sable remains more sensitive and transitions sooner. Build and
+the live full regression suite pass, with the expected changed Oil contact:
+crossing lift 36%, trail to 1.9%, stacking 0.937, holding 92.6%, Watercolour
+drift at zero to reported precision. The normal 5175 page should be left on Oil /
+Flat Hog / Cotton Duck. Bartford should compare comfortable-pressure broadside
+strokes in Hog and Sable. If the scales materially retreat, keep the softer flat
+response and next smooth the remaining Sable contact step. If there is no visible
+change, revert `pressureExponent` before further contact work; do not call it a
+fix based on the bench alone.
+
+**Measured, reproduced as paired current-source runs.** At pressure 0.75 the
+shared overlap 1.15 paints 53% of the Flat Hog footprint; 1.45 paints 60%.
+Track-spacing variation remains 205% in both, so the change connects more of
+the coarse bundles without regularising their placement. This does NOT prove
+the visible snakeskin is fixed.
 
 ## Housekeeping settled 2026-08-26 — read this before doubting which tree you are in
 

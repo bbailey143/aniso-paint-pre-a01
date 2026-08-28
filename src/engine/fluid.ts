@@ -60,7 +60,7 @@ const PICKUP_TALLY = 1.0e5;
 // Footprint segments per frame. The brush emits one per contacting bristle
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
-const SEG_FLOATS = 8;          // vec2 a, vec2 b, radius, water, pigment, pad
+const SEG_FLOATS = 12;         // deposit contact + local resampled drag vec2 + pad
 // Dry tools also carry the long axis of a tilted contact ellipse. It remains a
 // separate layout so wet-brush footprints stay byte-for-byte unchanged.
 const DRY_SEG_FLOATS = 10;

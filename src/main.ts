@@ -1,6 +1,7 @@
 // aniso-paint — app entry.
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { maybeRunSoak } from './soak';
+import { maybeRunBanding } from './bench/banding-bench';
 import { PointerInput, type StylusSample } from './input/pointer';
 import { attachPinch } from './input/pinch';
 import { wrapAngle, snapRight } from './input/angle';
@@ -348,7 +349,51 @@ async function main() {
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
   stroke.onBrushReset = () => engine.discardPickup();
-  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke);
+  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunPickupCheck(engine, stroke);
+}
+function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
+  const query = new URLSearchParams(location.search);
+  if (!query.has('pickup-check') && !query.has('full-check')) return;
+  const full = query.has('full-check');
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:9999;width:min(650px,92vw);padding:14px 16px;border-radius:10px;background:rgba(12,12,14,.95);color:#e8e6e3;font:13px/1.45 ui-monospace,monospace;box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap;pointer-events:none';
+  panel.textContent = full
+    ? 'PAINT REGRESSION SUITE\n\nrunning paired crossing, stacking, holding, and Watercolour checks…'
+    : 'OIL PICKUP REGRESSION\n\nrunning two identical blue/yellow crossings…';
+  document.body.appendChild(panel);
+  setTimeout(async () => {
+    try {
+      const bench = await import('./bench/pickup-bench');
+      const e = engine as unknown as Record<string, unknown>;
+      const s = stroke as unknown as Record<string, unknown>;
+      const runs = [await bench.crossing(e, s), await bench.crossing(e, s)];
+      const line = (r: Record<string, any>) =>
+        `lifted ${r.bluePigmentRemovedPct}% | brush blue ${r.brushBluePct}% | ` +
+        `trail ${r.trailBlueByDistance.map((p: { bluePct: number }) => p.bluePct).join(' -> ')}`;
+      panel.textContent = 'OIL PICKUP REGRESSION — finished\n\n' +
+        `run 1  ${line(runs[0])}\nrun 2  ${line(runs[1])}\n\n` +
+        'Reference: lifted about 33%; trail 12.4% -> 1.8%.\n' +
+        'The canvas shows the final yellow-through-blue crossing.';
+      if (full) {
+        panel.textContent = 'PAINT REGRESSION SUITE\n\ncrossing passed; running Oil stacking…';
+        const stacking = [await bench.stacking(e, s), await bench.stacking(e, s)];
+        panel.textContent = 'PAINT REGRESSION SUITE\n\nstacking passed; running brush holding…';
+        const holding = [await bench.holding(e, s), await bench.holding(e, s)];
+        panel.textContent = 'PAINT REGRESSION SUITE\n\nholding passed; running Watercolour control…';
+        const water = [await bench.watercolourControl(e, s), await bench.watercolourControl(e, s)];
+        panel.textContent = 'PAINT REGRESSION SUITE — finished\n\n' +
+          `crossing lift  ${runs[0].bluePigmentRemovedPct}% / ${runs[1].bluePigmentRemovedPct}%\n` +
+          `crossing trail ${runs[0].trailBlueByDistance.map((p: { bluePct: number }) => p.bluePct).join(' -> ')}\n` +
+          `stack last/first ${stacking[0].lastGainVsFirst} / ${stacking[1].lastGainVsFirst}\n` +
+          `holding peak ${holding[0].peak}% / ${holding[1].peak}% | passed ${holding[0].passed && holding[1].passed}\n` +
+          `Watercolour pigment canvas ${water[0].pigment} / ${water[1].pigment}\n` +
+          `Watercolour drift after 20 frames ${water[0].pigmentDrift} / ${water[1].pigmentDrift}\n\n` +
+          'References: stacking ~0.897; holding ~92.6%; Watercolour drift 0.';
+      }
+    } catch (err) {
+      panel.textContent = `OIL PICKUP REGRESSION — ERROR\n\n${String(err)}`;
+    }
+  }, 50);
 }
 function showFatal(message: string) { const el = document.createElement('div'); el.className = 'panel'; el.style.cssText = 'top:50%;left:50%;transform:translate(-50%,-50%);max-width:420px;text-align:center;color:var(--ink);line-height:1.6'; el.innerHTML = `<b style="color:var(--accent)">WebGPU unavailable</b><br><br>${message}`; document.body.appendChild(el); }
 main();

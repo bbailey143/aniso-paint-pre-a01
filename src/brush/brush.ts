@@ -109,6 +109,14 @@ export class Brush {
   private draw = new Float32Array(8);
   /** Cells travelled in the current solve step — what the reservoir charges by. */
   private travel = 0;
+  /** The local resampled hand movement for this footprint. It travels with the
+   * contact to the GPU so paint shove cannot inherit browser-frame cadence. */
+  private dragX = 0;
+  private dragY = 0;
+  /** Monotonic resampled-contact id. Segments from one solve are contiguous;
+   * the GPU uses this to combine their coverage once before moving to the next
+   * contact, regardless of browser-frame packaging. */
+  private stepSerial = 0;
   private started = false;
   /** Body paint runs out by losing loaded contacts, not by making every
    * contact increasingly transparent. Set from the selected medium row. */
@@ -136,7 +144,9 @@ export class Brush {
     this.tuftDef = def.tuft ?? DEFAULT_TUFT;
     this.hairs = drawTuft(this.tuftDef, def.bristles);
     this.hairR = Math.max(
-      0.45, bundleRadius(this.tuftDef, def.bristles, tuftHalfWidth(def, def.length * size)));
+      0.45, bundleRadius(
+        this.tuftDef, def.bristles, tuftHalfWidth(def, def.length * size),
+        def.bundleOverlap ?? 1.15));
 
     this.reservoir = new Reservoir(def.reservoir, def.bristles, def.segments + 1);
     /* Where every hair point was on the previous solve step. A hair's mark is
@@ -231,6 +241,7 @@ export class Brush {
     // smear from wherever the last stroke left the hairs.
     this.trailValid = false;
     this.lastCValid = false;
+    this.stepSerial = 0;
   }
 
   end() {
@@ -244,6 +255,9 @@ export class Brush {
   solve(input: BrushInput) {
     if (!this.started) this.begin();
     this.travel = Math.hypot(input.dx, input.dy);
+    this.dragX = input.dx;
+    this.dragY = input.dy;
+    this.stepSerial++;
 
     const tilt = (input.tiltAngle * Math.PI) / 180;
     const az = (input.tiltAzimuth * Math.PI) / 180;
@@ -274,7 +288,11 @@ export class Brush {
        nothing. This way the dead zone stays at 5% of the dial whatever the
        drive is. */
     const hover = HOVER * drive * L;
-    const depth = -hover + (drive * L) * input.pressure;
+    const pressure = Math.pow(
+      Math.max(0, Math.min(1, input.pressure)),
+      this.def.pressureExponent ?? 1,
+    );
+    const depth = -hover + (drive * L) * pressure;
 
     /* THE BLADE AXIS, IN THREE DIMENSIONS.
      *
@@ -471,6 +489,13 @@ export class Brush {
             // in the slab only skims the peaks (drybrush); one driven well below
             // the surface reaches the valleys and lays a solid mark.
             buf[o + 7] = press;
+            // Per-resampled-step travel, not the sum of an arbitrary browser
+            // frame. Every represented hair carries the same local hand move;
+            // the shader coverage-weights them back into one contact motion.
+            buf[o + 8] = this.dragX;
+            buf[o + 9] = this.dragY;
+            buf[o + 10] = this.stepSerial;
+            buf[o + 11] = 0;
             count++;
           }
         }
