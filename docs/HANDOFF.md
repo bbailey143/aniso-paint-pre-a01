@@ -105,8 +105,17 @@ Every experiment entry, in every log, uses this shape:
   `webgpu-test` is the publish target and is 12 commits behind local.
 - Windows 11, GPU `amd / gcn-4` (Polaris). **The GPU is a suspect in the open fault —
   if you are on different hardware, say so in every entry you write.**
-- `npm run dev` (port 5173; recent sessions have also served 5174). Build/typecheck:
-  `npm run build`. iPad over a tunnel: `npm run ipad`.
+- `npm run dev` — **port 5174, pinned** (`vite.config.ts` sets `strictPort: true`).
+  Corrected 2026-08-28; this line said 5173 and cost a session an hour chasing a
+  port that config had already fixed. `tools/start-ipad.ps1` passes the port on
+  the command line, which OVERRIDES the config — check it if 5173 reappears.
+  Build/typecheck: `npm run build`.
+- **iPad: `tailscale serve --bg 5174`**, which publishes
+  `https://bfamily.tail5d46e0.ts.net/` with a real certificate and the SAME
+  address every session. Prefer it to `npm run ipad` (Cloudflare quick tunnel),
+  whose address changes every time. WebGPU needs the secure context, so a plain
+  LAN IP will not work. `vite.config.ts` allows `.ts.net` and
+  `.trycloudflare.com` hosts.
 - **WGSL errors never appear at build time** — `npm run build` runs `tsc --noEmit &&
   vite build` and does not compile shaders. Load the page after any shader edit.
 - Debug handles: `window.__engine`, `window.__stroke`, `window.__BRUSHES`.
@@ -115,8 +124,11 @@ Every experiment entry, in every log, uses this shape:
 
 ## A7. Finishing (or being interrupted)
 
-- Commit and push to `webgpu-test` whenever a milestone lands. The repo is the source
-  of truth; an uncommitted insight does not exist.
+- **Commit and push to `tuft-fill`** whenever a milestone lands. The repo is the
+  source of truth; an uncommitted insight does not exist. Corrected 2026-08-28 —
+  this line said `webgpu-test`, which stopped being the default branch on
+  2026-08-26 and is now far behind. Pushing there would strand the work in
+  exactly the way the abandoned `C:` clone did.
 - Do **not** commit `.claude/settings.local.json`.
 - Commit messages: what changed, what it was measured to do, and what it does *not*
   do. Plain language.
@@ -219,9 +231,63 @@ medium through the engine API and never touched the UI, so **the tool bar read
 the labels were lying — confirmed from `fluid.params` — but it cost trust, and
 the pickup runs also failed to pin the paper, so they were not identical setups.
 
-**NEXT ACTION — `docs/18` steps 1-2 are DONE and all three `docs/16` E9 faults
-are closed. Read `docs/16` E10. What is left is the ARTIST's: judge the
-thickness and judge the crossing. Do not tune either to a number.**
+**NEXT ACTION — read `docs/19-paint-on-canvas.md` and execute its §5 order of
+attack, starting with the perimeter probe in §3a. Build the instrument before
+touching a dial; that rule has been earned seven times in this file.**
+
+## FOR THE NEXT MODEL — start here (written 2026-08-28, for Codex)
+
+Bartford handed this over deliberately, not mid-crisis. The tree is clean, every
+branch is pushed, and nothing is half-finished. Read in this order:
+
+1. This file's Part A (protocol), then `CLAUDE.md` (what the project is).
+2. **`docs/19-paint-on-canvas.md`** — your job. Suggestions only, nothing built.
+3. `docs/16` E10 for the state of the brush, and `docs/18` for oil body. Both
+   are DONE; you need them as context, not as work.
+
+**The task in one line:** the paint looks like a sticker floating above the
+canvas, and the artist named the cause himself — *"the shadow is making it look
+like it floats."* `docs/19` breaks that into three visual cues, anchors each to
+the line of `composite.wgsl` that produces it, and proposes a fix per cue with
+an order to try them in. It is a LIGHTING problem. Do not go fixing it in the
+solver; the film's sharp edge is real and is `yieldStress` working correctly.
+
+**Two things in `docs/19` that are easy to miss and will save you a round:**
+
+- E10 made this WORSE by making the paint five times taller. The float is
+  partly the price of the body fix, which is why it shows now. Do not "fix" it
+  by undoing body.
+- Do NOT shrink `paintRelief` or raise the 0.25 shade floor to kill the outline.
+  Both re-flatten the interior that the artist's own 0.82 -> 0.45 -> 0.0 -> 0.25
+  sweep just won. That history is in `composite.wgsl` around :727.
+
+**What is verified and must not regress.** Re-run these after any change; they
+are one import in the browser console and they assert their own setup:
+
+```js
+const b = await import('/src/bench/pickup-bench.ts');
+await b.stacking(__engine, __stroke);          // last/first must stay ~0.897
+await b.crossing(__engine, __stroke);          // lifted ~33%, trail 12.4 -> 1.8
+await b.holding(__engine, __stroke);           // peak ~92.6%, passed true
+await b.watercolourControl(__engine, __stroke);// pigment 32.9182, to 4 decimals
+```
+
+The watercolour control is the sharpest one: every pickup change is gated on
+`workableBody`, which is exactly 0 for any medium with `yieldStress 0`, so that
+number moving means you have broken the gate.
+
+**Run everything twice on an identical command line before interpreting it.**
+This is not ceremony. Seven measurements in this file were confident, coherent
+and wrong, and the artist caught most of them by looking at the screen. The
+seventh was three days ago: a dial set on a console-`import()`ed module does not
+reach the running app, and the sweep returned identical numbers for 0 and 1.0.
+**Treat a flat sweep as a broken instrument before treating it as a finding.**
+
+**Marking your work.** You are on `amd / gcn-4` only if you are on Bartford's
+Windows box; say so in every log entry either way, because the GPU is a suspect
+in the open `--precision full` fault. Mark reasoning `[UNVERIFIED]`, measurements
+`[MEASURED]`, and strike retractions rather than deleting them — several entries
+here are valuable precisely because they record what was tried and failed.
 
 ## 2026-08-27, later — oil builds body now, and E9's three faults were two bugs
 
