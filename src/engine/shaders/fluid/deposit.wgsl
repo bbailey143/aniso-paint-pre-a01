@@ -92,7 +92,11 @@ fn lift(v: f32, lane: u32) -> f32 {
 // ping-pongs, so a skipped cell would lose its contents), but only cells the
 // hairs can actually reach pay for the segment loop.
 @group(0) @binding(2) var<uniform> C: Ctl;
-@group(0) @binding(3) var<storage, read> mix: array<vec4<f32>>;  // 2 x vec4 = 8 slot weights
+/* 4 x vec4 = 16 slot weights in two halves. `mix[0..1]` is the colour LEAVING
+   the brush this frame, which sets the colour of the mark. `mix[2..3]` is the
+   tuft's steady LOAD, which the pickup pass compares against the cell. They are
+   deliberately different numbers — see `StrokeEngine.brushMix`. */
+@group(0) @binding(3) var<storage, read> mix: array<vec4<f32>>;
 @group(0) @binding(4) var wet0_in: texture_2d<f32>;
 @group(0) @binding(5) var wet1_in: texture_2d<f32>;
 @group(0) @binding(6) var wet2_in: texture_2d<f32>;
@@ -452,7 +456,62 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * strong form. If this proves too eager, the weaker form multiplies by the
      * brush row again; that needs the tuft's grab passed down, which this Seg
      * struct does not currently carry. Judge by eye first. */
-    let rExchange = clamp(C.upRate * clamp(cover, 0.0, 1.0) * loose * workableBody, 0.0, 0.9);
+    /* HOW UNLIKE THE TWO PAINTS ARE — and why an exchange must be scaled by it.
+     *
+     * [MEASURED 2026-08-27, docs/18 §2 / docs/16 E10] The exchange above had no
+     * notion of LIKE paint, so a loaded brush restating its own colour lifted
+     * what it was laying in the same invocation. Four stacked oil passes on one
+     * line, brush recharged each pass, film summed over a fixed corridor:
+     *
+     *     pickup off   47.2  94.6  142.1  189.6   (dead linear, last gain 1.007)
+     *     pickup on    24.2  31.6   36.8   41.0   (converging, last gain 0.174)
+     *
+     * The first pass alone lost HALF its paint on bare-ish canvas, and by pass
+     * four the peak film was 0.053 against a canvas tooth of 0.30 — the weave
+     * never buries. That is the artist's "oil is missing body / missing height"
+     * and the older "one or two thick strokes should cover" complaint, in
+     * arithmetic. It is not a deposit problem: with this route shut, oil builds
+     * exactly as it should.
+     *
+     * The drain is directional, which is what makes it a leak rather than a
+     * wash. Canvas -> brush runs at the exchange rate; brush -> canvas runs at
+     * `downRate * flow` of what a hair holds, which is slower. So paint pools in
+     * the tuft and the sheet loses. For UNLIKE paints that asymmetry is exactly
+     * the pickup docs/17 was built to get, and it stays untouched. For like on
+     * like it is pure loss of body, and the trade it models is a no-op anyway:
+     * what you lift is what you just laid.
+     *
+     * Total-variation distance between the two normalised compositions: 0 when
+     * the brush is restating the cell's own colour, 1 when they share no slot.
+     * Bounded, monotone, and free of a new constant.
+     *
+     * [UNVERIFIED — the METRIC is a design choice, not physics.] TVD was picked
+     * for being bounded and cheap; a perceptual or spectral distance would rank
+     * near-colours differently. What is measured is the fault it fixes, not that
+     * this is the one true curve. Judge the crossing by eye before trusting it.
+     *
+     * Note it also self-limits mid-crossing: a brush that has already picked up
+     * blue is less unlike the blue beneath it, so it trades less avidly for
+     * more of the same — which pulls in the same direction as docs/16 E9's
+     * "probably picks up far too much". */
+    let presentPig = gloBefore.x + gloBefore.y + gloBefore.z + gloBefore.w
+                   + ghiBefore.x + ghiBefore.y + ghiBefore.z + ghiBefore.w;
+    /* Compared against the tuft's LOAD (`mix[2..3]`), never against what it is
+       laying. [MEASURED — the laid mix feeds back on itself and shuts the
+       exchange off after one touch; the numbers are in `StrokeEngine.brushMix`.]
+       An empty or rinsed brush has an all-zero load and gets no discount, which
+       is the safe default: it is not "like" anything. */
+    let loadSum = mix[0].x + mix[0].y + mix[0].z + mix[0].w
+                + mix[1].x + mix[1].y + mix[1].z + mix[1].w;
+    var unlike = 1.0;
+    if (presentPig > WET_EPS && laidPigHere > WET_EPS && loadSum > WET_EPS) {
+      let dLo = abs(gloBefore / presentPig - mix[0] / loadSum);
+      let dHi = abs(ghiBefore / presentPig - mix[1] / loadSum);
+      unlike = clamp(0.5 * (dLo.x + dLo.y + dLo.z + dLo.w
+                          + dHi.x + dHi.y + dHi.z + dHi.w), 0.0, 1.0);
+    }
+    let rExchange = clamp(C.upRate * clamp(cover, 0.0, 1.0) * loose * workableBody * unlike,
+                          0.0, 0.9);
 
     /* THE SWAP CAP — what keeps a trading brush from filling.
      *
@@ -470,8 +529,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * No new constant, and it self-limits in the right way: a brush running dry
      * lays less, so it trades less, and stops scouring the sheet exactly when it
      * has nothing left to swap. */
-    let presentPig = gloBefore.x + gloBefore.y + gloBefore.z + gloBefore.w
-                   + ghiBefore.x + ghiBefore.y + ghiBefore.z + ghiBefore.w;
+    // `presentPig` is computed above, with `unlike`.
     let swapCap = select(
       0.0, clamp(laidPigHere / max(presentPig, WET_EPS), 0.0, 1.0), presentPig > WET_EPS);
 

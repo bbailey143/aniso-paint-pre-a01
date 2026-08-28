@@ -100,8 +100,16 @@ export class StrokeEngine {
   /** The mix the brush was last DIPPED in, and how heavily it was charged. */
   private mix: Float32Array<ArrayBuffer> = new Float32Array(8);
   /** What the tuft is holding now, which drifts from `mix` as it picks paint
-   *  up. Reused rather than allocated per frame — see `brushMix`. */
-  private live: Float32Array<ArrayBuffer> = new Float32Array(8);
+   *  up. Reused rather than allocated per frame — see `brushMix`.
+   *
+   *  SIXTEEN slots, in two halves. `0..7` is the colour of what LEFT the brush
+   *  this frame — the weights the deposit splits each segment's pigment across,
+   *  unchanged. `8..15` is the tuft's own steady LOAD, which the pickup pass
+   *  needs and which must not be the same number. See `brushMix`. */
+  private live: Float32Array<ArrayBuffer> = new Float32Array(16);
+  /** A view on `live[8..15]`. `Reservoir.composition` zeroes what it is given,
+   *  so it has to be handed the half it owns, not the whole array. */
+  private liveLoad: Float32Array<ArrayBuffer> = this.live.subarray(8, 16);
   private loading = 0.6;
   /** Extra clean water added to the colour charge, 0..1. */
   private waterCharge = 0;
@@ -235,7 +243,27 @@ export class StrokeEngine {
    * Dry tools have no tuft; they keep laying exactly what they are made of.
    */
   get brushMix(): Float32Array<ArrayBuffer> {
-    if (this.dry) return this.mix;
+    /* A dry tool has no tuft, so what it lays and what it holds are the same
+       thing. Both halves are still filled: leaving the second half stale would
+       hand the pickup pass the last wet brush's load. */
+    if (this.dry) {
+      for (let k = 0; k < 8; k++) { this.live[k] = this.mix[k]; this.live[8 + k] = this.mix[k]; }
+      return this.live;
+    }
+
+    /* THE LOAD — the tuft's own stores, and deliberately NOT the film.
+     *
+     * [MEASURED 2026-08-27] The pickup pass scales its exchange by how unlike
+     * the brush's paint is from the canvas's (docs/18 §2). Handing it the LAID
+     * mix instead produced a vicious feedback loop: the film drains first, so
+     * one touch of blue turns the laid mix blue, the brush then reads as "like"
+     * the blue beneath it, and the exchange shuts off after first contact.
+     * Measured on the standard crossing: lift fell from 37.3 % to -13.7 % — the
+     * brush was laying blue back rather than taking it — and the tuft finished
+     * holding 0.00 % blue. The load is the stable answer to "what paint is this
+     * brush", and `composition` reads the rooms only, so pickings riding the
+     * outside cannot contaminate it. */
+    this.brush.reservoir.composition(this.liveLoad);
 
     /* THE COLOUR OF WHAT LEFT THE BRUSH, not the average of what is in it.
      *
@@ -260,7 +288,7 @@ export class StrokeEngine {
       for (let k = 0; k < 8; k++) this.live[k] = laid[k] / total;
       return this.live;
     }
-    this.brush.reservoir.composition(this.live);
+    for (let k = 0; k < 8; k++) this.live[k] = this.liveLoad[k];
     return this.live;
   }
 

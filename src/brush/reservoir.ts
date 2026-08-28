@@ -104,6 +104,34 @@ export class Reservoir {
    * fades, smaller lets the tuft's own load reassert sooner. */
   private static readonly SURFACE_SHARE = 0.08;
 
+  /** How much slower pickings work INTO the hair than paint moves ALONG it, as
+   * a multiple of the wick rate.
+   *
+   * [SWEPT 2026-08-27 — a recorded decision, not a card. No source gives this
+   * number, so it is set by what the paint does.] Standard crossing, two runs
+   * per row, blue in the trail at 10/20/30/40/50 cells past the band:
+   *
+   *     1.0    lifted 39%    2.0  1.1  1.1  1.1  1.1   carry gone entirely
+   *     0.1    lifted 33.5%  12.1 8.1  4.5  2.6  1.9   <- chosen
+   *     0.03   lifted 30.3%  23.5 18.7 14.1 10.8 8.9
+   *     0.01   lifted 29.4%  29.1 25.5 21.4 18.2 16.2
+   *     0      lifted 29.1%  32.6 30.2 26.9 24.3 22.5  never recovers
+   *
+   * 0.1 is the only row where the stroke turns green and then RECOVERS to its
+   * own colour, which is docs/17's stated acceptance and the behaviour the
+   * artist has never had. It also sits nearest his one accepted carry number
+   * ("3 % feels correct", 2026-08-26) once averaged along the mark.
+   *
+   * This is the dial for "how long does a picked-up colour last". SMALLER
+   * carries it further and fades slower; LARGER spends it sooner. It is the
+   * artist's to move, and it is not the same question as how MUCH is picked up
+   * (that is `SURFACE_SHARE` and the material's `upRate`). */
+  static SURFACE_BLEED = 0.1;
+
+  /** Sum of `capacity`, kept because `withdraw` needs each segment's share of
+   *  the tuft on every call and recomputing it there is a loop per hair. */
+  private totalCapacity = 0;
+
   /** Total the surface film may hold. */
   surfaceCapacity(): number {
     let c = 0;
@@ -131,6 +159,8 @@ export class Reservoir {
         this.capacity[b * this.segments + s] = cap * this.scale;
       }
     }
+    this.totalCapacity = 0;
+    for (let i = 0; i < this.capacity.length; i++) this.totalCapacity += this.capacity[i];
   }
 
   /**
@@ -214,6 +244,38 @@ export class Reservoir {
    * same discipline the capillary pass needs (see 05-fluid.md).
    */
   wick(rate: number) {
+    /* PICKINGS WORK INWARD, at the same rate paint moves anywhere else in the
+     * tuft — it is the same process, so it takes the same rate and no new
+     * constant.
+     *
+     * [MEASURED 2026-08-27] Without this the film was a sealed compartment:
+     * `pickUp` credited it, `withdraw` spent it, and nothing ever diluted it
+     * into the tuft's own colour. So a brush past a crossing laid blue, its own
+     * footprint re-lifted that blue into the film, and it laid it again — the
+     * blue leaving the brush CLIMBED with distance (14.6 % at ten cells to
+     * 29.9 % at eighty) instead of fading, on bare canvas with no blue left to
+     * take. A real bristle does not hold its pickings on the outside forever;
+     * they work into the hair and are diluted by what is already in it, which
+     * is what makes a carried colour fade instead of equilibrating.
+     *
+     * Conservative: what leaves the film is added to the rooms by capacity
+     * share, exactly. */
+    if (rate > 0 && this.totalCapacity > 1e-12) {
+      const f = Math.min(1, rate * Reservoir.SURFACE_BLEED);
+      const moveW = this.surfaceWater * f;
+      this.surfaceWater -= moveW;
+      const moveP = new Float32Array(8);
+      for (let k = 0; k < 8; k++) {
+        moveP[k] = this.surfacePig[k] * f;
+        this.surfacePig[k] -= moveP[k];
+      }
+      for (let i = 0; i < this.water.length; i++) {
+        const share = this.capacity[i] / this.totalCapacity;
+        this.water[i] += moveW * share;
+        for (let k = 0; k < 8; k++) this.pigment[i * 8 + k] += moveP[k] * share;
+      }
+    }
+
     const S = this.segments;
     const B = this.bristles;
     const dw = new Float32Array(this.water.length);
@@ -273,10 +335,27 @@ export class Reservoir {
       c += this.capacity[i];
       for (let k = 0; k < 8; k++) p += this.pigment[i * 8 + k];
     }
-    // The film counts against holding: it is paint the brush is carrying, and
-    // leaving it out would let the tuft exceed capacity without the guard
-    // noticing.
-    return { water: w, pigment: p, capacity: c };
+    /* The film counts against holding: it is paint the brush is carrying, and
+     * leaving it out would let the tuft exceed capacity without the guard
+     * noticing.
+     *
+     * [FIXED 2026-08-27, docs/16 E9 fault 3] Its CAPACITY has to be counted
+     * too. The film's contents were being added to `water`/`pigment` while
+     * `capacity` stayed the sum of the rooms alone, so holding was measured as
+     * (rooms + film) / rooms and a brush that had picked anything up read over
+     * 100 % by construction — 100.7 % on the six-scrub bench, against a 100.5 %
+     * guard. Nothing was being created; the ledger was reporting a ratio of two
+     * different things.
+     *
+     * Adding it is the honest denominator rather than a way to silence the
+     * guard. Exterior holding is genuinely EXTRA capacity in this model, not a
+     * slice carved out of the tuft — `charge` already says so for
+     * `waterOvercharge` ("a freshly flooded brush can also carry water around
+     * the outside of the hairs"), and pickings ride the same outside. The guard
+     * keeps its teeth: `pickUp` clamps the film at its own `capLeft`, but the
+     * room-proportional spread has a deliberate no-room-anywhere branch that
+     * overfills the rooms, and that path can still push this ratio past 1. */
+    return { water: w, pigment: p, capacity: c + this.surfaceCapacity() };
   }
 
   /**
@@ -351,10 +430,40 @@ export class Reservoir {
     let surfPig = 0;
     for (let k = 0; k < 8; k++) surfPig += this.surfacePig[k];
 
+    /* THIS SEGMENT'S RATION OF THE FILM.
+     *
+     * [MEASURED 2026-08-27 — this is docs/16 E9 faults 1 and 2, and they were
+     * one fault.] `surfacePig` is a TUFT-WIDE pool, but `withdraw` is called
+     * once per hair segment, and the first version offered the whole pool to
+     * every one of them. A flat hog puts ~150 segments down per frame, so the
+     * film won every contest and monopolised the deposit: probed along a
+     * crossing, what LEFT the brush went to 94 % blue by ten cells past the
+     * band and was still 94 % blue eighty cells later, while the tuft's own
+     * load read 100 % yellow the whole way. That is the "carried colour never
+     * fades" fault, and the "picks up far too much" fault, in one line.
+     *
+     * It also drove a self-sustaining loop. The brush laid blue below the band;
+     * the cell was then blue and the load still yellow, so the exchange read
+     * them as maximally unlike and lifted that same blue straight back into the
+     * film, which laid it again. The film could never empty because the brush
+     * kept re-feeding it its own pickings.
+     *
+     * A pool shared by the whole tuft has to be rationed by each segment's
+     * share of it. Within its ration the film still goes FIRST — that is
+     * Part B's real claim, that pickings ride the outside of the bristle and
+     * leave before the load inside does — but it can no longer take the load's
+     * turn as well as its own. At `SURFACE_SHARE` 0.08 a segment's ration is
+     * about a twelfth of what it holds, so a brush fresh from a crossing lays
+     * roughly that much of the colour it picked up, decaying as the film
+     * drains. Which is the shape docs/17 asked for and never got. */
+    const shareOfTuft = this.totalCapacity > 1e-12
+      ? this.capacity[cell] / this.totalCapacity : 0;
+    const filmRationPig = surfPig * shareOfTuft;
+
     out.fill(0);
     let gotPig = 0;
-    if (surfPig > 1e-12 && wantPig > 0) {
-      const take = Math.min(surfPig, wantPig);
+    if (filmRationPig > 1e-12 && wantPig > 0) {
+      const take = Math.min(filmRationPig, wantPig);
       const f = take / surfPig;
       for (let k = 0; k < 8; k++) {
         const g = this.surfacePig[k] * f;
@@ -378,9 +487,10 @@ export class Reservoir {
       }
     }
 
-    // Water the same way: the film's vehicle goes before the hair's own.
+    // Water the same way: the film's vehicle goes before the hair's own, and
+    // out of the same rationed share — see the note above.
     let w = 0;
-    const fromFilm = Math.min(this.surfaceWater, wantW);
+    const fromFilm = Math.min(this.surfaceWater * shareOfTuft, wantW);
     if (fromFilm > 0) { this.surfaceWater -= fromFilm; w += fromFilm; }
     const restW = wantW - fromFilm;
     if (restW > 0) {

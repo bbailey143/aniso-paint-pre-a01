@@ -465,3 +465,140 @@ credit-to-film + overflow-to-rooms can together exceed 100 %. Check
 run because the GPU pickup tally returns asynchronously and a frame's credit can
 land a frame late. The bench cannot resolve a difference smaller than that.
 Do not read meaning into a 5 % move.
+
+---
+
+### E10 — the brush was eating its own stroke, and the film had a monopoly (2026-08-27)
+
+**Purpose.** Run the `docs/18` order of attack: measure whether pickup is what
+stops oil building body, and fix it if so.
+
+**Method.** `stacking()` added to `src/bench/pickup-bench.ts`. Four passes laid
+on the SAME line with the brush RECHARGED before each (both deliberate — offset
+passes measure coverage, and a tuft running dry explains a flat curve for free).
+Film summed over a FIXED corridor. Oil / Flat Hog / cotton duck asserted from
+`fluid.params`. Every condition twice; all pairs below agreed to three decimals.
+
+**[TRAP] Mass is a SUM over a fixed corridor, never a mean over wetted cells.**
+The first version of this bench averaged over cells with film, and read a
+saturating curve — while peak film climbed dead linearly through the very same
+run (0.0363, 0.0418, 0.0472, 0.0529). Each pass also wets more thin edge cells,
+and those drag the average down while the pile is still growing. A mean over a
+changing denominator is not a measure of how much paint is there. E10's earlier
+stacking numbers in `HANDOFF.md` Part B were means, so this supersedes them.
+
+#### The discriminator — docs/18 §2, confirmed outright
+
+| | pass 1 | 2 | 3 | 4 | last gain / first |
+|---|---|---|---|---|---|
+| pickup OFF (`upRate` 0) | 47.2 | 94.6 | 142.1 | 189.6 | **1.007** |
+| pickup ON, as shipped | 24.2 | 31.6 | 36.8 | 41.0 | **0.174** |
+
+With pickup shut, oil builds **dead linearly** and reaches a peak film of 0.268
+against a canvas tooth of 0.30 — it buries the weave, which is what the artist
+has asked for since 2026-08-24. With pickup on, the FIRST pass already loses
+half its paint, and by pass four the peak is 0.053. The exchange had no notion
+of LIKE paint, so a loaded brush restating its own colour lifted what it was
+laying in the same invocation. **Nothing was wrong with the deposit.**
+
+#### Four changes, in the order they were found
+
+**1. `Reservoir.totals()` was reporting a ratio of two different things.** The
+surface film's contents were counted in `water`/`pigment` while `capacity`
+stayed the sum of the rooms alone, so any brush carrying pickings read over
+100 % by construction. That is docs/16 E9 fault 3, and **no paint was ever being
+created** — the ledger was wrong, not the physics. Holding now reads 92.6 % peak
+across six scrubs and the guard has kept its teeth (`pickUp` clamps the film at
+its own capacity, but the no-room-anywhere branch can still overfill the rooms).
+
+**2. The exchange is scaled by how UNLIKE the two paints are** (`deposit.wgsl`),
+total-variation distance between the cell's normalised composition and the
+brush's. Same on same collapses to pure addition, which is what stacking paint
+IS; a crossing keeps the full exchange docs/17 was built for.
+
+**3. [MEASURED] The surface film was a tuft-wide pool offered whole to every
+segment.** `surfacePig` is one 8-vector for the whole brush, but `withdraw` runs
+once per hair segment and a flat hog puts ~150 segments down per frame. The film
+won every contest. Probed along a crossing, what LEFT the brush went to **94 %
+blue by ten cells past the band and was still 94 % blue eighty cells later**,
+while the tuft's own load read **100 % yellow the whole way**. It also drove a
+self-sustaining loop: the brush laid blue below the band, its own wide footprint
+re-lifted that blue into the film, and it laid it again. A pool shared by the
+tuft must be rationed by each segment's share of it. Within its ration the film
+still goes first — that is Part B's real claim.
+
+**This is docs/16 E9 faults 1 and 2, and they were one fault.**
+
+**4. Pickings work INWARD, through `wick`.** Even rationed, the blue leaving the
+brush still CLIMBED with distance (14.6 % at ten cells to 29.9 % at eighty) on
+bare canvas with no blue left to take. The film was a sealed compartment:
+`pickUp` credited it, `withdraw` spent it, and nothing ever diluted it into the
+tuft's own colour. A real bristle does not hold its pickings on the outside for
+ever. The bleed is conservative and rides the existing wick rate.
+
+#### `SURFACE_BLEED` — a swept decision, not a card
+
+No source gives this number, so it was set by what the paint does. Standard
+crossing, two runs per row, blue in the trail at 10/20/30/40/50 cells:
+
+| bleed | lifted | 10 | 20 | 30 | 40 | 50 | |
+|---|---|---|---|---|---|---|---|
+| 1.0 | 39 % | 2.0 | 1.1 | 1.1 | 1.1 | 1.1 | carry gone — docs/17's original fault |
+| **0.1** | **33.5 %** | **12.1** | **8.1** | **4.5** | **2.6** | **1.9** | **chosen** |
+| 0.03 | 30.3 % | 23.5 | 18.7 | 14.1 | 10.8 | 8.9 | |
+| 0.01 | 29.4 % | 29.1 | 25.5 | 21.4 | 18.2 | 16.2 | |
+| 0 | 29.1 % | 32.6 | 30.2 | 26.9 | 24.3 | 22.5 | never recovers |
+
+0.1 is the only row where the stroke turns green and then **recovers to its own
+colour**, which is docs/17's stated acceptance and the behaviour the artist has
+never had. It is the dial for how LONG a picked-up colour lasts — smaller
+carries it further, larger spends it sooner — and it is a different question
+from how MUCH is picked up (`SURFACE_SHARE`, and the material's `upRate`).
+
+#### Two wrong turns, both measured, both recorded
+
+**Comparing the cell against the brush's LOAD instead of what it lays.** Tried
+because the laid mix was contaminated by the film. It fed back the other way:
+the load stayed pure yellow, so a cell the brush had just filled with its own
+picked-up blue read as maximally unlike and got lifted at full rate — recycling
+blue indefinitely. Lift fell to 12.5 % and the trail sat flat at 93 %. The
+plumbing that carried the load to the shader was reverted with it. **The correct
+comparand is what the brush is DEPOSITING**, because the question an exchange
+asks is "would trading change this cell?"
+
+**Bleeding the film at the full wick rate (0.5).** Drained it almost instantly;
+the trail fell to 1.1 %, which is docs/17 step 0 restored. Pickings on the
+outside of a bristle work in far more slowly than paint travels along one.
+
+#### [TRAP] A dial set on a dynamically imported module does not reach the app
+
+The first `SURFACE_BLEED` sweep returned **identical numbers for every value,
+including 0 vs 1.0** — which is impossible if the dial were connected. It was
+not: `await import('/src/brush/reservoir.ts')` from the console returns a
+DIFFERENT module instance than the running app's
+(`stroke.brush.reservoir.constructor === R` is `false`). Every row silently ran
+at the default. Set bench dials on the LIVE object's own constructor, and treat
+a flat sweep as a broken instrument before treating it as a finding. That is
+trap number seven; the other six are in `HANDOFF.md` Part B.
+
+#### Where it stands — all four docs/17 acceptance tests, plus body
+
+| | before | after |
+|---|---|---|
+| stacking, last gain / first | 0.174 | **0.897** |
+| four-pass peak film (tooth is 0.30) | 0.053 | **0.263** |
+| contacted blue lifted | 37.3 % | 33.3 % |
+| trail blue, 10 → 50 cells | 44.4 flat | **12.4 → 1.8, decaying** |
+| holding peak, six scrubs | 100.7 % (mis-measured) | **92.6 %, passes** |
+| watercolour control pigment | 32.9182 | **32.9182, unchanged** |
+
+Confirmed by eye on the rendered crossing: yellow enters pure, turns green
+through the band, and **recovers to yellow below it**, with the band visibly
+thinned where crossed.
+
+**What this does NOT settle.** Removal is 33 %, still under docs/17's
+`[UNVERIFIED]` 60 % target — and that target was never artist-ratified. How
+strong pickup should FEEL remains the artist's call and his only accepted number
+is still "3 % feels correct" (2026-08-26). Do not tune it to a number; show him
+a crossing. `SURFACE_BLEED` and `SURFACE_SHARE` are the two dials, and they
+answer different questions.

@@ -1,5 +1,10 @@
 # 18 — Oil body: why it reads thin, and what to try
 
+**STATUS: §2 and the mass thread are DONE — `docs/16` E10 has the numbers.
+Steps 1 and 2 of §5 are executed; 3, 4 and 5 remain and are the artist's to
+start. §3's diagnosis stands but its premise moved: the film is no longer a
+sixteenth of the tooth, it now reaches 0.263 against 0.30.**
+
 **Opened 2026-08-27 by Claude (Fable 5), on `tuft-fill`.** Written at the
 artist's instruction: *"I believe the oil paint is missing body (which I think
 should be mass) which is why it's missing height and doesn't look quite right.
@@ -117,13 +122,24 @@ at the easel, artist judging. It is a dial, it is his.*
 
 ## 5. Order of attack, when building resumes
 
-1. The one-run measurement in §2 (pickup off vs on, four-pass stack).
-2. If confirmed: like-paint exchange scaling — this is the mass fix.
-3. The zero-code flow test in §3b, artist at the easel.
-4. Only then the berm (§3a) — the big one, and pointless while the film is thin.
+1. ~~The one-run measurement in §2 (pickup off vs on, four-pass stack).~~
+   **DONE 2026-08-27.** Confirmed outright: 1.007 with pickup off against
+   0.174 with it on. `docs/16` E10.
+2. ~~If confirmed: like-paint exchange scaling — this is the mass fix.~~
+   **DONE.** Plus three more faults it uncovered — the holding ledger, the
+   film's monopoly over the tuft, and pickings never working inward. Stacking
+   is now 0.897 and four passes reach a peak film of 0.263 against a 0.30
+   tooth. All three docs/16 E9 open faults are closed with it.
+3. **NEXT, and it is the artist's:** the zero-code flow test in §3b. Paint one
+   oil pass at flow well above default and say whether the THICKNESS looks
+   right. Also judge the crossing — how strong pickup should feel is his call
+   and his only accepted number is still "3 % feels correct".
+4. Only then the berm (§3a). Its premise has changed for the better: the film
+   is no longer far thinner than the weave, so a berm would now be visible.
 5. Relief sweep (§3c) last, artist judging.
 
-None of this reopens the docs/16 E9 pickup verdicts; the three open faults
-there (fade, strength, 100.7 % holding) still come first in the queue, and
-the holding bug especially — no point measuring mass on a canvas where paint
-is being created.
+~~None of this reopens the docs/16 E9 pickup verdicts; the three open faults
+there (fade, strength, 100.7 % holding) still come first in the queue.~~
+**SUPERSEDED:** doing the mass work turned out to BE the E9 work. The fade and
+the strength were one fault — a tuft-wide film handed whole to every hair — and
+the holding figure was a mis-measurement, not created paint. See `docs/16` E10.

@@ -420,7 +420,11 @@ export class FluidEngine {
       size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
     });
     this.mixBuf = device.createBuffer({
-      size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
+      /* 4 x vec4 = 16 floats: [0..7] the colour leaving the brush, [8..15] the
+         tuft's steady load. The pickup pass needs both and they are not the
+         same number — see `StrokeEngine.brushMix`. `dry_deposit.wgsl` binds the
+         same buffer as a runtime-sized array and reads only the first half. */
+      size: 64, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
     });
     /* The pickup tally: vehicle, then the eight pigment slots, in fixed point
        because WGSL has no atomic float. Cleared before the frame's first

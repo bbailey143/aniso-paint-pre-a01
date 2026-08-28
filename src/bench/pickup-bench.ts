@@ -325,3 +325,100 @@ export async function watercolourControl(engine: AnyRec, stroke: AnyRec) {
   return { medium: 'watercolour', pigment: +(g.pigment as number).toFixed(4),
            water: +(g.water as number).toFixed(4), wetCells: g.wetCells };
 }
+
+/**
+ * Force the material's `upRate` for the duration of a run, restoring it after.
+ *
+ * Setting it to 0 shuts pickup off completely and in BOTH places it matters:
+ * `fluid.ts:850` stops sending it to the shader, and `fluid.ts:902` stops
+ * arming the readback, so no credit can arrive late and land in the next
+ * condition's numbers. Bench only.
+ */
+function withUpRate<T>(engine: AnyRec, rate: number | undefined, body: () => Promise<T>): Promise<T> {
+  if (rate === undefined) return body();
+  const p = ((engine as AnyRec).fluid as AnyRec).params as AnyRec;
+  const orig = p.upRate;
+  p.upRate = rate;
+  return body().finally(() => { p.upRate = orig; });
+}
+
+/**
+ * STACKING — does oil keep building when you paint over your own stroke?
+ *
+ * `docs/18` §2. E10 measured a four-pass pile adding +0.56, +0.25, +0.12, +0.08
+ * and converging, where real oil keeps building. The suspect is docs/17 Part A:
+ * contact is now an exchange, and an exchange has no notion of LIKE paint, so a
+ * loaded brush restating its own colour lifts what it is simultaneously laying.
+ *
+ * This is the discriminator. Same four passes, pickup on vs pickup off. If the
+ * off column keeps climbing where the on column flattens, the exchange is
+ * eating the pile and the fix belongs in `rExchange`, not in the deposit.
+ *
+ * `[TRAP]` The brush is RECHARGED before every pass. Without that a flattening
+ * curve is explained trivially by a tuft running dry, and the measurement says
+ * nothing about pickup at all.
+ *
+ * `[TRAP]` Every pass is laid on the SAME line. The point is paint on its own
+ * colour; offsetting the passes would measure coverage instead.
+ */
+export async function stacking(engine: AnyRec, stroke: AnyRec,
+                               opts: { upRate?: number; passes?: number } = {}) {
+  const setup = assertSetup(engine, stroke);
+  const e = engine as AnyRec & {
+    clear(): void; setMix(m: Map<string, number>): void; mixWeights: Float32Array;
+    dump(n: string): Promise<Float32Array>; render(): void; sim: number;
+  };
+  const s = stroke as AnyRec & { charge(m: Float32Array, l: number, w: number): void };
+  const passes = opts.passes ?? 4;
+  const X0 = 170, X1 = 370, Y = 240;
+
+  return quietApp(() => withUpRate(engine, opts.upRate, async () => {
+    e.clear();
+    const series: Array<{ pass: number; peakFilm: number; volume: number; wetCells: number; added: number }> = [];
+    let prevMean = 0;
+    for (let i = 0; i < passes; i++) {
+      e.setMix(new Map([['ultramarine-blue', 1]]));
+      s.charge(e.mixWeights, 1.0, 0);
+      await stroke1(engine, stroke, X0, Y, X1, Y, 90);
+
+      const film = await e.dump('wet0');
+      const n = e.sim;
+      /* `[TRAP, measured 2026-08-27]` MASS is the SUM over a fixed corridor, not
+         the mean over wetted cells. The first version of this bench averaged
+         over `h > 0.0005` and read a saturating curve — but each pass also wets
+         more thin edge cells, and those drag the average down while the pile is
+         still growing. Peak film climbed dead linearly (0.0363, 0.0418, 0.0472,
+         0.0529) through the same run whose mean "saturated". A mean over a
+         changing denominator is not a measure of how much paint is there. */
+      let peak = 0, sum = 0, cells = 0;
+      for (let y = Y - 25; y <= Y + 25; y++) {
+        for (let x = X0; x <= X1; x++) {
+          const h = film[(y * n + x) * 4 + 1];
+          if (h > 0.0005) { peak = Math.max(peak, h); cells++; }
+          sum += Math.max(h, 0);
+        }
+      }
+      series.push({
+        pass: i + 1,
+        peakFilm: +peak.toFixed(4),
+        /** Total film in the corridor — the honest mass number. */
+        volume: +sum.toFixed(3),
+        wetCells: cells,
+        added: +(sum - prevMean).toFixed(3),
+      });
+      prevMean = sum;
+    }
+    e.render();
+    const first = series[0]?.added ?? 0;
+    const last = series[series.length - 1]?.added ?? 0;
+    return {
+      setup,
+      upRate: opts.upRate === undefined ? 'as shipped' : opts.upRate,
+      perPass: series,
+      /* The whole question in one number: what fraction of the first pass's
+         gain does the last pass still deliver? Real oil should stay near 1.
+         Converging toward 0 is the fault docs/18 §2 is chasing. */
+      lastGainVsFirst: +(last / Math.max(first, 1e-9)).toFixed(3),
+    };
+  }));
+}

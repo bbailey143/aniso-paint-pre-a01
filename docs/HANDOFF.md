@@ -219,8 +219,41 @@ medium through the engine API and never touched the UI, so **the tool bar read
 the labels were lying — confirmed from `fluid.params` — but it cost trust, and
 the pickup runs also failed to pin the paper, so they were not identical setups.
 
-**NEXT ACTION — `docs/17` is DONE. Read `docs/16` E9, then take the artist's
-verdict on the crossing before touching a dial.**
+**NEXT ACTION — `docs/18` steps 1-2 are DONE and all three `docs/16` E9 faults
+are closed. Read `docs/16` E10. What is left is the ARTIST's: judge the
+thickness and judge the crossing. Do not tune either to a number.**
+
+## 2026-08-27, later — oil builds body now, and E9's three faults were two bugs
+
+`docs/18`'s suspect was right and bigger than it looked. The brush was lifting
+what it had just laid, because the exchange had no notion of LIKE paint. Four
+stacked passes, film summed over a fixed corridor:
+
+| | p1 | p2 | p3 | p4 | last/first |
+|---|---|---|---|---|---|
+| pickup OFF | 47.2 | 94.6 | 142.1 | 189.6 | 1.007 |
+| pickup ON, before | 24.2 | 31.6 | 36.8 | 41.0 | 0.174 |
+| pickup ON, after | 46.2 | 90.7 | 133.5 | 175.0 | **0.897** |
+
+Peak film after four passes went 0.053 -> **0.263**, against a canvas tooth of
+0.30. Oil buries the weave for the first time.
+
+Four fixes, all in `docs/16` E10 with the numbers: the like-paint scaling; the
+holding ledger (E9 fault 3 was a MIS-MEASUREMENT, no paint was ever created);
+the surface film rationed per hair segment instead of offered whole to all ~150
+of them (E9 faults 1 and 2 were this one bug); and pickings bleeding inward
+through `wick` at a new swept constant `SURFACE_BLEED = 0.1`.
+
+The trail now goes 12.4 -> 1.8 % over fifty cells instead of sitting flat at
+44 %. Holding peaks at 92.6 % and passes. **The watercolour control is
+unchanged to four decimals (32.9182).** Confirmed by eye: yellow in pure, green
+through the band, yellow again below it.
+
+**A seventh instrument trap, and it nearly cost the session:** a dial set on a
+console-`import()`ed module does NOT reach the running app — different module
+instance. The first sweep returned identical numbers for 0 and 1.0. Set bench
+dials on the live object's own constructor, and treat a flat sweep as a broken
+instrument first.
 
 ## WHERE WE STOPPED — 2026-08-27, docs/17 executed, three things still wrong
 
