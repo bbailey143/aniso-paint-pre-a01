@@ -68,6 +68,24 @@ export class Reservoir {
   /** How fast it gives its load up, as a multiple of its own row. See `setFlow`. */
   private flow = 1;
 
+  /* ---- The surface layer (docs/17 Part B) --------------------------------
+   *
+   * What a bristle scrapes off the sheet rides on its OUTSIDE. It does not
+   * soak evenly through the whole tuft, and modelling it that way is why
+   * picking colour up has never shown: a crossing lifts ~2.4 units of blue
+   * into a tuft holding ~317 of yellow, so the brush comes out 0.7 % blue and
+   * lays a mark nobody can tell from plain yellow.
+   *
+   * So pickings land here first and leave here first. One store for the whole
+   * tuft — which cell of the tuft a given canvas cell should credit is knowable
+   * in principle (Card 6's footprint carries texcoords) but is not carried
+   * today, and a tuft-wide surface is the honest stand-in rather than
+   * pretending to a precision the data does not have.
+   *
+   * It is small on purpose: a film, not a second reservoir. */
+  surfaceWater = 0;
+  surfacePig = new Float32Array(8);
+
   constructor(def: ReservoirDef, bristles: number, segments: number) {
     this.def = def;
     this.bristles = bristles;
@@ -77,6 +95,27 @@ export class Reservoir {
     this.pigment = new Float32Array(n * 8);
     this.capacity = new Float32Array(n);
     this.buildProfile();
+  }
+
+  /** How much the surface film can hold, as a share of the whole tuft.
+   *
+   * [UNVERIFIED] A feel number, and the one to move if pickings read as too
+   * strong or too fleeting: larger carries a lifted colour further before it
+   * fades, smaller lets the tuft's own load reassert sooner. */
+  private static readonly SURFACE_SHARE = 0.08;
+
+  /** Total the surface film may hold. */
+  surfaceCapacity(): number {
+    let c = 0;
+    for (let i = 0; i < this.capacity.length; i++) c += this.capacity[i];
+    return c * Reservoir.SURFACE_SHARE;
+  }
+
+  /** Wipe the film. Any deliberate re-load of the tuft clears what was riding
+   *  on its outside — dipping a brush does not preserve yesterday's pickings. */
+  private clearSurface() {
+    this.surfaceWater = 0;
+    this.surfacePig.fill(0);
   }
 
   /** The belly/tip profile, at the current scale. */
@@ -149,6 +188,7 @@ export class Reservoir {
     const paintLoad = Math.min(1, Math.max(0, load));
     const extraWater = Math.min(1, Math.max(0, waterCharge));
     const n = this.bristles * this.segments;
+    this.clearSurface();
     for (let i = 0; i < n; i++) {
       const cap = this.capacity[i];
       this.water[i] = cap * (paintLoad + extraWater * this.def.waterOvercharge);
@@ -217,6 +257,7 @@ export class Reservoir {
    */
   rinse(waterFrac = 1) {
     const n = this.bristles * this.segments;
+    this.clearSurface();
     for (let i = 0; i < n; i++) {
       this.water[i] = this.capacity[i] * waterFrac;
       for (let k = 0; k < 8; k++) this.pigment[i * 8 + k] = 0;
@@ -225,12 +266,16 @@ export class Reservoir {
 
   /** Total load remaining, for the UI's "brush is running dry" readout. */
   totals(): { water: number; pigment: number; capacity: number } {
-    let w = 0, p = 0, c = 0;
+    let w = this.surfaceWater, p = 0, c = 0;
+    for (let k = 0; k < 8; k++) p += this.surfacePig[k];
     for (let i = 0; i < this.water.length; i++) {
       w += this.water[i];
       c += this.capacity[i];
       for (let k = 0; k < 8; k++) p += this.pigment[i * 8 + k];
     }
+    // The film counts against holding: it is paint the brush is carrying, and
+    // leaving it out would let the tuft exceed capacity without the guard
+    // noticing.
     return { water: w, pigment: p, capacity: c };
   }
 
@@ -286,13 +331,62 @@ export class Reservoir {
                    * Math.max(0, Math.min(1, contactFrac));
       rate = held > 1e-12 ? Math.min(1, packet / held) : 0;
     }
-    const w = this.water[cell] * rate;
-    this.water[cell] -= w;
-    for (let k = 0; k < 8; k++) {
-      const idx = cell * 8 + k;
-      const g = this.pigment[idx] * rate;
-      this.pigment[idx] -= g;
-      out[k] = g;
+    /* SURFACE FIRST (docs/17 Part B).
+     *
+     * The VOLUME leaving the hair is exactly what it always was — `rate` times
+     * what this cell holds — so nothing about how fast a brush empties, how far
+     * a dip goes, or how heavy a stroke lands changes here. What changes is
+     * WHICH PAINT goes: the film on the outside of the bristle leaves before
+     * the load inside it does.
+     *
+     * That is the whole of "drag colour through colour". A brush that has just
+     * crossed a blue band carries blue on its outside, and lays it back down
+     * over the next few tens of cells before its own colour reasserts. Spread
+     * evenly through the tuft instead, the same pickings are a 0.7 % tint and
+     * invisible. */
+    const wantW = this.water[cell] * rate;
+    let wantPig = 0;
+    for (let k = 0; k < 8; k++) wantPig += this.pigment[cell * 8 + k] * rate;
+
+    let surfPig = 0;
+    for (let k = 0; k < 8; k++) surfPig += this.surfacePig[k];
+
+    out.fill(0);
+    let gotPig = 0;
+    if (surfPig > 1e-12 && wantPig > 0) {
+      const take = Math.min(surfPig, wantPig);
+      const f = take / surfPig;
+      for (let k = 0; k < 8; k++) {
+        const g = this.surfacePig[k] * f;
+        this.surfacePig[k] -= g;
+        out[k] += g;
+      }
+      gotPig = take;
+    }
+    const stillWant = wantPig - gotPig;
+    if (stillWant > 1e-12) {
+      let cellPig = 0;
+      for (let k = 0; k < 8; k++) cellPig += this.pigment[cell * 8 + k];
+      if (cellPig > 1e-12) {
+        const f = Math.min(1, stillWant / cellPig);
+        for (let k = 0; k < 8; k++) {
+          const idx = cell * 8 + k;
+          const g = this.pigment[idx] * f;
+          this.pigment[idx] -= g;
+          out[k] += g;
+        }
+      }
+    }
+
+    // Water the same way: the film's vehicle goes before the hair's own.
+    let w = 0;
+    const fromFilm = Math.min(this.surfaceWater, wantW);
+    if (fromFilm > 0) { this.surfaceWater -= fromFilm; w += fromFilm; }
+    const restW = wantW - fromFilm;
+    if (restW > 0) {
+      const avail = Math.min(this.water[cell], restW);
+      this.water[cell] -= avail;
+      w += avail;
     }
     return w;
   }
@@ -378,6 +472,30 @@ export class Reservoir {
     let pigTotal = 0;
     for (let k = 0; k < 8; k++) pigTotal += pig[k];
     if (water <= 0 && pigTotal <= 0) return;
+
+    /* THE FILM TAKES IT FIRST (docs/17 Part B).
+     *
+     * Pickings go onto the outside of the bristle, not evenly through the tuft.
+     * Only what the film cannot hold falls through to the old room-proportional
+     * spread below, so a normal crossing stays concentrated and a scrub long
+     * enough to overwhelm the film still behaves as it always did.
+     *
+     * This also shrinks the overfill surface: the tuft's own stores are not
+     * touched at all until the film is full. */
+    const capLeft = Math.max(0, this.surfaceCapacity() - this.surfaceWater
+      - this.surfacePig.reduce((a, b) => a + b, 0));
+    if (capLeft > 0) {
+      const offered = water + pigTotal;
+      const share = offered > 0 ? Math.min(1, capLeft / offered) : 0;
+      if (share > 0) {
+        this.surfaceWater += water * share;
+        for (let k = 0; k < 8; k++) this.surfacePig[k] += pig[k] * share;
+        if (share >= 1) return;
+        water -= water * share;
+        pigTotal = 0;
+        for (let k = 0; k < 8; k++) { pig[k] -= pig[k] * share; pigTotal += pig[k]; }
+      }
+    }
 
     const n = this.bristles * this.segments;
     const per = new Float32Array(n);

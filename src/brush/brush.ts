@@ -144,6 +144,29 @@ export class Brush {
     this.trail = new Float32Array(def.bristles * (def.segments + 1) * 2);
   }
 
+  /* ---- What colour actually left the brush (docs/17 Part C) ---------------
+   *
+   * A footprint segment carries a single pigment NUMBER, and the deposit shader
+   * re-splits that number across the slots using the mix weights it is handed.
+   * Those weights used to be `Reservoir.composition()` — the average of the
+   * WHOLE TUFT — so a hair that had just withdrawn pure blue laid it back down
+   * re-tinted 99 % yellow. Colour identity was destroyed at the segment
+   * boundary, which is why lifting five times more paint changed the mark's
+   * colour not at all (docs/17 step 0).
+   *
+   * So the weights become the colour of what the hairs actually gave up this
+   * frame. `laidAccum` gathers it as `withdraw` hands each hair its vector;
+   * `snapshotLaid` moves it to `laidLastFrame` and starts the next frame clean,
+   * because the host reads the mix AFTER draining the frame's footprint. */
+  readonly laidAccum = new Float32Array(8);
+  readonly laidLastFrame = new Float32Array(8);
+
+  /** Close the frame's accounting. Called by the host as it drains. */
+  snapshotLaid() {
+    this.laidLastFrame.set(this.laidAccum);
+    this.laidAccum.fill(0);
+  }
+
   get tuftLength(): number { return this.def.length * this.scale; }
 
   setBodyTransfer(on: boolean) { this.bodyTransfer = on; }
@@ -404,7 +427,11 @@ export class Brush {
           const w = this.reservoir.withdraw(
             cell, press, this.draw, this.travel, this.bodyTransfer);
           let pig = 0;
-          for (let k = 0; k < 8; k++) pig += this.draw[k];
+          for (let k = 0; k < 8; k++) {
+            pig += this.draw[k];
+            // What actually left the hair, per slot. See `laidLastFrame`.
+            this.laidAccum[k] += this.draw[k];
+          }
 
           if (w > 0 || pig > 0) {
             /* THE HAIR'S TRACK, NOT THE HAIR.

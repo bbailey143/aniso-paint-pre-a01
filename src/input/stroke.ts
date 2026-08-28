@@ -236,6 +236,30 @@ export class StrokeEngine {
    */
   get brushMix(): Float32Array<ArrayBuffer> {
     if (this.dry) return this.mix;
+
+    /* THE COLOUR OF WHAT LEFT THE BRUSH, not the average of what is in it.
+     *
+     * The deposit shader re-splits each segment's single pigment number across
+     * the slots with these weights, so they decide the colour of the mark. Using
+     * the whole-tuft average meant a hair that had just picked up blue laid it
+     * straight back down re-tinted with the tuft's yellow — five times more
+     * paint lifted, and the mark's colour did not move (docs/17 step 0).
+     *
+     * `laidLastFrame` is what the hairs actually gave up, gathered as the
+     * reservoir handed each one its vector. With the surface film draining
+     * first (Part B), a brush fresh from a crossing gives up the colour it just
+     * picked up, and the mark goes green where the hand carries it.
+     *
+     * Falls back to the tuft average when nothing was laid — the first contact
+     * of a stroke, or a brush held still — because there is no better answer
+     * then and the old behaviour is the right default. */
+    const laid = this.brush.laidLastFrame;
+    let total = 0;
+    for (let k = 0; k < 8; k++) total += laid[k];
+    if (total > 1e-9) {
+      for (let k = 0; k < 8; k++) this.live[k] = laid[k] / total;
+      return this.live;
+    }
     this.brush.reservoir.composition(this.live);
     return this.live;
   }
@@ -400,6 +424,9 @@ export class StrokeEngine {
     this.count = 0;
     this.travelX = 0;
     this.travelY = 0;
+    // Close the frame's colour accounting: the host reads `brushMix` right
+    // after this, and the next frame must start clean.
+    if (!this.dry) this.brush.snapshotLaid();
     return { data: this.buf, count, dx, dy };
   }
 

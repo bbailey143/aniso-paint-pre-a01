@@ -124,6 +124,25 @@ async function stroke1(engine: AnyRec, stroke: AnyRec,
   }
 }
 
+/**
+ * Silence the APP's own animation loop for the duration of a run.
+ *
+ * `[TRAP, measured]` The bench yields to the browser between steps so the async
+ * pickup readback can land. While it yields, `main.ts`'s `requestAnimationFrame`
+ * loop is free to run its own `engine.step()` — so the fluid advances a variable
+ * number of extra frames depending on machine load, and identical runs return
+ * different numbers. It showed first as a watercolour control that drifted
+ * 32.92 / 33.01, then as a lift figure that would not repeat (38.9 / 36.3).
+ *
+ * Stubbing rAF for the duration makes a run depend only on what the bench does.
+ * Restored in `finally`, always.
+ */
+function quietApp<T>(body: () => Promise<T>): Promise<T> {
+  const raf = window.requestAnimationFrame;
+  window.requestAnimationFrame = ((): number => 0) as typeof window.requestAnimationFrame;
+  return body().finally(() => { window.requestAnimationFrame = raf; });
+}
+
 /** Temporarily floor `roomFraction`, for A/B against the shipped value. Bench
  *  only — it patches the prototype and always restores it. */
 function withFloor<T>(stroke: AnyRec, floor: number | undefined, body: () => Promise<T>): Promise<T> {
@@ -166,7 +185,7 @@ export async function crossing(engine: AnyRec, stroke: AnyRec, opts: { floor?: n
                                    pigment: Float32Array; roomFraction(): number } };
   };
 
-  return withFloor(stroke, opts.floor, async () => {
+  return quietApp(() => withFloor(stroke, opts.floor, async () => {
     e.clear();
     e.setMix(new Map([['ultramarine-blue', 1]]));
     s.charge(e.mixWeights, 1.0, 0);
@@ -216,9 +235,15 @@ export async function crossing(engine: AnyRec, stroke: AnyRec, opts: { floor?: n
     }
 
     const t = s.brush.reservoir.totals();
+    /* `[TRAP]` Count the SURFACE FILM as well as the tuft's own stores. Reading
+       `reservoir.pigment` alone reported the brush as 0.00 % blue at the exact
+       moment the film was carrying all of it — the instrument would have hidden
+       Part B working. */
     const per = new Array(8).fill(0);
     const rp = s.brush.reservoir.pigment;
     for (let i = 0; i < rp.length; i++) per[i % 8] += rp[i];
+    const sp = s.brush.reservoir.surfacePig as Float32Array;
+    for (let k = 0; k < 8; k++) per[k] += sp[k];
     const brushTotal = per.reduce((a, b) => a + b, 0);
 
     e.render();
@@ -237,7 +262,7 @@ export async function crossing(engine: AnyRec, stroke: AnyRec, opts: { floor?: n
       trailBlueByDistance: trail,
       holdingPctOfCapacity: +(100 * Math.max(t.water, t.pigment) / t.capacity).toFixed(1),
     };
-  });
+  }));
 }
 
 /**
@@ -251,7 +276,7 @@ export async function holding(engine: AnyRec, stroke: AnyRec, opts: { floor?: nu
                                  mixWeights: Float32Array; render(): void };
   const s = stroke as AnyRec & { charge(m: Float32Array, l: number, w: number): void;
                                  brush: { reservoir: { totals(): { water: number; pigment: number; capacity: number } } } };
-  return withFloor(stroke, opts.floor, async () => {
+  return quietApp(() => withFloor(stroke, opts.floor, async () => {
     const hold = () => {
       const t = s.brush.reservoir.totals();
       return +(100 * Math.max(t.water, t.pigment) / t.capacity).toFixed(1);
@@ -272,7 +297,7 @@ export async function holding(engine: AnyRec, stroke: AnyRec, opts: { floor?: nu
     e.render();
     return { setup, floor: opts.floor ?? 'as shipped', holdingPctAfterEachScrub: series,
              peak: Math.max(...series), passed: Math.max(...series) <= 100.5 };
-  });
+  }));
 }
 
 /**
