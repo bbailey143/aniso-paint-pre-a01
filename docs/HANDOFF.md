@@ -219,13 +219,17 @@ medium through the engine API and never touched the UI, so **the tool bar read
 the labels were lying — confirmed from `fluid.params` — but it cost trust, and
 the pickup runs also failed to pin the paper, so they were not identical setups.
 
-**NEXT ACTION — build the bench before tuning anything else.** A command in
-`tools/`, beside `brush-bench.mjs`. It must: take medium, brush and paper
-explicitly and **assert them**, so a run that is not what it claims fails loudly;
-measure the artist-facing quantities (how much of the layer beneath is lifted,
-how patchy a stroke is, how much body it holds); and emit the render beside every
-number, so a figure that disagrees with the picture is caught at once instead of
-three steps later. Ad-hoc console probes are how this session lost its afternoon.
+**NEXT ACTION — read `docs/17-pickup-rework.md` and execute it in order.**
+It is the full review of why a stroke cannot pull the layer beneath it — the
+take is a product of three fractions (0.42 × 0.34 × 0.35 ≈ 0.05 per cell), the
+credit is diluted ~200:1 across the tuft, and the laid colour is re-tinted by
+the whole-tuft average at a scalar bottleneck (`brushMix`), so even a perfect
+lift is invisible by construction. The doc carries the three-part fix (exchange
+instead of room-gated intake; a surface layer on the reservoir; laid colour =
+colour of what was withdrawn this frame), with anchors, safety re-tests, and
+the bench that must be built FIRST — including step 0, reproducing the artist's
+null result at `SURFACE_EXCHANGE` 0 vs 0.35 so the rework has honest "before"
+images. Ad-hoc console probes are how the previous session lost its afternoon.
 
 **OPEN, and the reason the bench comes first.** `SURFACE_EXCHANGE = 0.35` shipped
 in `1643d2a` and measures 29.8 % of the lower layer lifted where the brush
