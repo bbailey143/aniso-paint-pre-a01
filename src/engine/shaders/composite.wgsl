@@ -89,7 +89,12 @@ struct Comp {
   // Buffer is 144 bytes now; canvas.ts must agree. A uniform struct is rounded
   // up to a multiple of 16, so these three pads are not optional: without them
   // WGSL still reports 144 but there is nothing saying so out loud.
-  _pad3: f32,
+  /** TOPOGRAPHIC CONTOURS — spacing in film-height units. 0 = off.
+   *
+   * A debug overlay, and it costs no space: it claims one of the three pads
+   * this struct already had to reserve, so the buffer is still 144 bytes and
+   * `canvas.ts` did not have to move anything. Added 2026-08-28. */
+  contourStep: f32,
   _pad4: f32,
   _pad5: f32,
 };
@@ -834,6 +839,76 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let groundShadow = clamp(shadowHeight * 3.0, 0.0, 0.10) * opticalCover;
   rgb = rgb * mix(vec3f(1.0), sheetTone, opticalCover) * shade
       * (1.0 - groundShadow) * (1.0 + sheen);
+
+  /* ---- TOPOGRAPHIC CONTOURS (debug overlay) --------------------------------
+   *
+   * Asked for 2026-08-28: a way to SEE what the oil film is actually doing,
+   * rather than inferring its shape from how it happens to be lit. Lines are
+   * drawn wherever the film height crosses a multiple of `contourStep`, every
+   * fifth one heavier, exactly like a map.
+   *
+   * Purely additive and strictly last: it runs after the picture is finished,
+   * writes nothing back, and `contourStep <= 0` skips it entirely — so with the
+   * overlay off this shader is byte-for-byte the one that shipped.
+   *
+   * [KNOWN — this is the interpolator, not the paint.] The height is read
+   * through `paint()`, the same sampler the lighting uses, which switches to
+   * Catmull-Rom above zoom 1.05 and whose slope kinks at every cell boundary.
+   * So a hard zoom shows faint square corners on the lines. That is deliberate:
+   * contouring the field the COMPOSITE sees is what makes the lines explain the
+   * image beside them. Smoothing them would make them prettier and less true,
+   * and this is an instrument.
+   *
+   * [KNOWN] `wet0` is RGBA16F, so height carries roughly three decimal digits
+   * around a typical oil peak of 0.26. A step below ~0.001 is reading storage
+   * noise, not paint; the dial is clamped in `canvas.ts` for that reason.
+   *
+   * NOTE it contours `wet0.y` RAW, without `paintRelief` — the physical film,
+   * not the lighting's exaggeration of it. The numbers on these lines are the
+   * numbers the bench prints, which is the point.
+   */
+  /* [TRAP, cost two compiles — and `npm run build` passed through both.]
+     No derivative — `fwidth`, `dpdx`, `dpdy` — may be called from anywhere the
+     compiler cannot prove is UNIFORM control flow, because it differences a
+     value against the neighbouring pixels in the quad and those neighbours must
+     have taken the same path to get there. Wrapping this in `if (hRaw > 1e-4)`
+     was rejected, and so was the uniform-looking `if (C.contourStep > 0.0)`
+     once this far down a fragment shader that has already branched.
+
+     Rather than fight the uniformity analysis in a debug overlay, the rate is
+     differenced BY HAND from four neighbouring samples one screen pixel out.
+     `texel` is exactly that step and is already in scope for the relief
+     lighting. Same quantity `fwidth` would have returned, no analysis to
+     satisfy, and it costs four texture reads only while the overlay is on.
+
+     Remember this project does NOT compile WGSL at build time — `npm run build`
+     is `tsc --noEmit && vite build` and never sees a shader. Load the page. */
+  if (C.contourStep > 0.0) {
+    let hRaw = paint(wet0, uv).y;
+    let n = hRaw / C.contourStep;
+    let hx0 = paint(wet0, uv - vec2f(texel.x, 0.0)).y;
+    let hx1 = paint(wet0, uv + vec2f(texel.x, 0.0)).y;
+    let hy0 = paint(wet0, uv - vec2f(0.0, texel.y)).y;
+    let hy1 = paint(wet0, uv + vec2f(0.0, texel.y)).y;
+    // Height change per ONE screen pixel: central differences span two, so halve.
+    // This keeps a line about a pixel wide at any zoom instead of letting it
+    // thicken into a band as the view comes close.
+    let rate = max((abs(hx1 - hx0) + abs(hy1 - hy0)) * 0.5 / C.contourStep, 1.0e-6);
+    let f = fract(n);
+    let distLines = min(f, 1.0 - f) / rate;
+    // Every fifth line heavier, so depth is countable without a readout.
+    let nearest = round(n);
+    let isMajor = abs(nearest * 0.2 - round(nearest * 0.2)) < 0.001;
+    let halfWidth = select(0.5, 1.1, isMajor);
+    let line = 1.0 - smoothstep(halfWidth, halfWidth + 1.0, distLines);
+    // Bare sheet has no topography. Without this every unpainted pixel sits on
+    // the zero contour and the whole canvas floods with line.
+    let painted = step(1.0e-4, hRaw);
+    // Ink that survives both a dark passage and a pale one.
+    let lum = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+    let ink = select(vec3f(1.0), vec3f(0.0), lum > 0.45);
+    rgb = mix(rgb, ink, line * painted * select(0.55, 0.85, isMajor));
+  }
 
   return vec4f(srgb_encode(rgb.r), srgb_encode(rgb.g), srgb_encode(rgb.b), 1.0);
 }

@@ -94,6 +94,13 @@ export class CanvasEngine {
    * back, so leaving it on cannot change what dries or where.
    */
   waterView = false;
+  /** Topographic contour spacing, in film-height units. 0 = overlay off.
+   *
+   * A debug instrument, not a paint property: it draws a line every `step` of
+   * film height so the shape of the paint can be read directly instead of
+   * guessed from its lighting. Set through `setContourStep`, which enforces the
+   * half-float floor. */
+  contourStep = 0;
 
   /**
    * View transform. `zoom = 1` fits the whole sheet; `(panX, panY)` is the
@@ -329,6 +336,15 @@ export class CanvasEngine {
   setSheen(v: number) { this.sheenStrength = Math.max(0, v); }
   /** 0 = a tight hot spot, 1 = a wide soft one. */
   setSheenWidth(v: number) { this.sheenWidth = Math.max(0, Math.min(1, v)); }
+  /** Contour spacing in film-height units; 0 turns the overlay off.
+   *
+   * Floored at 0.0005 when on: `wet0` is half-float, so around a typical oil
+   * peak of 0.26 the stored height resolves to roughly a thousandth. Asking for
+   * lines finer than that draws storage noise and reads as a moire that looks
+   * like a finding. */
+  setContourStep(v: number) {
+    this.contourStep = v <= 0 ? 0 : Math.max(0.0005, v);
+  }
   /** How completely the material covers the sheet. Drives the same row
    *  `setWetMedium` sets; the dial simply lets the artist find it faster. */
   setCover(v: number) { this.hidesGround = Math.max(0, v); }
@@ -511,6 +527,9 @@ export class CanvasEngine {
     dv.setFloat32(120, this.filmGloss, true);
     dv.setFloat32(124, this.sheenStrength, true);
     dv.setFloat32(128, this.sheenWidth, true);
+    // Rides in the first of the three pads this struct already reserved, so the
+    // buffer is still 144 and nothing above had to move.
+    dv.setFloat32(132, this.contourStep, true);
     this.gpu.device.queue.writeBuffer(this.compParams, 0, buf);
   }
 

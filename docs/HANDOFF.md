@@ -152,6 +152,27 @@ say why.
 **Last updated:** 2026-08-28
 **By:** Codex, continuing the relay.
 
+## NEW INSTRUMENT — paint contours (2026-08-28, Claude)
+
+A topographic overlay on the film height, so the paint's shape can be READ
+instead of inferred from its lighting. Command palette: **Toggle Paint
+Contours**, plus Finer/Coarser. It contours `wet0.y` raw, which is the same
+number the benches print.
+
+Full entry, including what it is good for and where it lies, is
+`docs/12-explosion-hunt-log.md` under "Paint contours". Three things worth
+knowing before using it as evidence:
+
+- **It is a zoomed-in instrument.** At fit zoom one cell is ~1.5 screen pixels
+  and cell-scale roughness merges the lines — measured, ten times the lines for
+  five percent more ink. A dense black band at fit zoom is not a finding.
+- **Dry media are blank, correctly.** There is no height channel in the dry
+  path at all. Giving pastel a body height is a schema change and a D-number.
+- **[TRAP] No derivative may be called from non-uniform control flow.** Two
+  versions of this were rejected whole — the picture simply does not draw, no
+  error thrown — and `npm run build` passed through both, because it never
+  compiles a shader. Load the page.
+
 ## PAINT PROPERTY CENTRE — the defaults moved (2026-08-28, Claude)
 
 The artist tuned the Paint Properties page by eye, screenshotted it, and asked

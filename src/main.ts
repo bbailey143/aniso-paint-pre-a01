@@ -157,6 +157,22 @@ async function main() {
   cmd.register({ id: 'act-rinse-load', name: 'Rinse & Re-dip', group: 'Actions', hint: 'Rinse then reload current mix', keywords: 'rinse load dip reload', action: () => { stroke.rinse(1); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); } });
   cmd.register({ id: 'act-clear-mix', name: 'Clear Mix', group: 'Actions', hint: 'Empty the colour recipe', keywords: 'mix clear empty color', action: () => { palette.clear(); stroke.rinse(1); } });
   cmd.register({ id: 'act-water-view', name: 'Toggle Water View', group: 'Actions', hint: 'See where water is, not colour', keywords: 'water view debug display', action: () => { engine.waterView = !engine.waterView; requestFrame(); } });
+  /* Topographic contours over the paint. The steps are a ladder rather than a
+     slider because the useful ones span two orders of magnitude — 0.002 reads a
+     watercolour glaze, 0.05 reads four stacked oil passes — and hunting for that
+     on a linear dial is worse than stepping through it. */
+  const CONTOUR_STEPS = [0.05, 0.02, 0.01, 0.005, 0.002];
+  cmd.register({ id: 'act-contours', name: 'Toggle Paint Contours', group: 'Actions', hint: 'Topographic lines over the paint height', keywords: 'contour topographic relief height debug oil impasto', action: () => { engine.setContourStep(engine.contourStep > 0 ? 0 : CONTOUR_STEPS[1]); requestFrame(); } });
+  cmd.register({ id: 'act-contours-finer', name: 'Paint Contours: Finer', group: 'Actions', hint: 'Closer spacing between height lines', keywords: 'contour topographic finer closer height', action: () => {
+    const i = CONTOUR_STEPS.findIndex((s) => Math.abs(s - engine.contourStep) < 1e-9);
+    engine.setContourStep(CONTOUR_STEPS[Math.min(CONTOUR_STEPS.length - 1, (i < 0 ? 0 : i) + 1)]);
+    requestFrame();
+  } });
+  cmd.register({ id: 'act-contours-coarser', name: 'Paint Contours: Coarser', group: 'Actions', hint: 'Wider spacing between height lines', keywords: 'contour topographic coarser wider height', action: () => {
+    const i = CONTOUR_STEPS.findIndex((s) => Math.abs(s - engine.contourStep) < 1e-9);
+    engine.setContourStep(CONTOUR_STEPS[Math.max(0, (i < 0 ? 1 : i) - 1)]);
+    requestFrame();
+  } });
   cmd.register({ id: 'act-tilt-level', name: 'Level the Board', group: 'Actions', hint: 'Return paper to flat', keywords: 'tilt level flat board gravity', action: () => { engine.setFluid({ gravityX: 0, gravityY: 0, cosAlpha: 1 }); requestFrame(); } });
   cmd.register({ id: 'act-fit', name: 'Fit View', group: 'Actions', hint: 'Reset zoom, pan and rotation', shortcut: 'Ctrl+0', keywords: 'zoom fit reset view rotation', action: () => { engine.resetView(); viewChanged(); requestFrame(); } });
   /* Square again without losing your place. Fit View throws away the zoom and

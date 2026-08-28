@@ -918,3 +918,102 @@ per slot; TransferPigment already clamps to 1.0), so this cannot distort paintin
 8. **A per-frame GPU sync suppresses this fault.** Any probe that awaits every frame
    will make it much rarer or invisible. Sample coarsely (once per stroke), then
    narrow only after you have a hit.
+
+---
+
+## Paint contours — a topographic overlay on the film height (2026-08-28)
+
+**Why.** The artist asked for a way to SEE what the oil film is doing rather
+than infer its shape from how it happens to be lit: *"draw topographic relief
+lines over the top of the paint so I can verify what the oil paint is doing."*
+
+**How to use it.** Command palette (Alt+K):
+
+- **Toggle Paint Contours** — on at 0.02 of film height per line.
+- **Paint Contours: Finer / Coarser** — steps through
+  `0.05, 0.02, 0.01, 0.005, 0.002`.
+
+Every fifth line is drawn heavier, so depth is countable without a readout. The
+ink flips black or white against the local tone, so it survives a dark passage
+and a pale one. From code: `engine.setContourStep(v)`, `0` is off.
+
+**What it contours.** `wet0.y` RAW — the physical film — NOT multiplied by
+`paintRelief`. So a line is the same quantity `pickup-bench` and
+`banding-bench` print, which is the whole point: the picture and the bench
+numbers can finally be read against each other.
+
+**Cost.** One of the three pads `struct Comp` already reserved, so the uniform
+buffer is still 144 bytes and nothing in `canvas.ts` moved. The overlay runs
+strictly last, writes nothing back, and `contourStep <= 0` skips it — verified
+byte-identical to the previous picture when toggled off.
+
+### What it is good for, and where it lies
+
+**[MEASURED 2026-08-28]** Three stacked Oil / Flat Hog / Cotton Duck passes,
+peak film 0.1772, comparing rendered pixels with the overlay off and on:
+
+| | painted band | bare canvas |
+|---|---|---|
+| pixels changed | 33.1 % | **0.0 %** |
+
+The bare-sheet mask holds: unpainted canvas takes no ink, so the overlay cannot
+invent topography where there is no paint.
+
+**[MEASURED — and this is the limitation to know about.]** Inked share across a
+tenfold change in spacing, each run twice and identical:
+
+| step | inked | lines the peak should give |
+|---|---|---|
+| 0.05 | 30.3 % | ~3 |
+| 0.02 | 33.1 % | ~8 |
+| 0.01 | 34.9 % | ~17 |
+| 0.005 | 35.5 % | ~35 |
+
+Ten times the lines for five percent more ink means **the lines are already
+merging at fit-zoom**. At fit, one cell is about 1.5 screen pixels, so
+cell-scale bristle roughness dominates the height gradient and neighbouring
+contours run together. That is a true report about the paint — the oil surface
+really is that rough per cell — but it means the overlay is a ZOOMED-IN
+instrument. Read it close, or coarse. Do not read a dense black band at fit
+zoom as a finding.
+
+**It shows the interpolator as well as the paint.** Height is read through
+`paint()`, the same sampler the lighting uses, which switches to Catmull-Rom
+above zoom 1.05 and whose slope kinks at every cell boundary. Hard zoom shows
+faint square corners on the lines. Deliberate: contouring the field the
+COMPOSITE sees is what lets the lines explain the image beside them. Smoothing
+them would be prettier and less true.
+
+**Half-float floor.** `wet0` is RGBA16F, so around a typical oil peak of 0.26
+the stored height resolves to roughly a thousandth. `setContourStep` clamps to
+0.0005 for that reason; finer than that draws storage noise, which reads as a
+moire that looks like a finding.
+
+**Dry media show nothing, correctly.** Pastel, charcoal and graphite write only
+pigment into the dry layers — there is no height channel anywhere in the dry
+path, and `dry_store.wgsl` says so out loud: *"Watercolour has no body, so there
+is no height to carry down."* So the overlay is blank for them. Giving dry media
+a body height is a cell-schema change and therefore a D-number, not a debug
+tool. Checked 2026-08-28 when the artist asked whether this would serve pastels.
+
+### [TRAP] Derivatives, and two compiles that `npm run build` waved through
+
+`fwidth`/`dpdx`/`dpdy` may only be called from control flow the compiler can
+prove UNIFORM — they difference against neighbouring pixels in the quad, and
+those neighbours must have taken the same path. Both of these were REJECTED,
+and the composite pipeline was invalid whole, with the picture simply not
+drawing and **no error thrown**:
+
+- `if (hRaw > 1e-4) { ... fwidth(n) ... }` — the height varies per pixel.
+- `if (C.contourStep > 0.0) { ... fwidth(n) ... }` — reads uniform, but is not
+  provably so this far down a fragment shader that has already branched.
+
+The shipped version differences the rate BY HAND from four samples one screen
+pixel out (`texel`, already in scope for the relief lighting). Same quantity, no
+uniformity analysis to satisfy, four texture reads only while the overlay is on.
+
+**`npm run build` passed through both failures.** It is `tsc --noEmit && vite
+build` and never compiles a shader. The only honest check is loading the page
+and reading `getCompilationInfo()` — and note the browser console keeps stale
+shader errors from modules that no longer exist, so compile the module fresh in
+an error scope rather than trusting what is already printed there.
