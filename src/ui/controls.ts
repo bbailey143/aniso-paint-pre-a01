@@ -59,7 +59,10 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  * those two ends, so the tuning is his rather than a guess of mine baked into a
  * formula. `applyMacros` in the store is the whole of it now.
  */
-export const depthFromRelief = (r: number) => Math.pow(clamp01(r / 40), 1 / 1.15);
+/* Relief as a fraction of its own scale. The divisor tracks the Relief dial's
+ * max — 40 until 2026-08-28, 20 since — so this keeps meaning "how far along
+ * Relief is" rather than silently rescaling when that dial is re-centred. */
+export const depthFromRelief = (r: number) => Math.pow(clamp01(r / 20), 1 / 1.15);
 
 export interface RailControl {
   /** Stable key. Values are remembered per id across tool changes. */
@@ -218,9 +221,14 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     under: ['impasto'],
     min: 0,
-    max: 4,
+    /* [ARTIST CENTRE 2026-08-28] 5.5 so that his 2.75x sits at the middle of
+       the dial. He asked for the Paint Properties page he had tuned to become
+       the default AND to read 50%, so every max in this block is twice its
+       default rather than a physical limit. `setSmear` has no upper clamp, so
+       the whole of this travel is live. */
+    max: 5.5,
     initial: 0,
-    initialFor: () => 1.0,
+    initialFor: () => 2.75,
     format: (v) => (v <= 0 ? 'none' : `${v.toFixed(2)}×`),
     appliesTo: (t) => (t.wet?.yieldStress ?? 0) > 0,
     drives:
@@ -235,7 +243,8 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     under: ['impasto'],
     min: 0,
-    max: 40,
+    // [ARTIST CENTRE 2026-08-28] 20 puts oil's row (now 10.0) at the middle.
+    max: 20,
     initial: 0,
     initialFor: (t) => t.wet?.relief ?? 0,
     format: (v) => (v <= 0 ? 'flat' : v.toFixed(1)),
@@ -271,7 +280,13 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     macro: true,
     min: 0,
-    max: 1,
+    /* [ARTIST CENTRE 2026-08-28] This one is DERIVED, not set: it is
+       `depthFromRelief(relief)`, so it cannot be pinned independently of the
+       Relief dial. The 0.69 on the artist's screenshot was the value relief 26
+       gives; he has since chosen relief 10, so 0.69 was a stale readout rather
+       than a setting. Oil's relief 10 now derives 0.548, and this max centres
+       THAT. Change Relief and this follows, which is the point of a macro. */
+    max: 1.096,
     initial: 0,
     // Starts wherever the material's own rows already sit, so opening a
     // medium changes nothing until this is actually moved.
@@ -309,6 +324,10 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     macro: true,
     min: 0,
+    /* [ARTIST CENTRE 2026-08-28 — NOT CENTRED.] Derived as `1 - kInstrument`,
+       the same quantity Gloss shows, so it inherits that dial's hard ceiling.
+       Its own `format` calls >= 0.98 "wet"; stretching the max past 1 would
+       leave the label naming a point halfway down the slider. Reads 100%. */
     max: 1,
     initial: 0,
     initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
@@ -328,6 +347,11 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     under: ['glossiness'],
     min: 0,
+    /* [ARTIST CENTRE 2026-08-28 — NOT CENTRED.] He has this at "wet", which is
+       the top of the scale: the dial is `1 - kInstrument` and kInstrument is a
+       Saunderson surface term that is physically 0..1, clamped again in
+       `setGloss`. There is nothing wetter than wet to give the upper half of a
+       centred dial, so it stays 0..1 and reads 100%. */
     max: 1,
     initial: 0,
     // Material rows are written 0 glossy .. 1 matte; the dial reads the way a
@@ -349,8 +373,10 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     under: ['impasto', 'glossiness'],
     min: 0,
-    max: 1.5,
-    initial: 0.55,
+    // [ARTIST CENTRE 2026-08-28] 1.98 centres his 0.99. `setSheen` is
+    // `max(0, v)` with no ceiling, so the upper half is real travel.
+    max: 1.98,
+    initial: 0.99,
     format: (v) => (v <= 0.01 ? 'none' : v.toFixed(2)),
     appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
     drives: 'CanvasEngine.setSheen -> Comp.sheenStrength in composite.wgsl.',
@@ -367,10 +393,16 @@ export const RAIL_CONTROLS: RailControl[] = [
     belongsTo: 'paint',
     under: ['glossiness'],
     min: 0,
+    /* [ARTIST CENTRE 2026-08-28 — NOT CENTRED, and deliberately.] His 0.90
+       would need a max of 1.8, but this dial has a HARD ceiling: it is the
+       lerp `mix(120, 6, clamp(C.sheenWidth, 0, 1))` in composite.wgsl:793, and
+       `setSheenWidth` clamps to 1 as well. Anything above 1.0 is already
+       "broad" and would be dead travel — a dial that lies about having room.
+       Centring this means redefining what "broad" is in the shader, which
+       changes the look of every existing setting, so it is his call and not a
+       side effect of a UI request. Reads 90%. */
     max: 1,
-    // Reproduces the tightness that used to be hard-coded, so an untouched
-    // dial changes nothing at all.
-    initial: 0.632,
+    initial: 0.9,
     format: (v) => (v <= 0.05 ? 'tight' : v >= 0.95 ? 'broad' : v.toFixed(2)),
     appliesTo: (t) => (t.wet?.relief ?? 0) > 0,
     drives: 'CanvasEngine.setSheenWidth -> Comp.sheenWidth, the highlight exponent.',

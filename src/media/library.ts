@@ -77,7 +77,11 @@ export const OIL: WetMedium = {
      says what it is and the dial cannot overrule it. */
   hasCurrent: false,
   // Wet oil is glossy. Watercolour sits at 1, fully matte; this is the other end.
-  kInstrument: 0.25,
+  /* [ARTIST 2026-08-28] 0.25 -> 0. He set the Gloss dial to "wet" and asked for
+     that page to be the default. 0 is the bottom of the Saunderson gloss term,
+     so this is the glossiest oil the model can express; the dial cannot be
+     centred because there is nothing above it. See controls.ts `gloss`. */
+  kInstrument: 0,
   /* An oil film never leaves within a session, and it IS the paint rather than
      a layer of solvent lying on it, so it should not be read as a wet puddle.
      Low but not zero: fresh oil is genuinely wetter-looking than cured oil.
@@ -90,9 +94,16 @@ export const OIL: WetMedium = {
      The jelly was the sheen. Right in principle, idle in practice.
      [UNVERIFIED] */
   filmGloss: 0.15,
+  // NOTE: with kInstrument now 0 this row can no longer do anything — the mix
+  // in composite.wgsl:486 lerps kInstrument toward 0 and it is already there.
+  // Left in place rather than deleted; it becomes live again the moment the
+  // artist brings Gloss back down off "wet".
   // Truthfully declared and currently unread — see the note above. bodyShrink is
   // the spec's shrinkage on cure: a ridge sinks a little as the oil oxidises.
-  relief: 26, bodyShrink: 0.85,
+  /* [ARTIST 2026-08-28] 26 -> 10, set at the easel and then made the default:
+     "I want this to be exactly the default setting." The Relief dial's max
+     moved to 20 with it so this sits at the centre of its own travel. */
+  relief: 10, bodyShrink: 0.85,
   // Oil covers. Two loaded strokes and the canvas is gone - which is what an
   // opaque paint is FOR, and what the artist reported missing on 2026-08-24:
   // "it should only take one, maybe two thick strokes to cover the canvas."

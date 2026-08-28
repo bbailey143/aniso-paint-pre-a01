@@ -152,6 +152,44 @@ say why.
 **Last updated:** 2026-08-28
 **By:** Codex, continuing the relay.
 
+## PAINT PROPERTY CENTRE — the defaults moved (2026-08-28, Claude)
+
+The artist tuned the Paint Properties page by eye, screenshotted it, and asked
+for it to become the default **with every slider reading 50%** — a centre he can
+push either side of. Those are now the shipped defaults. If a number below
+surprises you, it is his and it is deliberate.
+
+| dial | default | slider | where |
+|---|---|---|---|
+| Impasto Depth | 0.55 | 50% | derived, `depthFromRelief` |
+| Smear | 2.75x | 50% | `controls.ts` |
+| Relief | 10.0 | 50% | `OIL.relief`, was 26 |
+| Sheen | 0.99 | 50% | `controls.ts`, was 0.55 |
+| Gloss | wet | **100%** | `OIL.kInstrument` 0, was 0.25 |
+| Glossiness | wet | **100%** | derived from the same term |
+| Sheen Width | 0.90 | **90%** | `controls.ts`, was 0.632 |
+
+**The three that are not centred cannot be, and that is recorded where someone
+would try.** Gloss is `1 - kInstrument`, a Saunderson surface term that is
+physically 0..1 and clamped again in `setGloss`; Sheen Width is the lerp
+`mix(120, 6, clamp(sheenWidth, 0, 1))`. Both are AT their ceiling, so a centred
+dial would need a top half that does nothing — a dial that lies about having
+room. Centring them means redefining what "wet" and "broad" mean in the shader,
+which changes every existing setting, so it is the artist's call and not a side
+effect of a UI request. Glossiness rides Gloss and inherits it.
+
+**Impasto is DERIVED, not set.** It is `depthFromRelief(relief)`, so it cannot
+be pinned independently. The 0.69 on his screenshot was what relief **26**
+gives; he had since pulled Relief to 10, so 0.69 was a stale readout rather
+than a setting, and freezing it would have contradicted the Relief dial beside
+it. `depthFromRelief`'s divisor tracks Relief's max (40 -> 20) so it keeps
+meaning "how far along Relief is".
+
+**Not a physics change.** `relief` and `kInstrument` are read only by
+`composite.wgsl`; no solver pass touches either, so no pickup, stacking,
+holding or conservation number can move. Verified by construction, not by
+re-running the bench.
+
 ## LIVE CHECKPOINT — directional Flat Hog snakeskin
 
 **Build/browser state.** `npm.cmd run build` passes. The live D: checkout is
