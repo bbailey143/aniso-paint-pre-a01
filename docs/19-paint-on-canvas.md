@@ -777,3 +777,70 @@ sweeps are 1 for any zero-yield medium and the shader returns at once.
 **Still not verified.** `?full-check` has not been run against E7 or E8 — the
 pickup and banding suites need a VISIBLE page. Oil stacking and brush holding
 are unmeasured against both.
+
+### E9 — four tuning attempts, three failures, and where the residue actually is (2026-08-29, Claude)
+
+**The artist's verdict on E8:** "Not yet... it's getting better." The harsh
+dashes are gone and the fast/slow gap is closed; what remains reads as slower
+tonal banding in the stroke BODY rather than scalloped edges.
+
+**Where the residue is, measured.** Oil / Flat Hog / Cotton Duck, group 4:
+
+| | edge | shape | volume |
+|---|---:|---:|---:|
+| CPU brush footprint (the floor) | 0.00312 | 0.00273 | 0.00455 |
+| stored, levelling OFF | 0.00312 | — | — |
+| stored, shipped E8 | 0.01425 | 0.01113 | 0.00679 |
+
+With the levelling off the GPU reproduces the brush footprint exactly. So **all
+of the remaining residue is the levelling itself** — and it cannot simply be
+removed, because it is what stops a paste keeping the raw comb of hair ridges.
+Volume is already near the floor (1.5x); edge and shape are ~4x.
+
+It is no longer frame-locked (group 4 measures 0.01425 against group 1's
+0.01608) and no longer surface-dependent (Flat White 0.01424, Cotton Duck
+0.01425 — identical). Whatever is left is intrinsic to the deposit/levelling
+pair.
+
+**Four attempts. Keep the first, discard three.**
+
+1. **Sweep cap 8 -> 32.** No change at all: 0.01425 either way, deposit-only
+   0.01323 either way. The cap is not binding at ordinary bundling. Left at 8,
+   which is the cheaper number.
+2. **Levelling share, swept.** **NOT MONOTONIC — this is the important finding.**
+   0.8 -> 0.01425. **1.3 -> 0.05027**, with the frame-locked 16-cell pattern
+   fully restored at r 0.95. 2.0 -> 0.01201, better on edge but the
+   cross-section twice as rough (shape 0.02538 against 0.01113). Above 1.0 a
+   cell may be asked to give away more than it just laid, which pulls at paint
+   the design treats as set. **Do not treat `share` as a smooth knob and do not
+   interpolate between measured values.**
+3. **Stop levelling into bare canvas.** Physically better motivated — levelling
+   is redistribution among cells that have paint, and paint advancing onto dry
+   canvas is the mark growing, which the yield stress should govern. Measured
+   null: 0.01425 -> 0.01423. Reverted, since it buys nothing and the fence says
+   unmeasured complexity does not go in.
+4. **Budget by the 3x3 mean fresh deposit instead of the cell's own.** The
+   obvious next idea, since per-cell `laid` carries the comb and using it as the
+   amount allowed to move means a smoothing step modulated by the texture it is
+   smoothing. Measured **much worse: 0.04882, 16-cell pattern back at r 0.88**,
+   for the same reason as (2) — a cell allowed more than it laid pulls at set
+   paint. **The per-cell budget is load-bearing, not incidental.**
+
+**What was kept.** Two URL dials, defaulting to exactly the shipped values so
+nothing changes unless asked: `?levelSweeps=N` (cost ceiling) and
+`?levelShare=X` (how completely the comb is squeezed flat). They exist so the
+artist can tune by eye without a rebuild — with the warning above attached.
+
+**What this says about the next step.** The knobs are at a local optimum; three
+of four attempts made it worse or did nothing. Turning them further is not the
+route. Two directions that have NOT been tried:
+
+- **A better instrument.** Edge-width ripple in the stored film may no longer
+  track what the eye sees; the artist is describing tonal banding in the body of
+  the mark. Measure the RENDERED image along the stroke, not `wet0.y` across it,
+  before tuning anything else.
+- **A different smoother.** The levelling is a 4-neighbour Jacobi step on a
+  ridge pattern that is strongly anisotropic (the comb runs ALONG the stroke).
+  A von Neumann stencil on anisotropic structure is a known source of striping.
+  An 8-neighbour or separable smooth is untried and is the one mechanism change
+  with a reason behind it rather than a knob.

@@ -47,6 +47,16 @@ struct Ctl {
   /** Levelling sweeps this chunk is being given — one per brush solve step,
    *  capped on the CPU. The budget below is divided by it. */
   sweeps: f32,
+  /** How much of the freshly laid paint the hairs may squeeze flat, as a share.
+   *  0.8 ships; `?levelShare=` overrides it so it can be tuned by eye.
+   *
+   *  [MEASURED, docs/19 E9 - NOT A SMOOTH KNOB.] 0.8 -> 0.01425, 1.3 -> 0.05027
+   *  with the frame-locked 16-cell pattern fully back (r 0.95), 2.0 -> 0.01201
+   *  but with the cross-section twice as rough. Above 1.0 a cell may be asked to
+   *  give away more than it just laid, which pulls at paint the design treats as
+   *  set, and the behaviour stops being monotonic. Re-measure before trusting
+   *  any value; do not interpolate. */
+  share: f32,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -108,7 +118,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      Sixteen cells of travel in one frame now get the same total levelling as
      sixteen frames of one cell — which is what a slow stroke was already
      getting, and why slow strokes came out visibly cleaner. */
-  let flowing = laid * 0.8 / max(C.sweeps, 1.0);
+  /* Budgeted by THIS CELL's own fresh deposit, and that is load-bearing rather
+     than incidental. Budgeting by the 3x3 mean instead - same total, smoother
+     spatially, and the obvious next idea - measured 0.04882 with the 16-cell
+     frame pattern fully restored (r 0.88), because a cell allowed more than it
+     laid pulls at paint underneath that has set. docs/19 E9. */
+  let flowing = laid * max(C.share, 0.0) / max(C.sweeps, 1.0);
   if (asks > flowing && asks > 0.0) { lvl = lvl * (flowing / asks); }
 
   /* One ceiling over the shove and the levelling together, because both come

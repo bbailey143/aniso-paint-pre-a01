@@ -69,6 +69,28 @@ const SEG_FLOATS = 12;         // deposit contact + local resampled drag vec2 + 
  *  8 is a cost ceiling, not a physical number. [UNVERIFIED as a visual choice;
  *  raise it and look, the arithmetic holds at any value.] */
 const LEVEL_SWEEP_MAX = 8;
+
+/** Tuning overrides, read once from the URL so the two levelling constants can
+ *  be swept on the live page without a rebuild:
+ *
+ *      ?levelSweeps=16   raise the sweep cap
+ *      ?levelShare=1.6   raise the share of fresh paint the levelling may move
+ *
+ *  Absent, both are exactly the shipped values, so nothing changes by default.
+ *  These are DIALS, not physics: the sweep cap is a cost ceiling and the share
+ *  is how completely the hairs' comb is squeezed flat as it is laid. */
+const levelOverrides = (() => {
+  const q = typeof location === 'undefined'
+    ? new URLSearchParams() : new URLSearchParams(location.search);
+  const num = (k: string, fallback: number, lo: number, hi: number) => {
+    const v = Number(q.get(k));
+    return Number.isFinite(v) && v > 0 ? Math.max(lo, Math.min(hi, v)) : fallback;
+  };
+  return {
+    sweeps: num('levelSweeps', LEVEL_SWEEP_MAX, 1, 64),
+    share: num('levelShare', 0.8, 0.05, 4),
+  };
+})();
 // Dry tools also carry the long axis of a tilted contact ellipse. It remains a
 // separate layout so wet-brush footprints stay byte-for-byte unchanged.
 const DRY_SEG_FLOATS = 10;
@@ -434,7 +456,10 @@ export class FluidEngine {
     this.ctlBuf = device.createBuffer({
       // Three aligned vec4 groups. Wet deposit reads the first two; dry deposit
       // also reads surface mobility and compaction from the third.
-      size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
+      // FOUR aligned vec4 groups since 2026-08-29: the fourth carries the
+      // levelling share for level_fresh. Wet deposit reads the first two; dry
+      // deposit also reads surface mobility and compaction from the third.
+      size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'deposit-ctl',
     });
     this.mixBuf = device.createBuffer({
       size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'deposit-mix',
@@ -702,7 +727,7 @@ export class FluidEngine {
       minY = Math.min(minY, segments[o + 1] - r - ey, segments[o + 3] - r - ey);
       maxY = Math.max(maxY, segments[o + 1] + r + ey, segments[o + 3] + r + ey);
     }
-    return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0, 0, 0, 0, 0]);
+    return new Float32Array([n, minX, minY, maxX, maxY, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   }
 
   /**
@@ -926,10 +951,11 @@ export class FluidEngine {
          shader returns immediately for any zero-yield medium, so watercolour
          pays one cheap dispatch and nothing else. */
       const sweeps = this.params.yieldStress > 0
-        ? Math.max(1, Math.min(LEVEL_SWEEP_MAX, this.solveSteps(segments, done, n)))
+        ? Math.max(1, Math.min(levelOverrides.sweeps, this.solveSteps(segments, done, n)))
         : 1;
       for (let sweep = 0; sweep < sweeps; sweep++) {
         ctl[11] = sweeps;
+        ctl[12] = levelOverrides.share;
         device.queue.writeBuffer(this.ctlBuf, 0, ctl);
         const lpass = denc.beginComputePass({ label: 'level-fresh' });
         this.dispatch(lpass, this.pipes.levelFresh, [
