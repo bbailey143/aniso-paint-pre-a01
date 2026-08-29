@@ -1,16 +1,34 @@
-// Round-brush fish-scale discriminator.
+// Fish-scale stage discriminator, for EITHER solver route.
 //
-// Run the live WebGPU app with `?fish-scale=1`. Every condition uses the same
-// Round Sable / Watercolour / Flat White stroke at mouse pressure. The only
-// change is how far the wet-paint pipeline is allowed to advance. Unlike the
-// older banding bench, this keeps the full cross-section so alternating edge
-// lobes cannot cancel merely because total paint across the mark is constant.
+// Run the live WebGPU app with `?fish-scale=1`. The stroke is fixed and only
+// how far the wet-paint pipeline may advance changes. The full cross-section is
+// kept, so alternating edge lobes cannot cancel merely because total paint
+// across the mark is constant.
+//
+// **The medium decides which solver runs, and therefore which ladder is even
+// meaningful.** `fluid.ts` sets `paste = !hasCurrent || yieldStress > 0`, and
+// for a paste it SKIPS UpdateVelocities and RelaxDivergence outright: a pile of
+// paste is moved by its own steepness against its yield in flux_compute, and
+// reads no velocity field. Watercolour is water (yieldStress 0); Oil is paste
+// (yieldStress 0.34, hasCurrent false).
+//
+// That is not a footnote. A whole session was spent repairing the two velocity
+// passes, verifying it here, and reporting it as fixed — and every number was a
+// watercolour number, because this file used to hardcode Watercolour / Round
+// Sable / Flat White. The repair could not touch oil at all. docs/19 E5a.
+//
+//   ?fish-scale=1                      water route: Watercolour / Round Sable
+//   ?fish-scale=1&medium=oil           paste route: Oil / Flat Hog
+//   ?fish-scale=1&medium=oil&brush=flat-sable&paper=canvas-duck
+//
+// Whatever is chosen, the panel states the medium, the brush, the paper AND the
+// route, and lists the passes the engine actually ran. Read that line first.
 
 import { BRUSHES } from '../brush/library';
 import { SEG_FLOATS } from '../engine/fluid';
-import { WATERCOLOR } from '../media/library';
-import { FLAT_WHITE } from '../substrate/papers';
-import { esc, ok, warn, headline, makePanel } from './panel';
+import { WATERCOLOR, OIL } from '../media/library';
+import { FLAT_WHITE, PAPERS, CANVASES } from '../substrate/papers';
+import { esc, ok, warn, bad, headline, makePanel } from './panel';
 
 type AnyRec = Record<string, any>;
 
@@ -18,7 +36,16 @@ const X0 = 88;
 const X1 = 424;
 const Y = 256;
 const INPUTS = 84;      // four cells between browser reports
-const GROUP = 4;        // sixteen cells of travel per simulated browser frame
+/* Reports bundled into each simulated browser frame; 4 cells per report, so
+   frame travel is 4 * GROUP cells. `?group=N` overrides it. This is the
+   discriminator for a frame-locked wavelength: if a ripple's repeat tracks
+   4 * GROUP it is made by frame bundling, and if it sits still at 16 cells
+   whatever GROUP is, it is an artefact of TREND_RADIUS instead.
+   [TRAP, baton #2] Changing GROUP also changes how many times engine.step runs,
+   so a fluid-driven number would move for that reason alone. Only compare the
+   deposit stages this way, or a route measured to be flat across fluid passes. */
+const GROUP = Math.max(1, Math.min(16,
+  Number(new URLSearchParams(location.search).get('group')) || 4));
 const CORRIDOR = 42;
 const TREND_RADIUS = 16;
 
@@ -33,21 +60,71 @@ type Stage = {
   allow: string[];
 };
 
-const MOTION = ['vel', 'relax', 'outward', 'fluxCompute', 'fluxPig', 'fluxWater'];
-const STAGES: Stage[] = [
-  { name: 'deposit only', smear: 0, allow: [] },
-  { name: 'deposit + brush shove', smear: 1, allow: [] },
-  { name: '+ velocity', smear: 1, allow: ['vel'] },
-  { name: '+ velocity relaxation', smear: 1, allow: ['vel', 'relax'] },
-  { name: '+ outward scratch', smear: 1, allow: ['vel', 'relax', 'outward'] },
-  { name: '+ flux ledger', smear: 1, allow: ['vel', 'relax', 'outward', 'fluxCompute'] },
-  { name: '+ pigment flux', smear: 1, allow: ['vel', 'relax', 'outward', 'fluxCompute', 'fluxPig'] },
-  { name: '+ water flux', smear: 1, allow: MOTION },
-  { name: '+ pigment transfer', smear: 1, allow: [...MOTION, 'transfer'] },
-  { name: '+ capillary', smear: 1, allow: [...MOTION, 'transfer', 'capillary'] },
-  { name: '+ drying', smear: 1, allow: [...MOTION, 'transfer', 'capillary', 'rewet', 'dry'] },
-  { name: 'full pipeline', smear: 1, allow: PASSES },
-];
+/* ------------------------------------------------------------------ config */
+
+type Route = 'water' | 'paste';
+
+function resolveConfig() {
+  const q = new URLSearchParams(location.search);
+  const wantOil = (q.get('medium') || '').toLowerCase().startsWith('oil');
+  const medium = wantOil ? OIL : WATERCOLOR;
+  // The route is READ BACK from the medium's own numbers, using the same test
+  // fluid.ts uses. It is never assumed from the name.
+  const route: Route = (medium.hasCurrent === false || (medium.yieldStress ?? 0) > 0)
+    ? 'paste' : 'water';
+  const brushSlug = q.get('brush') || (wantOil ? 'flat-hog' : 'round-sable');
+  const paperSlug = q.get('paper') || 'flat-white';
+  const sheet = paperSlug === 'flat-white'
+    ? FLAT_WHITE
+    : [...PAPERS, ...CANVASES].find((p) => p.slug === paperSlug);
+  return { medium, mediumName: wantOil ? 'oil' : 'watercolour', route, brushSlug, paperSlug, sheet };
+}
+
+const CFG = resolveConfig();
+
+/* The passes that actually exist on this route. For a paste the engine skips
+   `vel` and `relax`, so a ladder step named "+ velocity" would print a number
+   identical to the step before it and read as "velocity changes nothing here",
+   which is true but for the wrong reason and has already misled once. */
+const MOTION = CFG.route === 'paste'
+  ? ['outward', 'fluxCompute', 'fluxPig', 'fluxWater']
+  : ['vel', 'relax', 'outward', 'fluxCompute', 'fluxPig', 'fluxWater'];
+
+function buildStages(route: Route): Stage[] {
+  const tail = (base: string[]): Stage[] => [
+    { name: '+ pigment transfer', smear: 1, allow: [...base, 'transfer'] },
+    { name: '+ capillary', smear: 1, allow: [...base, 'transfer', 'capillary'] },
+    { name: '+ drying', smear: 1, allow: [...base, 'transfer', 'capillary', 'rewet', 'dry'] },
+    { name: 'full pipeline', smear: 1, allow: PASSES },
+  ];
+  if (route === 'paste') {
+    // The paste ladder. `flux ledger` IS the slump: flux_compute takes the pile's
+    // steepest direction over its 3x3, tests it against the yield, and splits
+    // what it gives across its four faces. There is no velocity step to add.
+    return [
+      { name: 'deposit only', smear: 0, allow: [] },
+      { name: 'deposit + brush shove', smear: 1, allow: [] },
+      { name: '+ outward scratch', smear: 1, allow: ['outward'] },
+      { name: '+ slump ledger', smear: 1, allow: ['outward', 'fluxCompute'] },
+      { name: '+ pigment flux', smear: 1, allow: ['outward', 'fluxCompute', 'fluxPig'] },
+      { name: '+ paint flux', smear: 1, allow: MOTION },
+      ...tail(MOTION),
+    ];
+  }
+  return [
+    { name: 'deposit only', smear: 0, allow: [] },
+    { name: 'deposit + brush shove', smear: 1, allow: [] },
+    { name: '+ velocity', smear: 1, allow: ['vel'] },
+    { name: '+ velocity relaxation', smear: 1, allow: ['vel', 'relax'] },
+    { name: '+ outward scratch', smear: 1, allow: ['vel', 'relax', 'outward'] },
+    { name: '+ flux ledger', smear: 1, allow: ['vel', 'relax', 'outward', 'fluxCompute'] },
+    { name: '+ pigment flux', smear: 1, allow: ['vel', 'relax', 'outward', 'fluxCompute', 'fluxPig'] },
+    { name: '+ water flux', smear: 1, allow: MOTION },
+    ...tail(MOTION),
+  ];
+}
+
+const STAGES: Stage[] = buildStages(CFG.route);
 
 // Yield to the event loop WITHOUT a timer. A hidden page (any automated browser,
 // or the app's preview pane simply not on screen) has setTimeout clamped to one
@@ -265,13 +342,14 @@ function analyse(field: Float64Array, n: number) {
 }
 
 function setup(engine: AnyRec, stroke: AnyRec, stage: Stage) {
-  const brush = BRUSHES.find((b) => b.slug === 'round-sable');
-  if (!brush) throw new Error('Round Sable row missing');
+  const brush = BRUSHES.find((b) => b.slug === CFG.brushSlug);
+  if (!brush) throw new Error(`brush row missing: ${CFG.brushSlug}`);
+  if (!CFG.sheet) throw new Error(`paper row missing: ${CFG.paperSlug}`);
   engine.clear();
-  engine.setPaper(FLAT_WHITE);
-  engine.setWetMedium(WATERCOLOR);
+  engine.setPaper(CFG.sheet);
+  engine.setWetMedium(CFG.medium);
   engine.setFluid({ smearStrength: stage.smear, gravityX: 0, gravityY: 0, cosAlpha: 1 });
-  stroke.setWetMedium(WATERCOLOR);
+  stroke.setWetMedium(CFG.medium);
   stroke.setBrush(brush, 1);
   engine.setMix(new Map([['ultramarine-blue', 1]]));
   stroke.charge(engine.mixWeights, 1, 0);
@@ -413,9 +491,22 @@ async function run(engine: AnyRec, stroke: AnyRec) {
     while (engine.fluid.readbackBusy) {
       await yieldTick();
     }
+    /* The setup is read back off the LIVE engine, not copied from the config
+       that was asked for. Trap 6 in the baton: a run once had the tool bar
+       reading "Watercolour / Round Sable" while the solver ran oil, and the
+       physics was right while the labels lied. Ask the engine. */
+    engine.setWetMedium(CFG.medium);
+    const live = engine.fluid.params;
+    const liveRoute: Route = (live.hasCurrent === false || (live.yieldStress ?? 0) > 0)
+      ? 'paste' : 'water';
     const result: AnyRec = {
       setup: {
-        medium: 'watercolour', brush: 'round-sable', paper: 'flat-white',
+        medium: CFG.mediumName, brush: CFG.brushSlug, paper: CFG.paperSlug,
+        route: liveRoute,
+        routeAsConfigured: CFG.route,
+        routeAgrees: liveRoute === CFG.route,
+        yieldStress: live.yieldStress, hasCurrent: live.hasCurrent,
+        skippedByEngine: liveRoute === 'paste' ? ['vel', 'relax'] : [],
         pointer: 'mouse', effectivePressure: 0.65, size: 1,
         inputSpacingCells: 4, inputsPerFrame: GROUP,
         path: `${X0},${Y} to ${X1},${Y}`,
@@ -446,26 +537,42 @@ async function run(engine: AnyRec, stroke: AnyRec) {
         repeatVolumeRms: +rmsDifference(a.volumes, b.volumes).toFixed(8),
       };
     }
-    const variants: Record<string, string[]> = {
-      'velocity only': ['vel', 'fluxCompute', 'fluxWater'],
-      'velocity + relaxation': ['vel', 'relax', 'fluxCompute', 'fluxWater'],
-      'outward bias only': ['outward', 'fluxCompute', 'fluxWater'],
-      'velocity + outward': ['vel', 'outward', 'fluxCompute', 'fluxWater'],
-      'all water motion': ['vel', 'relax', 'outward', 'fluxCompute', 'fluxWater'],
-    };
+    /* One force at a time. On the paste route there is no velocity field to
+       isolate, so the split is over the terms a paste actually has: its own
+       slump against the yield, and the outward edge bias. */
+    const variants: Record<string, string[]> = liveRoute === 'paste'
+      ? {
+        'slump only': ['fluxCompute', 'fluxWater'],
+        'outward bias only': ['outward', 'fluxCompute', 'fluxWater'],
+        'slump + pigment flux': ['fluxCompute', 'fluxPig', 'fluxWater'],
+        'all paste motion': MOTION,
+      }
+      : {
+        'velocity only': ['vel', 'fluxCompute', 'fluxWater'],
+        'velocity + relaxation': ['vel', 'relax', 'fluxCompute', 'fluxWater'],
+        'outward bias only': ['outward', 'fluxCompute', 'fluxWater'],
+        'velocity + outward': ['vel', 'outward', 'fluxCompute', 'fluxWater'],
+        'all water motion': ['vel', 'relax', 'outward', 'fluxCompute', 'fluxWater'],
+      };
     for (const [name, allow] of Object.entries(variants)) {
       const a = await postFlowRun(engine, stroke, 8, allow);
       const b = await postFlowRun(engine, stroke, 8, allow);
       result.flowVariants[name] = { runs: [a, b] };
     }
-    result.faceOwnership = [
-      await faceOwnershipRun(engine, stroke),
-      await faceOwnershipRun(engine, stroke),
-    ];
-    for (const iters of [0, 1, 2, 4, 8, 16]) {
-      result.relaxSweep[iters] = {
-        runs: [await relaxSweepRun(engine, stroke, iters), await relaxSweepRun(engine, stroke, iters)],
-      };
+    /* Face ownership and the relaxation sweep read the velocity field and the
+       divergence it leaves. A paste has neither — the engine never ran the
+       passes that write them — so running these would print a table of zeros
+       that looks like a measurement and is not one. Skipped, and SAID to be. */
+    if (liveRoute === 'water') {
+      result.faceOwnership = [
+        await faceOwnershipRun(engine, stroke),
+        await faceOwnershipRun(engine, stroke),
+      ];
+      for (const iters of [0, 1, 2, 4, 8, 16]) {
+        result.relaxSweep[iters] = {
+          runs: [await relaxSweepRun(engine, stroke, iters), await relaxSweepRun(engine, stroke, iters)],
+        };
+      }
     }
     engine.fluid.skip.clear();
     engine.render();
@@ -529,13 +636,14 @@ function summary(result: AnyRec) {
       + `lag ${a.repeatLagCells}/${b.repeatLagCells}  `
       + `r ${a.repeatCorrelation.toFixed(3)}/${b.repeatCorrelation.toFixed(3)}`);
   });
-  const faceRows = ['east', 'west', 'south', 'north'].map((side) => {
+  const paste = result.setup.route === 'paste';
+  const faceRows = paste ? [] : ['east', 'west', 'south', 'north'].map((side) => {
     const a = result.faceOwnership[0][side], b = result.faceOwnership[1][side];
     return repro(same(a, b),
       `${side.padEnd(24)} speed ${a.outwardMean.toFixed(8)}/${b.outwardMean.toFixed(8)}  `
       + `height ${a.heightMean.toFixed(8)}/${b.heightMean.toFixed(8)}  faces ${a.faces}/${b.faces}`);
   });
-  const relaxRows = Object.entries(result.relaxSweep).map(([iters, value]) => {
+  const relaxRows = paste ? [] : Object.entries(result.relaxSweep).map(([iters, value]) => {
     const v = value as AnyRec;
     const a = v.runs[0].divergence, b = v.runs[1].divergence;
     const af = v.runs[0].faces, bf = v.runs[1].faces;
@@ -546,9 +654,36 @@ function summary(result: AnyRec) {
       + `N/S ${af.north.outwardMean.toFixed(6)}/${af.south.outwardMean.toFixed(6)}  `
       + `${bf.north.outwardMean.toFixed(6)}/${bf.south.outwardMean.toFixed(6)}`);
   });
+  const s = result.setup;
+  /* SCOPE BANNER. This exists because a session reported "verified" from this
+     bench when every figure in it was a watercolour figure, and the change it
+     verified could not run for oil at all. The scope is now the second thing on
+     screen and names the medium, the route, and what the route did NOT run. */
+  const scope = [
+    esc(`${s.medium} / ${s.brush} / ${s.paper} / mouse pressure ${s.effectivePressure}`),
+    s.routeAgrees
+      ? (paste
+        ? warn(`PASTE ROUTE (yieldStress ${s.yieldStress}, hasCurrent ${s.hasCurrent}). `
+          + 'The engine SKIPPED UpdateVelocities and RelaxDivergence. Nothing here '
+          + 'measures them, and no change to them can move these numbers.')
+        : ok(`WATER ROUTE (yieldStress ${s.yieldStress}, hasCurrent ${s.hasCurrent}). `
+          + 'Velocity and relaxation both ran.'))
+      : bad(`ROUTE MISMATCH: configured ${s.routeAsConfigured}, engine ran ${s.route}. `
+        + 'Do not read these numbers.'),
+    esc(`THIS RESULT IS ${String(s.medium).toUpperCase()} ONLY. `
+      + `The other medium takes the other route; run it separately `
+      + `(?fish-scale=1&medium=${s.medium === 'oil' ? 'watercolour' : 'oil'}).`),
+  ];
+  const velocitySections = paste ? [] : [
+    esc('ONE VELOCITY STEP — OUTWARD SPEED AT WET/DRY FACES'),
+    ...faceRows, '',
+    esc('ONE VELOCITY STEP — RELAXATION SWEEP'),
+    ...relaxRows, '',
+  ];
   return [
-    headline(allRepro ? 'pass' : 'fail', 'ROUND FISH-SCALE STAGE TEST — finished'), '',
-    esc('Watercolour / Round Sable / Flat White / mouse pressure 0.65'),
+    headline(allRepro && s.routeAgrees ? 'pass' : 'fail',
+      `FISH-SCALE STAGE TEST (${s.medium}) — finished`), '',
+    ...scope, '',
     allRepro
       ? ok('Every paired run reproduced exactly.')
       : warn('SOME PAIRED RUNS DISAGREED — read the amber rows before the numbers.'),
@@ -558,10 +693,8 @@ function summary(result: AnyRec) {
     ...growth, '',
     esc('EIGHT FLOW STEPS, ONE FORCE AT A TIME'),
     ...variants, '',
-    esc('ONE VELOCITY STEP — OUTWARD SPEED AT WET/DRY FACES'),
-    ...faceRows, '',
-    esc('ONE VELOCITY STEP — RELAXATION SWEEP'),
-    ...relaxRows, '',
+    ...velocitySections,
+    paste ? esc('(face-ownership and relaxation sweep skipped: a paste has no velocity field)') : '',
     esc('Green = the pair reproduced. Ripple figures are diagnostic, never a pass.'),
     esc('Exact profiles: window.__fishScaleResult'),
   ].join('\n');
@@ -571,7 +704,8 @@ export function maybeRunFishScale(engine: unknown, stroke: unknown): void {
   if (!new URLSearchParams(location.search).has('fish-scale')) return;
   const panel = makePanel(
     'fish-scale-result', '1060px',
-    'ROUND FISH-SCALE STAGE TEST\n\nrunning sixty-two controlled strokes…',
+    `FISH-SCALE STAGE TEST — ${CFG.mediumName} / ${CFG.brushSlug} / ${CFG.paperSlug}`
+    + '\n\nrunning the controlled strokes…',
   );
   document.body.appendChild(panel);
   setTimeout(() => {

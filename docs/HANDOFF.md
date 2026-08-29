@@ -197,27 +197,61 @@ written up in `docs/19-paint-on-canvas.md` E4, with the verification in E5. It
 was removed from this baton to keep Part B short, not because it stopped being
 true. Read E4 before re-opening any of it.
 
+## OIL IS MEASURED NOW — it is the DEPOSIT, one scale per frame (2026-08-29, Claude)
+
+**Oil and watercolour have different faults. They were never the same bug.**
+
+`?fish-scale=1&medium=oil` (Flat Hog / Flat White). Every pair exact, reproduced
+across fresh loads. Full table: `docs/19` **E6**.
+
+- **94% of oil's ripple exists at deposit**, with every flow pass disabled
+  (0.04277 of a finished 0.04549). The brush shove adds the last 6%.
+- **Nothing downstream moves it by one part in 10^5** — not the slump against the
+  yield, not the outward bias, not transfer, capillary or drying, not 32 further
+  flow steps. Watercolour was the opposite: smooth deposit, rhythm grown in the
+  water motion (E4).
+- **The wavelength is frame travel.** `?group=N` bundles N reports per frame at 4
+  cells each: 1 -> repeat 4, 2 -> repeat 8, 4 -> repeat 16. One scale per engine
+  frame. (`TREND_RADIUS` is also 16, so a fixed 16 would have been the metric
+  talking; it moves with the frame, so it is not.)
+- **Amplitude scales with bundling**: 0.01288 at one report per frame against
+  0.04549 at four — 3.5x. The CPU footprint stays smooth (0.00312), so the brush
+  geometry is fine; it is how that footprint reaches `deposit.wgsl` per frame.
+
 ## NEXT ACTION
 
-**Read `docs/19` E5a first.** The artist judged the E5 tree: oil "way way way
-worse", watercolour improved. Cause found and reverted (`7b6d681`) — it was
-Codex's unjudged studio lighting, bundled into the fluid commit by mistake, which
-halved the depth of oil's shadows. The fluid fix stays and is watercolour's.
+**Find the per-frame seam inside `deposit.wgsl`.** Look for anything that
+accumulates, resets or re-normalises once per DISPATCH rather than once per
+segment — a frame's worth of segments should lay down the same paint as the same
+segments split across four frames, and it does not.
 
-1. **OIL HAS NEVER BEEN MEASURED.** `fish-scale-bench.ts` hardcodes Watercolour /
-   Round Sable / Flat White, so every E5 number is a watercolour number. Oil is a
-   PASTE (`fluid.ts:927`): `update_velocities` and `relax_divergence` are skipped
-   for it entirely, confirmed live. Oil's scales must come from the paste route —
-   `flux_compute`'s yield gate and four-face split, the brush shove, or fresh-body
-   levelling. **Build an oil arm on the bench before touching any of it.**
-2. Watercolour's late residual: ripple at 16 and 32 flow steps is worse than
-   baseline (0.03370 -> 0.04973, 0.02891 -> 0.03619). Start at `flux_compute`
-   mobility; velocity and relaxation are now symmetric.
-3. `?full-check` on a VISIBLE page — crossing lift reads 44.9% against 36%
-   recorded 2026-08-28, and it is NOT the fluid change (both arms agree).
+Do NOT "fix" this by submitting smaller frames. That trades one defect for a
+worse one: a frame-rate-dependent mark, where the same stroke looks different on
+a fast and a slow machine. Smaller frames are the DIAGNOSTIC that located it.
 
-**Do not commit unjudged work beside a measured fix.** That is what made this
-verdict ambiguous for an hour. Its own commit, or it stays out.
+Two instrument notes before starting:
+- Raise `TREND_RADIUS` above 16 before reading `?group=8` or higher; the detrend
+  eats a 32-cell wavelength.
+- `banding-bench.ts` found this same seam earlier (frame-locked ridge span 0.0543
+  at one report per frame against 0.0918 at four) and it was read as a Smear
+  seam. E6 shows it survives with Smear off and every flow pass off, so it is
+  upstream of both.
+
+Still open on the watercolour side: the late residual (ripple at 16 and 32 flow
+steps worse than baseline, 0.03370 -> 0.04973), and `?full-check` on a VISIBLE
+page (crossing lift 44.9% against 36% recorded 2026-08-28, not the fluid change).
+
+## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
+
+Every fish-scale panel prints the medium, brush, paper AND the route the engine
+actually took, read back off `engine.fluid.params` rather than assumed, plus a
+line naming which passes that route SKIPPED and telling you to run the other
+medium separately. If the configured route and the live route disagree the
+header goes red and says not to read the numbers.
+
+This exists because a session reported this bench as "verified" when every figure
+in it was a watercolour figure and the change it verified could not run for oil.
+The scope is now the second thing on screen.
 
 ## TRAP — a hidden page does not run the benches (2026-08-29, measured)
 

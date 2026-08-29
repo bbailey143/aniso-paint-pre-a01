@@ -563,3 +563,82 @@ of inheriting watercolour's.
 **Rule earned.** Do not commit another model's unjudged work together with a
 measured fix. If it has not been looked at, it goes in its own commit or stays
 out, so a verdict like this one can name a single cause.
+
+### E6 — oil's fish scales are made at DEPOSIT, one per frame (2026-08-29, Claude)
+
+**Purpose.** Oil had never been measured. E5 was watercolour throughout, and the
+passes it repaired do not run for a paste (E5a). Give oil its own numbers.
+
+**Method.** `fish-scale-bench.ts` now takes the medium, brush and paper from the
+query (`?fish-scale=1&medium=oil`), defaults oil to Flat Hog, and builds a ladder
+appropriate to the ROUTE the engine actually takes — read back off
+`engine.fluid.params`, never assumed from the medium's name. For a paste the
+velocity and relaxation rungs are removed rather than printed as no-change rows,
+and the face-ownership and relaxation sweeps are skipped and said to be skipped,
+because a paste has no velocity field to probe. Watercolour defaults were checked
+to return byte-identical figures to E5 first (full pipeline 0.01266, capillary
+0.03641, water flux 0.05135, 8 steps 0.00000, west face 0.00679857).
+
+**Raw result — Oil / Flat Hog / Flat White, every pair exact, reproduced across
+fresh loads.**
+
+| stage | edge ripple | repeat |
+|---|---:|---:|
+| CPU footprint | 0.00312 | 2 cells |
+| **deposit only** | **0.04277** | **16 cells** |
+| deposit + brush shove | 0.04549 | 16 |
+| + outward scratch | 0.04549 | 16 |
+| + slump ledger | 0.04549 | 16 |
+| + pigment flux | 0.04549 | 16 |
+| + paint flux | 0.04549 | 16 |
+| + pigment transfer / capillary / drying | 0.04549 | 16 |
+| full pipeline | 0.04549 | 16 |
+| 1, 2, 4, 8, 16, 32 flow steps | 0.04549 | 16 |
+
+**What it proves. Oil's scales are stamped by the deposit, not grown by the
+fluid.** 94% of the finished ripple (0.04277 of 0.04549) is present with every
+GPU flow pass disabled; the brush shove adds the last 6%; and after that nothing
+moves the number by one part in 10^5 — not the slump against the yield, not the
+outward bias, not pigment transfer, not capillary, not drying, and not
+thirty-two further flow steps. This is the opposite of watercolour, where deposit
+was smooth and the rhythm grew inside shared water motion (E4).
+
+**The wavelength is frame travel.** `?group=N` sets how many stylus reports are
+bundled into one simulated browser frame, at 4 cells per report:
+
+| reports per frame | frame travel | measured repeat | deposit ripple |
+|---:|---:|---:|---:|
+| 1 | 4 cells | **4 cells** | 0.01294 |
+| 2 | 8 cells | **8 cells** | 0.03962 |
+| 4 | 16 cells | **16 cells** | 0.04277 |
+| 8 | 32 cells | (2 — see below) | 0.03972 |
+
+The repeat tracks frame travel exactly at 1, 2 and 4. That rules out the
+alternative worth ruling out: `TREND_RADIUS` is also 16, so a fixed 16-cell
+answer would have been the detrend talking rather than the paint. It is not
+fixed — it moves with the frame. **One scale per engine frame.**
+
+At 8 reports per frame the reported repeat drops to 2, which is a limit of the
+instrument and not a counterexample: the moving-mean detrend has radius 16, so a
+32-cell wavelength is largely subtracted before the autocorrelation sees it.
+Raise `TREND_RADIUS` before reading anything at that bundling.
+
+**And it scales with bundling.** One report per frame gives 0.01288 finished
+against 0.04549 at four — **3.5x smaller**. The CPU footprint is smooth
+throughout (0.00312), so the brush geometry is not at fault; what matters is how
+that footprint is handed to `deposit.wgsl` in per-frame batches.
+
+**What it does NOT prove.** Which line in `deposit.wgsl` does it. The candidates
+are how a frame's segments are accumulated, and anything that resets or
+re-normalises per dispatch rather than per segment. This also does not say the
+fix is "submit smaller frames" — that is a frame-rate-dependent mark, which is
+its own defect: the same stroke would look different on a fast and a slow
+machine. It says the per-frame seam is the generator, and the deposit is where
+to look.
+
+**Relation to the older banding bench.** `banding-bench.ts` was built for exactly
+this and reported a "frame-locked ridge span" that widened with bundling
+(0.0543 at one report per frame against 0.0918 at four). That was the same
+finding on the Oil route, in a different metric, and it was read at the time as a
+Smear seam. E6 says the seam survives with Smear off and with every flow pass
+off, so it is upstream of both.
