@@ -218,51 +218,51 @@ across fresh loads. Full table: `docs/19` **E6**.
   0.04549 at four — 3.5x. The CPU footprint stays smooth (0.00312), so the brush
   geometry is fine; it is how that footprint reaches `deposit.wgsl` per frame.
 
-## OIL'S SEAM FOUND AND HALF-CLOSED (2026-08-29, Claude)
+## OIL'S SEAM CLOSED - fast strokes now behave like slow ones (2026-08-29)
 
-**It was the fresh-paint levelling in `deposit.wgsl`, and it is now its own
-pass.** Switching that block off dropped oil's stored edge ripple 0.04277 ->
-0.00312 — the CPU footprint's own figure — and the 16-cell repeat became 2. The
-whole of oil's fish scales was those nineteen lines. Full numbers: `docs/19` E7.
+**It was the fresh-paint levelling in `deposit.wgsl`, in two parts.** Numbers in
+`docs/19` E6/E7/E8.
 
-**Why it could not work there.** To level a ridge you compare with your
-neighbours. Inside the deposit a cell knows its own new height but reads
-neighbours from `wet0_in`, which that pass has not written yet — so it compared
-post-deposit self against PRE-deposit neighbours, and how wrong that is depends
-on how much paint the frame was carrying. One scale per frame.
+1. **Where it measured.** It compared each cell's post-deposit height against its
+   neighbours' PRE-deposit heights - inside the deposit pass the neighbours' new
+   heights do not exist yet. Moved to `level_fresh.wgsl`, run after the deposit
+   and before the appliers, both sides post-deposit.
+2. **How often it ran.** Once per browser frame, so a frame carrying sixteen
+   cells of travel got one smoothing sweep where a slow stroke got sixteen. The
+   count now follows brush solve steps (cap `LEVEL_SWEEP_MAX = 8`) with the
+   per-sweep budget divided by it - same total paint moved, delivered as finely
+   as the travel deserves.
 
-**Fixed** by moving it to `level_fresh.wgsl`, dispatched after the deposit and
-before the appliers, with both sides post-deposit. The deposit publishes what it
-laid via a new `fresh` buffer. Oil full-pipeline ripple **0.04549 -> 0.02987**;
-frame dependence 3.53x -> 2.27x. Conservation holds (~0.005%). Watercolour is
-byte-identical — the pass returns at once for any zero-yield medium.
+| Oil full pipeline, Flat White | |
+|---|---:|
+| before | 0.04549 |
+| after | **0.01424** |
+| frame dependence | 3.53x -> **1.13x** |
 
-**STILL NOT A CURE, and the reason is known.** The levelling runs ONCE PER
-FRAME, so a frame carrying four reports gets one smoothing step where four
-single-report frames get four. The deposit itself is frame-invariant (proved:
-with levelling off it returns the CPU figure at any bundling), so this is the
-last term.
+Cotton Duck: 0.03520 -> 0.01425. Conservation ~0.02%. Watercolour byte-identical
+- sweeps are 1 for any zero-yield medium.
+
+**Cost about 2-3 ms/frame** (9.2-9.5 against 6.4-7.8 with the cap forced to 1),
+RX 570, inside the 16.7 ms budget. Noisy, upper bound, no timestamp queries.
+**`LEVEL_SWEEP_MAX` is the dial if the iPad is tight.**
 
 ## NEXT ACTION
 
-1. **Look at it.** Oil, Flat Hog, on canvas. The measured drop is 34% at normal
-   bundling; whether that reads as fixed is the artist's call, and it decides
-   whether the remaining 2.27x is worth paying for.
-2. **`?full-check` on a VISIBLE page — NOT YET RUN against this change.** The
-   pickup and banding suites are pacing-sensitive and cannot run on a hidden
-   page, so oil stacking and brush holding are unmeasured. Do this before
-   trusting the change beyond the fish-scale numbers.
-3. If the residual must go, two options, both COST decisions to be timed against
-   the D7 budget on the bench first:
-   - iterate `level_fresh` + appliers once per brush solve step, budget split
-     `laid * 0.8 / steps`;
-   - chunk the deposit per solve step, so the GPU never sees a bundle (~16
-     submits per frame instead of one).
-   **Never "submit smaller frames" as the fix** — that is a frame-rate-dependent
-   mark, different on a fast machine than a slow one. It is the diagnostic.
+1. **Look at it.** Oil, Flat Hog, Cotton Duck. Paint the same mark slow and fast;
+   the gap photographed on 2026-08-29 should be gone. That is the acceptance
+   test, not the numbers.
+2. **`?full-check` on a VISIBLE page - STILL NOT RUN against E7 or E8.** Those
+   suites are pacing-sensitive and cannot run on a hidden page, so oil stacking
+   and brush holding are unmeasured against both changes.
+3. Time it on the iPad before assuming 2-3 ms is affordable there.
 
 Still open on watercolour: the late residual (ripple at 16 and 32 flow steps
 worse than baseline, 0.03370 -> 0.04973).
+
+Open and unexplained: in the artist's 2026-08-29 screenshot a purple stroke
+(orange + blue) drifts warm to cool along its length, which would be the two
+pigments leaving the brush at different rates. Not measured, and separate from
+the fish scales.
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 

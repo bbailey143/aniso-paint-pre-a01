@@ -718,3 +718,62 @@ machine and a slow one, and it is what the diagnostic deliberately exploits.
 suites must run on a VISIBLE page (E5a trap), and this session's browser pane is
 hidden. Oil stacking and brush holding are therefore unmeasured against this
 change. Run them before trusting it beyond the fish-scale numbers.
+
+### E8 — the fast/slow gap closed: levelling sweeps follow the paint (2026-08-29, Claude)
+
+**The artist's test confirmed the diagnosis by eye.** Asked to paint the same
+mark slow and fast, Bartford reported slow strokes visibly cleaner and the E7
+fix "a mild improvement, not enough, right direction". That is what a
+frame-locked defect looks like from outside: a slow hand puts less travel in
+each frame.
+
+**The remaining term.** E7 fixed WHERE the levelling measured. It did not fix
+HOW OFTEN it ran. Levelling is a smoothing sweep, and one sweep over a frame
+carrying sixteen cells of travel is not the same as sixteen sweeps over one cell
+each — the second is precisely what a slow stroke was getting.
+
+**The fix.** The sweep count follows the paint, not the browser: one per brush
+solve step in the chunk (counted on the CPU from `stepId`), capped at
+`LEVEL_SWEEP_MAX = 8`, with the per-sweep budget divided by the count used. The
+total paint the levelling may move over a stroke is unchanged — still
+`laid * 0.8` summed — but delivered in as many small sweeps as the travel
+deserves. The brush's shove rides the first sweep only; the ledger is cleared
+after each, so later sweeps carry levelling alone.
+
+| Oil, full pipeline, Flat White | value |
+|---|---:|
+| before any fix | 0.04549 |
+| E7, pass moved | 0.02987 |
+| **E8, sweeps follow travel** | **0.01424** |
+
+| frame dependence (group 4 vs group 1) | ratio |
+|---|---:|
+| before | 3.53x |
+| E7 | 2.27x |
+| **E8** | **1.13x** |
+
+On Cotton Duck, the surface the artist paints on: **0.03520 -> 0.01425**.
+Deposit-only 0.01323. Both reproduced across fresh loads.
+
+**In plain terms: a fast stroke now behaves like a slow one.** Group 4 measures
+0.01424 against group 1's 0.01608, so the fast case is if anything marginally
+the smoother, where it used to be 3.5x worse. The gap the artist photographed is
+closed to within noise.
+
+**Cost, measured and honestly approximate.** Oil / Flat Hog / Cotton Duck, the
+same 84-input stroke at four reports per frame, timed around
+`queue.onSubmittedWorkDone`: about **9.2-9.5 ms per frame with sweeps against
+6.4-7.8 ms with the cap forced to 1**. Roughly 2-3 ms, inside the 16.7 ms budget
+on the RX 570. Treat as an upper bound and as noisy — JS and submit overhead
+included, identical runs varied by 1.4 ms, no timestamp queries under D12.
+**`LEVEL_SWEEP_MAX` is the dial if the iPad is tight; a cost ceiling, not a
+physical constant.**
+
+**Conservation holds.** Total film 536.15 against HEAD's 536.25, about 0.02%,
+which is levelling running off the sheet edge slightly differently. Watercolour
+byte-identical (0.01266 / 0.03641 / 0.05135 / 0.00000 / west 0.00679857):
+sweeps are 1 for any zero-yield medium and the shader returns at once.
+
+**Still not verified.** `?full-check` has not been run against E7 or E8 — the
+pickup and banding suites need a VISIBLE page. Oil stacking and brush holding
+are unmeasured against both.

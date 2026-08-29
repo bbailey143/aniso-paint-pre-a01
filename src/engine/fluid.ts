@@ -62,6 +62,13 @@ const PICKUP_TALLY = 1.0e5;
 // segment per resampled step, so this is bristles x contacts x substeps.
 const MAX_SEGS = 8192;
 const SEG_FLOATS = 12;         // deposit contact + local resampled drag vec2 + pad
+
+/** Levelling sweeps per deposit chunk. One per brush solve step is the ideal —
+ *  it is what a slow stroke gets — but a fast flick can carry dozens, so the
+ *  count is capped and the per-sweep budget divided by the count actually used.
+ *  8 is a cost ceiling, not a physical number. [UNVERIFIED as a visual choice;
+ *  raise it and look, the arithmetic holds at any value.] */
+const LEVEL_SWEEP_MAX = 8;
 // Dry tools also carry the long axis of a tilted contact ellipse. It remains a
 // separate layout so wet-brush footprints stay byte-for-byte unchanged.
 const DRY_SEG_FLOATS = 10;
@@ -669,6 +676,19 @@ export class FluidEngine {
   }
 
   /** Bounding box of a run of segments, padded by each contact shape. */
+  /** How many distinct brush solves this chunk carries. `stepId` is lane 10 and
+   *  segments arrive in solve order, so a change of id is a new contact. This is
+   *  the honest measure of how much brush travel a frame bundled up. */
+  private solveSteps(segments: Float32Array, from: number, n: number): number {
+    let steps = 0;
+    let last = NaN;
+    for (let i = 0; i < n; i++) {
+      const id = segments[(from + i) * SEG_FLOATS + 10];
+      if (id !== last) { steps++; last = id; }
+    }
+    return steps;
+  }
+
   private segBounds(segments: Float32Array, from: number, n: number,
                     stride = SEG_FLOATS, hasTiltedContact = false) {
     let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
@@ -884,29 +904,48 @@ export class FluidEngine {
          Pigment BEFORE water — the fraction leaving is measured against the
          vehicle present before the move, which is what makes a dirty brush
          drag one colour through another instead of bleaching it. */
-      /* Fresh-paint levelling, for pastes. It MUST be its own pass: it compares
-         each cell's new height with its neighbours' NEW heights, and inside the
-         deposit those do not exist yet. Run here, after the flip and before the
-         appliers, it adds into the same outflow ledger the shove used, so the
-         one conservative applier below moves both. Doing it inside the deposit
-         compared post-deposit self against pre-deposit neighbours and was the
-         whole of oil's fish scales - one scale per frame. docs/19 E7.
-         The shader returns immediately for any zero-yield medium, so
-         watercolour is untouched and pays one cheap dispatch. */
-      {
+      /* Fresh-paint levelling, for pastes. TWO things make it frame-invariant,
+         and it took both.
+
+         (1) It MUST be its own pass. It compares each cell's new height with
+         its neighbours' NEW heights, and inside the deposit those do not exist
+         yet — a cell there compared post-deposit self against pre-deposit
+         neighbours, which was the whole of oil's fish scales.
+
+         (2) It must run once per BRUSH SOLVE STEP, not once per browser frame.
+         Levelling is a smoothing sweep, and one sweep over a frame carrying
+         sixteen cells of travel is not the same as sixteen sweeps over one cell
+         each — the second is what a slow stroke gets, and the artist confirmed
+         by eye on 2026-08-29 that slow strokes come out visibly cleaner. So the
+         sweep count follows the paint, and the per-sweep budget is divided by
+         it, leaving the TOTAL paint moved identical however the stroke is cut
+         into frames. docs/19 E7/E8.
+
+         Cost is bounded: the cap is LEVEL_SWEEP_MAX, and the expensive case is
+         exactly the fast flick that currently looks worst, which is brief. The
+         shader returns immediately for any zero-yield medium, so watercolour
+         pays one cheap dispatch and nothing else. */
+      const sweeps = this.params.yieldStress > 0
+        ? Math.max(1, Math.min(LEVEL_SWEEP_MAX, this.solveSteps(segments, done, n)))
+        : 1;
+      for (let sweep = 0; sweep < sweeps; sweep++) {
+        ctl[11] = sweeps;
+        device.queue.writeBuffer(this.ctlBuf, 0, ctl);
         const lpass = denc.beginComputePass({ label: 'level-fresh' });
         this.dispatch(lpass, this.pipes.levelFresh, [
-          U, this.wet0.src, { buffer: this.freshBuf }, { buffer: this.fluxBuf },
+          U, this.wet0.src, { buffer: this.ctlBuf }, { buffer: this.freshBuf },
+          { buffer: this.fluxBuf },
         ]);
         lpass.end();
-      }
 
-      /* Every wet material, matching the shader. Gating this on a yield stress
-         would have left watercolour writing a smear flux that nothing applied —
-         and `flux_compute` overwrites the buffer later in the frame, so it
-         would have been discarded without a trace. Only runs when there are
-         segments, so it costs an idle sheet nothing. */
-      {
+        /* Every wet material, matching the shader. Gating this on a yield
+           stress would have left watercolour writing a smear flux that nothing
+           applied — and `flux_compute` overwrites the buffer later in the
+           frame, so it would have been discarded without a trace. Only runs
+           when there are segments, so it costs an idle sheet nothing.
+           Pigment BEFORE water: the fraction leaving is measured against the
+           vehicle present before the move, which is what makes a dirty brush
+           drag one colour through another instead of bleaching it. */
         const spass = denc.beginComputePass({ label: 'smear' });
         this.dispatch(spass, this.pipes.fluxPig, [
           U, this.wet0.src, this.wet1.src, this.wet2.src, { buffer: this.fluxBuf },
@@ -918,6 +957,11 @@ export class FluidEngine {
         ]);
         this.wet0.flip();
         spass.end();
+        /* The brush's shove is in the ledger for the FIRST sweep only; clearing
+           here stops later sweeps re-applying it, and leaves them carrying
+           levelling alone. flux_compute overwrites this buffer later in the
+           frame regardless, so clearing costs nothing downstream. */
+        denc.clearBuffer(this.fluxBuf);
       }
       device.queue.submit([denc.finish()]);
     }

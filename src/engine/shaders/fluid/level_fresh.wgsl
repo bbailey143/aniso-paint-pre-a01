@@ -37,14 +37,28 @@
 // by dt alone would not be — a stroke in twice as many frames would get twice
 // as many levelling passes.
 
+struct Ctl {
+  count: f32,
+  minX: f32, minY: f32, maxX: f32, maxY: f32,
+  travelX: f32, travelY: f32,
+  smear: f32,
+  upRate: f32,
+  brushTake: f32, brushGrab: f32,
+  /** Levelling sweeps this chunk is being given — one per brush solve step,
+   *  capped on the CPU. The budget below is divided by it. */
+  sweeps: f32,
+};
+
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
 /** (what this frame laid here, how hard the hairs pressed) from deposit.wgsl. */
-@group(0) @binding(2) var<storage, read> fresh: array<vec2<f32>>;
+@group(0) @binding(2) var<uniform> C: Ctl;
+/** (what this frame laid here, how hard the hairs pressed) from deposit.wgsl. */
+@group(0) @binding(3) var<storage, read> fresh: array<vec2<f32>>;
 /** The same outflow ledger the deposit wrote its shove into. Added to, not
  *  replaced: the shove and the levelling both leave the same cell, and the one
  *  ceiling below is applied over their sum. */
-@group(0) @binding(3) var<storage, read_write> flux: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read_write> flux: array<vec4<f32>>;
 
 /** A neighbour's film height, AFTER the deposit. Off the sheet reads as
  *  nothing there, which is correct: paint does level off the edge. */
@@ -89,7 +103,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     levelOut(top, filmAt(vec2<i32>(c.x, c.y - 1), n), yieldHere),
   );
   let asks = lvl.x + lvl.y + lvl.z + lvl.w;
-  let flowing = laid * 0.8;
+  /* Divided across the sweeps this chunk gets, so the TOTAL paint the levelling
+     may move over a stroke is the same however the stroke was cut into frames.
+     Sixteen cells of travel in one frame now get the same total levelling as
+     sixteen frames of one cell — which is what a slow stroke was already
+     getting, and why slow strokes came out visibly cleaner. */
+  let flowing = laid * 0.8 / max(C.sweeps, 1.0);
   if (asks > flowing && asks > 0.0) { lvl = lvl * (flowing / asks); }
 
   /* One ceiling over the shove and the levelling together, because both come
