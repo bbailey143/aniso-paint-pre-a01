@@ -516,3 +516,50 @@ consequences, decided differently on purpose:
   credit can land, so how long it takes changes what they measure. **Run those
   two on a visible page.** Making that yield fast is not a shortcut, it is a
   change to the experiment.
+
+### E5a — correction: E5 is a WATERCOLOUR result, and oil never ran those passes (2026-08-29, Claude)
+
+**The artist's verdict, and it is right.** Shown the tree from E5, Bartford
+reported oil "way way way worse" and watercolour improved. Both halves are true,
+and the split identifies the cause exactly.
+
+**E5's scope was overstated.** `fish-scale-bench.ts` hardcodes `WATERCOLOR`,
+`round-sable` and `FLAT_WHITE`. Every figure in E5 is a watercolour figure. Oil
+was never measured, and E5 should have said so instead of reading as a general
+"verified".
+
+**The fluid repair cannot affect oil at all.** `src/engine/fluid.ts:927`:
+
+```
+const paste = !this.params.hasCurrent || this.params.yieldStress > 0;
+if (!paste) run('vel',   ...)   // UpdateVelocities
+if (!paste) run('relax', ...)   // RelaxDivergence
+```
+
+Oil is a paste on two independent counts — `yieldStress 0.34` and
+`hasCurrent false` — confirmed live from `engine.fluid.params`, not read off the
+source. A paste is moved by its own steepness against its yield in
+`flux_compute`, and reads no velocity field. Both shaders changed in `eeb96d0`
+are skipped for it. **Do not look for oil's fish scales in `update_velocities`
+or `relax_divergence`. They do not run.**
+
+**What actually broke oil: the studio lighting, bundled in by mistake.** Codex's
+flat-lighting change sat uncommitted and unjudged; it was committed alongside the
+fluid fix, which it should not have been. It moved the shading floor from
+`mix(0.82, 0.25, paintShare)` to `mix(0.88, 0.58, paintShare)`, and `paintShare`
+rides `C.paintRelief`. On oil impasto the darkest a slope may go went from 0.25
+to **0.58** — shadows less than half as deep — with a further 0.28 fill light
+flattening what remained. Watercolour carries almost no relief, so `paintShare`
+is near zero and only the paper floor moved, 0.82 -> 0.88. That is the medium
+split precisely. Reverted in `7b6d681`; the fluid fix stays.
+
+**What this leaves open.** Oil's fish scales are undiagnosed and unmeasured. The
+generator for oil must be in the paste route — `flux_compute`'s yield gate and
+its four-face split, the brush shove, or fresh-body levelling — and none of it
+has been instrumented. **The next real job is an oil arm on the fish-scale
+bench**: same discriminator, `OIL` and a flat brush, so oil gets numbers instead
+of inheriting watercolour's.
+
+**Rule earned.** Do not commit another model's unjudged work together with a
+measured fix. If it has not been looked at, it goes in its own commit or stays
+out, so a verdict like this one can name a single cause.

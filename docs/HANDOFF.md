@@ -199,15 +199,25 @@ true. Read E4 before re-opening any of it.
 
 ## NEXT ACTION
 
-1. **Let Bartford look at it.** Port 5174, paint one Round Sable watercolour
-   stroke on Flat White, then Flat Hog. Toggle Terrain View. The question is
-   whether the scales are gone to the eye, not whether 0.01266 < 0.04551.
-2. Then the late residual: why 16 and 32 flow steps got worse. Start from
-   `flux_compute` mobility, since velocity and relaxation are now symmetric and
-   `flux_apply_water` only applies what it is handed.
+**Read `docs/19` E5a first.** The artist judged the E5 tree: oil "way way way
+worse", watercolour improved. Cause found and reverted (`7b6d681`) — it was
+Codex's unjudged studio lighting, bundled into the fluid commit by mistake, which
+halved the depth of oil's shadows. The fluid fix stays and is watercolour's.
+
+1. **OIL HAS NEVER BEEN MEASURED.** `fish-scale-bench.ts` hardcodes Watercolour /
+   Round Sable / Flat White, so every E5 number is a watercolour number. Oil is a
+   PASTE (`fluid.ts:927`): `update_velocities` and `relax_divergence` are skipped
+   for it entirely, confirmed live. Oil's scales must come from the paste route —
+   `flux_compute`'s yield gate and four-face split, the brush shove, or fresh-body
+   levelling. **Build an oil arm on the bench before touching any of it.**
+2. Watercolour's late residual: ripple at 16 and 32 flow steps is worse than
+   baseline (0.03370 -> 0.04973, 0.02891 -> 0.03619). Start at `flux_compute`
+   mobility; velocity and relaxation are now symmetric.
 3. `?full-check` on a VISIBLE page — crossing lift reads 44.9% against 36%
-   recorded 2026-08-28 and it is NOT the fluid change (both arms agree). See the
-   trap below.
+   recorded 2026-08-28, and it is NOT the fluid change (both arms agree).
+
+**Do not commit unjudged work beside a measured fix.** That is what made this
+verdict ambiguous for an hour. Its own commit, or it stays out.
 
 ## TRAP — a hidden page does not run the benches (2026-08-29, measured)
 
