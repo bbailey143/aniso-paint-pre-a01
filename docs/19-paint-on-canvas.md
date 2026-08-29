@@ -353,3 +353,166 @@ snakeskin, that exponent 1.6 is the right feel, or that moving the step is an
 adequate final substitute for making contact continuous. The E2 numerical fix
 was also real but visually rejected, so this remains an artist trial until a
 matched Hog/Sable broadside comparison is judged on the live page.
+
+### E4 — smooth brush marks become fish scales inside shared water motion (2026-08-29)
+
+**Purpose.** Find the first stage that turns a steady Round Sable mouse stroke
+into the same repeating edge scallop seen with both flat brushes, without
+changing pressure, brush shape, paper, lighting, or paint settings.
+
+**Method.** A temporary live WebGPU discriminator was added behind
+`?fish-scale=1`. It uses Watercolour, Round Sable size 1, Flat White, fixed mouse
+pressure 0.65, and the same horizontal resampled path for every condition.
+Pickup is disabled so only laid paint is measured. The CPU footprint and GPU
+passes are enabled cumulatively, then a second control lays one smooth deposit
+with flow disabled and advances water motion for 1, 2, 4, 8, 16, or 32 empty
+steps. A final eight-step split enables the raw velocity force, divergence
+relaxation, and outward edge-pressure bias separately. Every condition is run
+twice; the metric retains the complete two-dimensional cross-section and
+measures the residual variation in the 90%-mass edge width.
+
+**Raw result.** All paired runs reproduced exactly. The CPU footprint and GPU
+deposit each had 0.00000 edge ripple. Deposit plus normal brush shove, velocity,
+divergence relaxation, outward bias, the first flux ledger, and pigment flux
+also remained 0.00000. Applying water flux was the first stored-paint change:
+edge ripple became 0.04334 with a two-cell repeat. Pigment transfer did not
+change it; capillary and drying altered its strength but did not remove it.
+
+In the smooth-deposit/flow-only control, stored paint remained at 0.00000 after
+1, 2, and 4 steps. The movement ledger developed 0.11942 edge ripple at step 4;
+stored paint then reached 0.03317 at step 8 and 0.03370 at step 16. At exactly
+eight steps, the force split measured:
+
+| active water-motion parts | stored edge ripple | dominant repeat |
+|---|---:|---:|
+| velocity -> flux -> apply | 0.01977 | 2 cells |
+| velocity + divergence relaxation -> flux -> apply | 0.03435 | 4 cells |
+| outward bias -> flux -> apply | 0.00000 | none |
+| velocity + outward bias -> flux -> apply | 0.02065 | 4 cells |
+| all water motion | 0.03317 | 2 cells |
+
+`npm.cmd run build` passed after the final split. The full live result remains
+available as `window.__fishScaleResult` on the diagnostic page.
+
+**What it proves.** The shared fish-scale pattern is not stamped by the brush.
+The Round footprint is smooth, and the GPU stores that smooth deposit exactly.
+A short-wavelength rhythm first grows in the shared movement ledger, then its
+conservative water application writes the rhythm into paint height. Raw
+velocity-driven movement starts it; the current divergence-relaxation pass
+amplifies it in this test instead of damping it. That shared fluid loop explains
+why Round, Flat Sable, and Flat Hog can show the same pattern in Watercolour and
+Oil, while paper relief and lighting merely make the stored ridges easier to see.
+
+**What it does NOT prove.** `flux_apply_water.wgsl` is itself arithmetically
+wrong; applying a patterned ledger will necessarily produce patterned height.
+The remaining question is why `update_velocities` and `relax_divergence` grow
+the two-cell mode that feeds `flux_compute`. No production fluid constant or
+brush setting has been changed, and the visible defect is diagnosed, not fixed.
+
+### E5 — the dead west and north faces, verified; and the seam between two shaders (2026-08-29, Claude)
+
+**Purpose.** Codex reported in chat, and in no file, that a change to
+`update_velocities.wgsl` and `relax_divergence.wgsl` cut the finished stroke's
+edge ripple from 4.55% to 1.38%. Reproduce that independently before it is
+believed, decide whether it breaks the paint, and check one defect found by
+reading rather than measuring.
+
+**Method.** Three arms of the same `?fish-scale=1` bench, unchanged between
+arms: HEAD (baseline), Codex's candidate, and the candidate plus the seam repair
+below. Each arm was run on two fresh page loads, and each load runs every
+condition twice internally. Every pair in every arm reproduced exactly.
+
+**Raw result.**
+
+| measurement | baseline | candidate | + seam fix |
+|---|---:|---:|---:|
+| finished mark, full pipeline | 0.04551 | 0.01376 | **0.01266** |
+| after capillary | 0.03853 | 0.05526 | **0.03641** |
+| after water flux | 0.04334 | 0.05135 | 0.05135 |
+| smooth deposit, 8 flow steps | 0.03317 | **0.00000** | 0.00000 |
+| smooth deposit, 16 flow steps | 0.03370 | 0.04973 | 0.04973 |
+| smooth deposit, 32 flow steps | 0.02891 | 0.03619 | 0.03619 |
+| outward speed, west face | **0.00000** | 0.00680 | 0.00680 |
+| outward speed, north face | **0.00000** | 0.00823 | 0.00823 |
+| outward speed, east / south | 0.00085 / 0.00055 | 0.00085 / 0.00055 | unchanged |
+
+**What it proves.** Codex's 4.55% and 1.38% are real, and so is its stated
+mechanism. The baseline west and north outward speeds are not small, they are
+*exactly zero*: `update_velocities` returned early whenever the owner cell was
+dry, and a wet region's west and north boundary faces are owned by its dry
+neighbours. Water could leave a stroke on two sides and not the other two. The
+repair makes a face live when either adjacent cell is wet, and after it all four
+faces carry speed in the same proportion to the film standing at them
+(speed/height 0.939, 0.933, 0.938, 0.936 east/west/south/north) — that ratio
+agreeing on all four sides is what "symmetric" means here, not the raw speeds,
+which follow the paint.
+
+Separately, `relax_divergence` now converges monotonically: mean |divergence|
+0.1248 -> 0.1049 -> 0.0891 -> 0.0662 -> 0.0393 -> 0.0155 over 0, 1, 2, 4, 8, 16
+iterations, with the open boundary faces untouched at every count.
+
+**THE SEAM — the two shaders disagreed about what "wet" means.** Found by
+reading, then measured. `update_velocities` tested `mask AND film > WET_EPS`;
+`relax_divergence` tested the mask alone. That is not a hair-splitting
+difference, because the mask does not mean "there is film here":
+`flux_apply_water` sets the mask and never clears it, `capillary_flow` sets it
+on absorbed water with no film at all, and only `dry_tick` clears it, and only
+once film, absorbed water and the blurred mask are all gone. The damp halo of
+paper that has drunk the water but holds no standing film therefore rings every
+stroke, and it was interior to the relaxation while the velocity pass called it
+dry and wrote zero to its faces — the same one-sided gather the fix removes,
+surviving in the seam between two files. `relax_divergence` now uses the
+velocity pass's test, in `wet_at` and in `dv`'s own early-out.
+
+The measurement matches the mechanism exactly, which is the reason to believe
+it: the seam repair moves the two figures that involve absorbed water (capillary
+0.05526 -> 0.03641, finished mark 0.01376 -> 0.01266) and leaves every
+flow-only figure bit-identical, because those conditions never run capillary and
+so never produce a mask-wet cell with no film.
+
+**What it does NOT prove, and what got worse.** The candidate is not a clean
+win. Ripple after 16 and 32 flow steps is *higher* than baseline (0.03370 ->
+0.04973, 0.02891 -> 0.03619), and the seam fix does not touch that. A single
+stroke settles smooth where it did not before; a wash left to move for longer
+does not. That is the "late residual", and on this metric it is not merely
+un-erased but increased. Nothing here explains why, and no fluid constant was
+tuned to hide it.
+
+**Regression: the paint still behaves.** Baseline and candidate were measured
+under identical conditions. Pigment on the canvas is unchanged (soak: 4045.97
+then 4046.10 held, both arms, no blow-ups in 4/4 sessions). Brush holding
+92.6% / 92.6%, passed, both arms. Watercolour conservation drift went from
+0.000002 to exactly 0. Crossing lift, trail and stacking read the same in both
+arms, so the fluid change moves none of them.
+
+**Open, and not attributed.** Three things this run surfaced and did not settle:
+
+- Crossing lift measures 44.9% with the trail collapsed to `4.6 -> 0 -> 0 -> 0`,
+  against 36% and `15.8 -> 1.9` recorded on 2026-08-28. Both shader arms give
+  44.9%, so it is not the fluid change. It is either the commits since that date
+  or the bench-pacing hazard below. **Re-run `?full-check` on a VISIBLE page
+  before trusting either figure.**
+- Oil stacking returned 0.928 / 0.927 from two identical runs in one load. Small,
+  but it is a paired disagreement and the suite has been assumed deterministic.
+- The stroke's film at its north boundary measures 15x its film at the south
+  boundary (0.00879 vs 0.00059) after deposit alone, with gravity zero, in both
+  arms. A horizontal stroke should not be lopsided — but this may equally be a
+  half-cell sampling offset in `boundaryOutflow` cutting a steep profile at
+  different heights top and bottom. Check the metric before calling it paint.
+
+**[TRAP, measured] A hidden page does not run these benches.** Chrome clamps
+`setTimeout` on a hidden page to one call per MINUTE after five minutes
+(intensive throttling), and does not fire `requestAnimationFrame` at all. The
+fish-scale bench paced at about one stroke-group per minute and read as a hang;
+the soak never advanced one session. This cost most of a session to find. Two
+consequences, decided differently on purpose:
+
+- `fish-scale-bench.ts` now yields through a `MessageChannel`, which is exempt.
+  Safe there because it disables pickup, and proven inert because it reproduced
+  four figures measured under the old timer exactly (0.04334, 0.03317, 0.03370,
+  0.04551). `soak.ts` falls back the same way only when the page is hidden.
+- `pickup-bench.ts` and `banding-bench.ts` were deliberately left on the timer.
+  Both run WITH pickup enabled, and their yield exists so asynchronous pickup
+  credit can land, so how long it takes changes what they measure. **Run those
+  two on a visible page.** Making that yield fast is not a shortcut, it is a
+  change to the experiment.

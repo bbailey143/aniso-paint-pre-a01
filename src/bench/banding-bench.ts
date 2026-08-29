@@ -8,6 +8,7 @@
 // lighting?
 
 import { BRUSHES } from '../brush/library';
+import { esc, ok, warn, headline, makePanel } from './panel';
 import { OIL } from '../media/library';
 import { CANVASES } from '../substrate/papers';
 
@@ -24,7 +25,13 @@ const sample = () => ({
   pressure: 0.75, tiltAngle: 35, tiltAzimuth: 90, twist: 0,
 });
 
-const yieldTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/* `[TRAP, measured 2026-08-29]` This MUST stay a timer, and this bench must be
+   run on a VISIBLE page. It yields so asynchronous pickup credit can land, and
+   this bench runs WITH pickup enabled, so how long the yield takes changes what
+   is measured. Chrome clamps setTimeout on a HIDDEN page to one call per MINUTE,
+   which makes this look hung; a MessageChannel yield fixes the hang and moves
+   the numbers, so it was reverted. Show the page instead. */
+const yieldTask = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
 
 function setUp(engine: AnyRec, stroke: AnyRec) {
   const brush = BRUSHES.find((b) => b.slug === 'flat-sable');
@@ -193,48 +200,60 @@ function summary(result: AnyRec): string {
   const b = result.fourPerFrame;
   const p = result.fourPerFramePressureOnly;
   const c = result.fourPerFrameNoSmear;
+  // A pair that agrees is a row that passed; nothing else here has a threshold.
+  let allRepro = true;
+  const pairRow = (x: AnyRec, y: AnyRec, text: string) => {
+    const equal = JSON.stringify(x) === JSON.stringify(y);
+    if (!equal) allRepro = false;
+    return (equal ? ok : warn)(text);
+  };
+  const block = (label: string, r: AnyRec) => [
+    esc(label),
+    pairRow(r[0], r[1],
+      `  body ripple ${r[0].ripple} / ${r[1].ripple}\n`
+      + `  frame-locked ridge span ${r[0].boundaryPhaseSpan} / ${r[1].boundaryPhaseSpan}`),
+  ];
+  /* Build every row FIRST. `allRepro` is only true once each pairRow has had its
+     say, and an array literal evaluates in order - putting the headline inline
+     above the rows read "reproduced exactly" in green over four amber rows. */
+  const rows = [
+    ...block('1 input/frame (4-cell frames):', a),
+    ...block('4 inputs/frame (16-cell frames):', b),
+    ...block('4 inputs/frame, pressure shove ONLY:', p),
+    ...block('4 inputs/frame, Smear OFF (levelling still ON):', c),
+  ];
   return [
-    'FLAT-BRUSH STORED-HEIGHT TEST — finished',
+    headline(allRepro ? 'pass' : 'fail', 'FLAT-BRUSH STORED-HEIGHT TEST — finished'),
     '',
-    'Same Flat Sable / Oil / Cotton Duck stroke; only frame bundling changed.',
-    'Numbers are paired identical runs.',
+    esc('Same Flat Sable / Oil / Cotton Duck stroke; only frame bundling changed.'),
+    allRepro
+      ? ok('Every paired run reproduced exactly.')
+      : warn('SOME PAIRED RUNS DISAGREED — read the amber rows before the numbers.'),
     '',
-    `1 input/frame (4-cell frames):`,
-    `  body ripple ${a[0].ripple} / ${a[1].ripple}`,
-    `  frame-locked ridge span ${a[0].boundaryPhaseSpan} / ${a[1].boundaryPhaseSpan}`,
-    `4 inputs/frame (16-cell frames):`,
-    `  body ripple ${b[0].ripple} / ${b[1].ripple}`,
-    `  frame-locked ridge span ${b[0].boundaryPhaseSpan} / ${b[1].boundaryPhaseSpan}`,
-    `4 inputs/frame, pressure shove ONLY:`,
-    `  body ripple ${p[0].ripple} / ${p[1].ripple}`,
-    `  frame-locked ridge span ${p[0].boundaryPhaseSpan} / ${p[1].boundaryPhaseSpan}`,
-    `4 inputs/frame, Smear OFF (levelling still ON):`,
-    `  body ripple ${c[0].ripple} / ${c[1].ripple}`,
-    `  frame-locked ridge span ${c[0].boundaryPhaseSpan} / ${c[1].boundaryPhaseSpan}`,
+    ...rows,
     '',
-    `repeat difference: ${result.repeatDifference.onePerFrame} / ${result.repeatDifference.fourPerFrame} / ${result.repeatDifference.fourPerFramePressureOnly} / ${result.repeatDifference.fourPerFrameNoSmear}`,
+    esc(`repeat difference: ${result.repeatDifference.onePerFrame} / ${result.repeatDifference.fourPerFrame} / ${result.repeatDifference.fourPerFramePressureOnly} / ${result.repeatDifference.fourPerFrameNoSmear}`),
     '',
-    'The canvas now shows the final four-input/frame, Smear-off stroke.',
-    'Full profiles: window.__bandingResult',
+    esc('Green = the pair reproduced. Ripple figures are diagnostic, never a pass.'),
+    esc('The canvas now shows the final four-input/frame, Smear-off stroke.'),
+    esc('Full profiles: window.__bandingResult'),
   ].join('\n');
 }
 
 export function maybeRunBanding(engine: unknown, stroke: unknown): void {
   if (!new URLSearchParams(location.search).has('banding')) return;
-  const panel = document.createElement('div');
-  panel.id = 'banding-result';
-  panel.style.cssText =
-    'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:9999;' +
-    'width:min(620px,92vw);padding:14px 16px;border-radius:10px;' +
-    'background:rgba(12,12,14,.95);color:#e8e6e3;font:13px/1.45 ui-monospace,monospace;' +
-    'box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap;pointer-events:none';
-  panel.textContent = 'FLAT-BRUSH STORED-HEIGHT TEST\n\nrunning eight controlled strokes…';
+  const panel = makePanel(
+    'banding-result', '620px',
+    'FLAT-BRUSH STORED-HEIGHT TEST\n\nrunning eight controlled strokes…',
+  );
   document.body.appendChild(panel);
   // Let main.ts's already-requested opening frame finish before taking sole
   // ownership of frame advancement.
   setTimeout(() => {
     run(engine as AnyRec, stroke as AnyRec)
-      .then((result) => { panel.textContent = summary(result); })
-      .catch((err) => { panel.textContent = `banding test ERROR\n\n${String(err)}`; });
+      .then((result) => { panel.innerHTML = summary(result); })
+      .catch((err) => {
+        panel.innerHTML = headline('fail', 'banding test ERROR') + '\n\n' + esc(String(err));
+      });
   }, 50);
 }

@@ -14,17 +14,48 @@
 
 const XI: f32 = 0.1;   // C97 redistribution factor; must stay under 0.25
 
+fn u_at(c: vec2<i32>, n: i32) -> f32 {
+  if (oob(c, n)) { return 0.0; }
+  return textureLoad(wet0_in, c, 0).z;
+}
+
+fn v_at(c: vec2<i32>, n: i32) -> f32 {
+  if (oob(c, n)) { return 0.0; }
+  return textureLoad(wet0_in, c, 0).w;
+}
+
 fn dv(c: vec2<i32>, n: i32) -> f32 {
   if (oob(c, n)) { return 0.0; }
   let t = textureLoad(wet0_in, c, 0);
-  if (t.x < 0.5) { return 0.0; }
-  var uw = 0.0;
-  var vn = 0.0;
+  if (t.x < 0.5 || t.y <= WET_EPS) { return 0.0; }
   let l = vec2<i32>(c.x - 1, c.y);
+  let e = vec2<i32>(c.x + 1, c.y);
   let u_ = vec2<i32>(c.x, c.y - 1);
-  if (!oob(l, n))  { uw = textureLoad(wet0_in, l, 0).z; }
-  if (!oob(u_, n)) { vn = textureLoad(wet0_in, u_, 0).w; }
-  return (t.z - uw) + (t.w - vn);
+  let s = vec2<i32>(c.x, c.y + 1);
+  // Boundary flow into dry paper is a physical source/sink for the current wet
+  // region, not compression inside it. Including it in the projection made the
+  // solver "correct" a real outward velocity by drawing compensating flow
+  // through the wash, then amplified the scalloped binary edge every iteration.
+  let ue = select(0.0, t.z, wet_at(e, n));
+  let uw = select(0.0, u_at(l, n), wet_at(l, n));
+  let vs = select(0.0, t.w, wet_at(s, n));
+  let vn = select(0.0, v_at(u_, n), wet_at(u_, n));
+  return (ue - uw) + (vs - vn);
+}
+
+// SAME TEST AS update_velocities.wgsl. u and v are SURFACE-FILM velocities, and
+// flux_compute moves film. A cell can carry the wet mask with no film at all:
+// flux_apply_water sets the mask and never clears it, capillary_flow sets it on
+// absorbed water alone, and only dry_tick clears it once film, absorbed water
+// and the blurred mask are all gone. That damp halo rings every stroke. Testing
+// the mask alone here made the halo interior to the relaxation while
+// UpdateVelocities called it dry and wrote zero to its faces - the same
+// one-sided gather this pass was changed to remove, surviving in the seam
+// between the two files.
+fn wet_at(c: vec2<i32>, n: i32) -> bool {
+  if (oob(c, n)) { return false; }
+  let w0 = textureLoad(wet0_in, c, 0);
+  return w0.x >= 0.5 && w0.y > WET_EPS;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -34,14 +65,27 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (oob(c, n)) { return; }
 
   let w0 = textureLoad(wet0_in, c, 0);
-  if (w0.x < 0.5) { textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), w0.z, w0.w)); return; }
+  let e = vec2<i32>(c.x + 1, c.y);
+  let s = vec2<i32>(c.x, c.y + 1);
+  // Relax the same staggered faces that UpdateVelocities owns. A dry owner may
+  // still hold the west or north boundary face of a wet neighbour; skipping
+  // that invocation makes the gather one-sided even after velocity activation
+  // is repaired.
+  let activeU = wet_at(c, n) || wet_at(e, n);
+  let activeV = wet_at(c, n) || wet_at(s, n);
+  if (!activeU && !activeV) {
+    textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), 0.0, 0.0));
+    return;
+  }
 
   let delta_c = -XI * dv(c, n);
-  let delta_e = -XI * dv(vec2<i32>(c.x + 1, c.y), n);
-  let delta_s = -XI * dv(vec2<i32>(c.x, c.y + 1), n);
+  let delta_e = -XI * dv(e, n);
+  let delta_s = -XI * dv(s, n);
 
-  let nu = w0.z + (delta_c - delta_e);
-  let nv = w0.w + (delta_c - delta_s);
+  // The gather owns only faces with wet cells on both sides. Open boundary
+  // faces retain UpdateVelocities' symmetric value; dry/dry faces stay zero.
+  let nu = select(0.0, select(w0.z, w0.z + (delta_c - delta_e), wet_at(c, n) && wet_at(e, n)), activeU);
+  let nv = select(0.0, select(w0.w, w0.w + (delta_c - delta_s), wet_at(c, n) && wet_at(s, n)), activeV);
   // Containment (see `sane` in common.wgsl). The film rides through this pass
   // untouched; a copied field still has to come out sane.
   textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), clamp(nu, -1.0, 1.0), clamp(nv, -1.0, 1.0)));

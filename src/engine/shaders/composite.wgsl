@@ -763,7 +763,10 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let gx = paperGx + paintGx;
   let gy = paperGy + paintGy;
   let n = normalize(vec3f(-gx, -gy, 1.0));
-  let lightDir = normalize(vec3f(-0.35, -0.5, 0.78));
+  // Broad neutral studio lighting: a soft key plus opposite-side fill. The
+  // fill prevents relief from turning into a harsh black shadow.
+  let keyDir = normalize(vec3f(-0.35, -0.5, 0.78));
+  let fillDir = normalize(vec3f(0.25, 0.35, 0.90));
   // The lamp is in the room, not on the paper. The tooth is part of the sheet
   // and turns with it, so its normal is carried forward into screen space
   // before it meets a light that stays put — turn the sheet and the grain
@@ -771,7 +774,9 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   //
   // At rot = 0 this is the identity, so the unturned picture is untouched.
   let ns = vec3f(n.x * cr - n.y * sr, n.x * sr + n.y * cr, n.z);
-  let lambert = clamp(dot(ns, lightDir), 0.0, 1.0);
+  let keyLambert = clamp(dot(ns, keyDir), 0.0, 1.0);
+  let fillLambert = clamp(dot(ns, fillDir), 0.0, 1.0);
+  let lambert = 0.72 * keyLambert + 0.28 * fillLambert;
   /* How dark a slope facing away from the lamp is allowed to go.
    *
    * 0.82 is a PAPER number — "subtle; paper is not shiny" — and it is right for
@@ -809,7 +814,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let totalTilt = length(vec2f(gx, gy));
   let paintShare = clamp(paintTilt / max(totalTilt, 1.0e-5), 0.0, 1.0)
                  * clamp(C.paintRelief, 0.0, 1.0);
-  let shadeFloor = mix(0.82, 0.25, paintShare);
+  let shadeFloor = mix(0.88, 0.58, paintShare);
   let shade = shadeFloor + (1.0 - shadeFloor) * lambert;
 
   /* Sheen. The old result was added as raw white after the paint colour. Across
@@ -819,7 +824,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   let gloss = clamp(1.0 - C.kInstrument, 0.0, 1.0) * clamp(C.paintRelief, 0.0, 1.0);
   var sheen = 0.0;
   if (gloss > 0.0) {
-    let half = normalize(lightDir + vec3f(0.0, 0.0, 1.0));
+    let half = normalize(keyDir + vec3f(0.0, 0.0, 1.0));
     /* Tightness of the highlight. This was a hard 48, which is a small hot spot
        and is most of why thick paint read as plastic: a polished plane gives a
        tight glint, a paint surface full of brush furrows gives a broad soft
@@ -863,7 +868,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   // [UNVERIFIED visual mapping] deliberately short and soft; this is a ground
   // cue, not a second outline.
   let shadowStep = cellStep * 2.0;
-  let shadowSource = paint(wet0, uv + lightDir.xy * shadowStep).y;
+  let shadowSource = paint(wet0, uv + keyDir.xy * shadowStep).y;
   let shadowHeight = max(shadowSource - paint(wet0, uv).y, 0.0);
   // Only bare canvas receives the spill. The previous inverse factor darkened
   // the paint itself, which made an otherwise unaffected stroke look dirty.

@@ -19,13 +19,34 @@
  * copied from §3.3 unchanged. Do not commit this file.
  */
 
+import { esc, ok, bad, headline } from './bench/panel';
+
 type Gauges = { water: number; pigment: number; wetCells: number };
 
 const SESSIONS_DEFAULT = 8;
 const STROKES = 26;
 const BLOWN = 1e6;
 
-const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+/**
+ * Hand the frame back so the painting is visible while the soak runs.
+ *
+ * `[TRAP, measured]` A HIDDEN page never fires requestAnimationFrame at all,
+ * so this soak did not advance by a single session in an automated browser -
+ * it sat on "running 1 of 4" forever. The rAF is only here so the picture
+ * draws and the tab does not look hung (see the call site); every solver step
+ * and the gauge readback happen around it, not inside it. So when the page is
+ * hidden, yield through a MessageChannel instead, which is neither clamped nor
+ * suspended. A visible page keeps the original rAF pacing exactly.
+ */
+const nextFrame = () => new Promise<void>((r) => {
+  if (document.hidden) {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { ch.port1.close(); r(); };
+    ch.port2.postMessage(0);
+    return;
+  }
+  requestAnimationFrame(() => r());
+});
 
 /** docs/12 §3.3, verbatim in substance: 26 strokes, mouse input, load 0.75. */
 async function runOneSession(engine: any, stroke: any): Promise<Gauges> {
@@ -86,38 +107,42 @@ export function maybeRunSoak(engine: unknown, stroke: unknown): void {
   document.body.appendChild(panel);
 
   const lines: string[] = [];
-  const paint = (status: string) => { panel.textContent = status + '\n\n' + lines.join('\n'); };
+  // Rendered as HTML so a passing run reads green (src/bench/panel.ts).
+  // Every fragment is escaped where it is built, never here.
+  const paint = (status: string) => { panel.innerHTML = status + '\n\n' + lines.join('\n'); };
 
   (async () => {
     let blowups = 0;
-    paint(`soak — ${sessions} sessions of ${STROKES} strokes\nrunning 1 of ${sessions}…`);
+    paint(esc(`soak — ${sessions} sessions of ${STROKES} strokes\nrunning 1 of ${sessions}…`));
 
     for (let n = 1; n <= sessions; n++) {
-      paint(`soak — ${sessions} sessions of ${STROKES} strokes\nrunning ${n} of ${sessions}…`);
+      paint(esc(`soak — ${sessions} sessions of ${STROKES} strokes\nrunning ${n} of ${sessions}…`));
       let g: Gauges;
       try {
         g = await runOneSession(engine as any, stroke as any);
       } catch (err) {
-        lines.push(`${String(n).padStart(2)}  ERROR  ${(err as Error).message}`);
-        paint('soak stopped');
+        lines.push(bad(`${String(n).padStart(2)}  ERROR  ${(err as Error).message}`));
+        paint(headline('fail', 'soak stopped'));
         return;
       }
       const blown = isBlown(g);
       if (blown) blowups++;
-      lines.push(
+      const row =
         `${String(n).padStart(2)}  ` +
         `pigment ${g.pigment.toPrecision(6).padStart(12)}  ` +
         `water ${g.water.toPrecision(6).padStart(12)}  ` +
-        (blown ? 'BLOWN' : 'ok'),
-      );
+        (blown ? 'BLOWN' : 'ok');
+      lines.push(blown ? bad(row) : ok(row));
     }
 
-    const verdict = blowups === 0
-      ? `CLEAN — ${sessions}/${sessions} sessions healthy.\n` +
-        'On the AMD Polaris card the old build blew up 24 times out of 24.\n' +
-        'Clean here points at the card, not the code.'
-      : `${blowups} of ${sessions} sessions blew up.\n` +
-        'It fires on this GPU too, so the cause is in the code, not the card.';
-    paint(`soak finished\n\n${verdict}\n\nnormal is pigment ≈ 4180, water ≈ 3500`);
+    const clean = blowups === 0;
+    const verdict = clean
+      ? ok(`CLEAN — ${sessions}/${sessions} sessions healthy.`) +
+        esc('\nOn the AMD Polaris card the old build blew up 24 times out of 24.' +
+            '\nClean here points at the card, not the code.')
+      : bad(`${blowups} of ${sessions} sessions blew up.`) +
+        esc('\nIt fires on this GPU too, so the cause is in the code, not the card.');
+    paint(headline(clean ? 'pass' : 'fail', 'soak finished') + '\n\n' + verdict +
+      esc('\n\nnormal is pigment ≈ 4180, water ≈ 3500'));
   })();
 }

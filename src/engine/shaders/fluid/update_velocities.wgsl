@@ -19,6 +19,21 @@ fn paper_h(c: vec2<i32>, n: i32) -> f32 {
   return textureLoad(paper, q, 0).x;
 }
 
+fn wet_at(c: vec2<i32>, n: i32) -> bool {
+  if (oob(c, n)) { return false; }
+  let w0 = textureLoad(wet0_in, c, 0);
+  return w0.x >= 0.5 && w0.y > WET_EPS;
+}
+
+fn wet_load_at(c: vec2<i32>, n: i32) -> f32 {
+  if (oob(c, n)) { return 0.0; }
+  let w0 = textureLoad(wet0_in, c, 0);
+  let paperCell = textureLoad(paper, c, 0);
+  let sat = sane(textureLoad(wet5_in, c, 0).x, WATER_LIM);
+  return select(0.0, clamp((sat + w0.y) / paperCell.y, 0.0, 1.0),
+                paperCell.y > WET_EPS);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let n = i32(P.grid);
@@ -26,17 +41,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (oob(c, n)) { return; }
 
   var w0 = textureLoad(wet0_in, c, 0);
-  let m = w0.x;
   let h = w0.y;
-  if (m < 0.5 || h <= WET_EPS) {
+  let r = vec2<i32>(c.x + 1, c.y);
+  let d_ = vec2<i32>(c.x, c.y + 1);
+  // u and v live on the east and south FACES owned by c. A face remains part
+  // of the wet solver when EITHER adjacent cell is wet. Returning merely
+  // because the owner cell is dry deletes every west/north boundary velocity:
+  // those faces are owned by the dry neighbour. That one-sided gate was the
+  // measured two-cell fish-scale generator.
+  let activeU = wet_at(c, n) || wet_at(r, n);
+  let activeV = wet_at(c, n) || wet_at(d_, n);
+  if (!activeU && !activeV) {
     textureStore(wet0_out, c, vec4<f32>(w0.x, sane(w0.y, WATER_LIM), 0.0, 0.0));
     return;
   }
 
   let l = vec2<i32>(c.x - 1, c.y);
-  let r = vec2<i32>(c.x + 1, c.y);
   let u_ = vec2<i32>(c.x, c.y - 1);
-  let d_ = vec2<i32>(c.x, c.y + 1);
 
   var du = -(hf_at(r, n) - h);
   var dv = -(hf_at(d_, n) - h);
@@ -65,17 +86,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   dv = dv + P.viscosity * (vL + vR + vU + vD - 4.0 * w0.w);
 
   // A fresh film does not skate over an existing damp wash as though the lower
-  // layer were absent. The local wet load includes liquid already absorbed by
-  // the sheet and standing at its surface. It adds continuous viscous
-  // resistance, while a deep flooded brush can still win through the cubic
-  // mobility in flux_compute.
-  let paperCell = textureLoad(paper, c, 0);
-  let sat = sane(textureLoad(wet5_in, c, 0).x, WATER_LIM);
-  let wetLoad = select(0.0, clamp((sat + h) / paperCell.y, 0.0, 1.0),
-                       paperCell.y > WET_EPS);
-  let localDrag = clamp(P.drag + P.wetLayerDrag * wetLoad, 0.0, 0.95);
-  var nu = (w0.z + P.dt * du) * (1.0 - localDrag);
-  var nv = (w0.w + P.dt * dv) * (1.0 - localDrag);
+  // layer were absent. Drag is face-centred like velocity: averaging the same
+  // two adjacent cell loads makes the answer independent of which cell owns
+  // the face, while retaining the existing material parameters unchanged.
+  let loadC = wet_load_at(c, n);
+  let dragU = clamp(P.drag + P.wetLayerDrag * 0.5 * (loadC + wet_load_at(r, n)), 0.0, 0.95);
+  let dragV = clamp(P.drag + P.wetLayerDrag * 0.5 * (loadC + wet_load_at(d_, n)), 0.0, 0.95);
+  var nu = select(0.0, (w0.z + P.dt * du) * (1.0 - dragU), activeU);
+  var nv = select(0.0, (w0.w + P.dt * dv) * (1.0 - dragV), activeV);
   nu = clamp(nu, -1.0, 1.0);   // never move more than one cell per step
   nv = clamp(nv, -1.0, 1.0);
 

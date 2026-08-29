@@ -127,16 +127,36 @@ async function stroke1(engine: AnyRec, stroke: AnyRec,
     e.step(d.data, d.count, d.dx, d.dy, s.brushMix, s.brushTake, s.brushGrab);
     // Yield to the browser so the async pickup readback can land. Without this
     // the credit arrives after the measurement and the brush reads empty.
-    await new Promise((r) => setTimeout(r, 0));
+    await yieldTick();
   }
   s.end();
   for (let q = 0; q < SETUP.settleSteps; q++) {
     const d = s.drain();
     e.step(d.data, d.count, 0, 0, s.brushMix, 0, 0);
-    await new Promise((r) => setTimeout(r, 0));
+    await yieldTick();
   }
   return { cpuPigment, cpuWater, cpuSegments };
 }
+
+/**
+ * Yield to the browser so the async pickup readback can land.
+ *
+ * `[TRAP, measured 2026-08-29]` This MUST stay a timer, and this bench must be
+ * run on a VISIBLE page. The yield is not a formality: the pickup credit
+ * arrives on its own readback, and how much of it has landed by the next
+ * measurement depends on how long this yield actually takes. A MessageChannel
+ * yield (microseconds) was tried here to defeat Chrome intensive throttling,
+ * which clamps setTimeout on a HIDDEN page to one call per MINUTE and makes
+ * this suite look hung. It works, and it moves the numbers: crossing lift read
+ * 44.9% with the trail collapsed to 4.6 -> 0, against 36% and 15.8 -> 1.9
+ * recorded on 2026-08-28. Baseline and candidate shaders both gave 44.9%, so
+ * that is the yield and/or later engine commits, NOT a fluid change - but it is
+ * not attributed, so the fast yield was reverted rather than left in.
+ *
+ * If this panel sits on "running paired crossing" forever, the page is hidden.
+ * Show it. Do not make the yield faster to get an answer sooner.
+ */
+const yieldTick = (): Promise<void> => new Promise<void>((r) => { setTimeout(r, 0); });
 
 /**
  * Silence the APP's own animation loop for the duration of a run.

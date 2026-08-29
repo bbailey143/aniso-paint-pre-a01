@@ -149,8 +149,89 @@ say why.
 
 # PART B — THE BATON (live; rewrite freely, keep it short and true)
 
-**Last updated:** 2026-08-28
-**By:** Codex, continuing the relay.
+**Last updated:** 2026-08-29 (evening)
+**By:** Claude, continuing from Codex, which ran out of credits mid-verification.
+
+## DONE — Codex's fluid fix is verified, plus a seam repair (2026-08-29, Claude)
+
+**Codex's numbers were right.** Reproduced independently, three arms (HEAD /
+candidate / candidate+seam), two fresh page loads each, every internal pair
+exact. Finished-stroke edge ripple **0.04551 -> 0.01376 -> 0.01266**. Its stated
+mechanism is confirmed by direct measurement: baseline west and north outward
+face speeds are not small but **exactly 0.00000**, because `update_velocities`
+returned early on a dry owner cell and a wet region's west/north faces are owned
+by its dry neighbours. Water could leave a stroke on two sides only. Full table
+and reasoning: `docs/19-paint-on-canvas.md` **E5**.
+
+**The seam I flagged was real and is fixed.** The two shaders disagreed on what
+"wet" means — velocity used `mask AND film > WET_EPS`, relaxation used the mask
+alone. The mask does not imply film: `flux_apply_water` sets it and never clears
+it, `capillary_flow` sets it on absorbed water alone, `dry_tick` alone clears it.
+So the damp halo ringing every stroke was interior to the relaxation and dry to
+the velocity pass. `relax_divergence` now uses the velocity pass's test. It moves
+exactly and only the capillary-fed figures, which is why I believe it.
+
+**What is NOT fixed — the late residual.** Ripple after 16 and 32 flow steps is
+WORSE than baseline (0.03370 -> 0.04973, 0.02891 -> 0.03619) and the seam fix
+does not touch it. One stroke settles smooth; a wash left moving longer does not.
+Nothing tuned to hide it.
+
+**Nothing broke.** Soak clean 4/4 both arms, pigment unchanged. Holding 92.6%
+passed. Watercolour drift 0.000002 -> exactly 0. Crossing/trail/stacking read the
+same in both arms.
+
+## AWAITING THE ARTIST'S EYE — flat studio lighting (2026-08-29, Codex, uncommitted)
+
+Bartford asked for the single directional surface light to be replaced with a
+natural flat model. Codex built it in `composite.wgsl` and never got a verdict:
+a soft key `(-0.35, -0.5, 0.78)` at 0.72 plus an opposite-side fill
+`(0.25, 0.35, 0.90)` at 0.28, and the shade floor lifted from 0.82/0.25 to
+0.88/0.58 so relief stops turning into a black shadow. Sheen and the ground
+shadow still take the key direction only. It builds and it is in the tree.
+**It has not been looked at.** Judge it on an Oil ridge and on bare paper.
+
+**Where the fish-scale diagnosis history went.** The chain that got here — the
+Flat White control, the flat-brush retraction, the round-brush retraction, and
+the stage discriminator that located the generator in shared water motion — is
+written up in `docs/19-paint-on-canvas.md` E4, with the verification in E5. It
+was removed from this baton to keep Part B short, not because it stopped being
+true. Read E4 before re-opening any of it.
+
+## NEXT ACTION
+
+1. **Let Bartford look at it.** Port 5174, paint one Round Sable watercolour
+   stroke on Flat White, then Flat Hog. Toggle Terrain View. The question is
+   whether the scales are gone to the eye, not whether 0.01266 < 0.04551.
+2. Then the late residual: why 16 and 32 flow steps got worse. Start from
+   `flux_compute` mobility, since velocity and relaxation are now symmetric and
+   `flux_apply_water` only applies what it is handed.
+3. `?full-check` on a VISIBLE page — crossing lift reads 44.9% against 36%
+   recorded 2026-08-28 and it is NOT the fluid change (both arms agree). See the
+   trap below.
+
+## TRAP — a hidden page does not run the benches (2026-08-29, measured)
+
+Chrome clamps `setTimeout` on a hidden page to one call per MINUTE after five
+minutes, and never fires `requestAnimationFrame`. The fish-scale bench paced at
+one stroke-group per minute and read as a hang; the soak never advanced a
+session. Cost most of a session.
+
+- `fish-scale-bench.ts` yields through `MessageChannel` now — safe, pickup is
+  disabled there, and it reproduced four old timer-measured figures exactly.
+  `soak.ts` does the same only when the page is hidden.
+- `pickup-bench.ts` and `banding-bench.ts` were LEFT on the timer on purpose.
+  They run with pickup on and yield so async pickup credit can land, so yield
+  speed changes what they measure. **Run those two on a visible page.**
+
+## PANELS ARE COLOURED NOW (2026-08-29, Bartford's request)
+
+A successful test reads green. `src/bench/panel.ts` holds the helpers; all four
+benches use them. Green means a stated criterion was met — passed, clean, or
+*the pair reproduced*. Amber means two identical runs disagreed, which is a
+finding about the instrument and must be read before the numbers. Ripple figures
+have no threshold, so they are never green on their own merit. It earned itself
+on the first run: Oil stacking came back amber, 0.928 / 0.927, from two runs in
+one load.
 
 ## NEW INSTRUMENT — paint contours, then the terrain view (2026-08-28, Claude)
 

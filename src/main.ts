@@ -2,6 +2,8 @@
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { maybeRunSoak } from './soak';
 import { maybeRunBanding } from './bench/banding-bench';
+import { maybeRunFishScale } from './bench/fish-scale-bench';
+import { esc, ok, warn, verdict, headline } from './bench/panel';
 import { PointerInput, type StylusSample } from './input/pointer';
 import { attachPinch } from './input/pinch';
 import { wrapAngle, snapRight } from './input/angle';
@@ -384,7 +386,7 @@ async function main() {
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
   stroke.onBrushReset = () => engine.discardPickup();
-  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunPickupCheck(engine, stroke);
+  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
 }
 function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
   const query = new URLSearchParams(location.search);
@@ -405,28 +407,51 @@ function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
       const line = (r: Record<string, any>) =>
         `lifted ${r.bluePigmentRemovedPct}% | brush blue ${r.brushBluePct}% | ` +
         `trail ${r.trailBlueByDistance.map((p: { bluePct: number }) => p.bluePct).join(' -> ')}`;
-      panel.textContent = 'OIL PICKUP REGRESSION — finished\n\n' +
-        `run 1  ${line(runs[0])}\nrun 2  ${line(runs[1])}\n\n` +
-        'Reference: lifted about 33%; trail 12.4% -> 1.8%.\n' +
-        'The canvas shows the final yellow-through-blue crossing.';
+      /* A pair that agrees is the only claim this suite can make on its own:
+         "run it twice before believing it" is the house rule, and a row that
+         reproduced is a row that passed. Green says reproduced; amber says the
+         two identical runs disagreed, which has bitten this bench before and is
+         worth seeing before the numbers are read. Crossing and stacking have
+         only STALE reference figures beside them (measured 44.9% against a
+         "~33%" written before the docs/17 pickup rework, on both the current
+         shaders and their baseline), so they get no pass/fail verdict of their
+         own - inventing one would paint a false red. */
+      const pair = (a: unknown, b: unknown, text: string) =>
+        (String(a) === String(b) ? ok : warn)(text);
+      panel.innerHTML = headline('pass', 'OIL PICKUP REGRESSION — finished') + '\n\n' +
+        pair(line(runs[0]), line(runs[1]), `run 1  ${line(runs[0])}\nrun 2  ${line(runs[1])}`) + '\n\n' +
+        esc('Reference: lifted about 33%; trail 12.4% -> 1.8%.\n' +
+            'The canvas shows the final yellow-through-blue crossing.');
       if (full) {
-        panel.textContent = 'PAINT REGRESSION SUITE\n\ncrossing passed; running Oil stacking…';
+        panel.innerHTML = esc('PAINT REGRESSION SUITE\n\ncrossing done; running Oil stacking…');
         const stacking = [await bench.stacking(e, s), await bench.stacking(e, s)];
-        panel.textContent = 'PAINT REGRESSION SUITE\n\nstacking passed; running brush holding…';
+        panel.innerHTML = esc('PAINT REGRESSION SUITE\n\nstacking done; running brush holding…');
         const holding = [await bench.holding(e, s), await bench.holding(e, s)];
-        panel.textContent = 'PAINT REGRESSION SUITE\n\nholding passed; running Watercolour control…';
+        panel.innerHTML = esc('PAINT REGRESSION SUITE\n\nholding done; running Watercolour control…');
         const water = [await bench.watercolourControl(e, s), await bench.watercolourControl(e, s)];
-        panel.textContent = 'PAINT REGRESSION SUITE — finished\n\n' +
-          `crossing lift  ${runs[0].bluePigmentRemovedPct}% / ${runs[1].bluePigmentRemovedPct}%\n` +
-          `crossing trail ${runs[0].trailBlueByDistance.map((p: { bluePct: number }) => p.bluePct).join(' -> ')}\n` +
-          `stack last/first ${stacking[0].lastGainVsFirst} / ${stacking[1].lastGainVsFirst}\n` +
-          `holding peak ${holding[0].peak}% / ${holding[1].peak}% | passed ${holding[0].passed && holding[1].passed}\n` +
-          `Watercolour pigment canvas ${water[0].pigment} / ${water[1].pigment}\n` +
-          `Watercolour drift after 20 frames ${water[0].pigmentDrift} / ${water[1].pigmentDrift}\n\n` +
-          'References: stacking ~0.897; holding ~92.6%; Watercolour drift 0.';
+        const held = holding[0].passed && holding[1].passed;
+        const trail = (r: Record<string, any>) =>
+          r.trailBlueByDistance.map((p: { bluePct: number }) => p.bluePct).join(' -> ');
+        // Drift is the one figure with a live criterion rather than a stale
+        // reference: the sheet must not invent or lose pigment while it sits.
+        const noDrift = Number(water[0].pigmentDrift) === 0 && Number(water[1].pigmentDrift) === 0;
+        panel.innerHTML =
+          headline(held && noDrift ? 'pass' : 'fail', 'PAINT REGRESSION SUITE — finished') + '\n\n' +
+          pair(runs[0].bluePigmentRemovedPct, runs[1].bluePigmentRemovedPct,
+            `crossing lift  ${runs[0].bluePigmentRemovedPct}% / ${runs[1].bluePigmentRemovedPct}%`) + '\n' +
+          pair(trail(runs[0]), trail(runs[1]), `crossing trail ${trail(runs[0])}`) + '\n' +
+          pair(stacking[0].lastGainVsFirst, stacking[1].lastGainVsFirst,
+            `stack last/first ${stacking[0].lastGainVsFirst} / ${stacking[1].lastGainVsFirst}`) + '\n' +
+          verdict(held, `holding peak ${holding[0].peak}% / ${holding[1].peak}% | passed ${held}`) + '\n' +
+          pair(water[0].pigment, water[1].pigment,
+            `Watercolour pigment canvas ${water[0].pigment} / ${water[1].pigment}`) + '\n' +
+          verdict(noDrift,
+            `Watercolour drift after 20 frames ${water[0].pigmentDrift} / ${water[1].pigmentDrift}`) + '\n\n' +
+          esc('References: stacking ~0.897; holding ~92.6%; Watercolour drift 0.\n') +
+          esc('Green = met its stated criterion, or reproduced across the pair.');
       }
     } catch (err) {
-      panel.textContent = `OIL PICKUP REGRESSION — ERROR\n\n${String(err)}`;
+      panel.innerHTML = headline('fail', 'OIL PICKUP REGRESSION — ERROR') + '\n\n' + esc(String(err));
     }
   }, 50);
 }
