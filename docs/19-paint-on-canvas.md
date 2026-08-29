@@ -642,3 +642,79 @@ this and reported a "frame-locked ridge span" that widened with bundling
 finding on the Oil route, in a different metric, and it was read at the time as a
 Smear seam. E6 says the seam survives with Smear off and with every flow pass
 off, so it is upstream of both.
+
+### E7 — the per-frame seam found and half-closed: fresh-paint levelling (2026-08-29, Claude)
+
+**The generator, isolated to nineteen lines.** With the fresh-paint levelling
+block in `deposit.wgsl` switched off, Oil / Flat Hog / Flat White measured:
+
+| | edge ripple | repeat |
+|---|---:|---:|
+| deposit only, levelling ON | 0.04277 | 16 cells |
+| deposit only, levelling OFF | **0.00312** | 2 cells |
+| full pipeline, levelling OFF | 0.00345 | 2 cells |
+
+0.00312 is the CPU footprint's own figure. With that block off the GPU
+reproduces the brush's smooth footprint exactly, and the frame-locked wavelength
+is gone. **The whole of oil's fish scales is that block.**
+
+**Why it could not work where it stood.** To level a ridge a cell compares its
+height with its neighbours'. Inside the deposit pass a cell knows its own new
+height but reads neighbours from `wet0_in`, which that pass has not written yet
+— so every cell compared post-deposit self against PRE-deposit neighbours. Mid
+stroke that reads "I tower over bare canvas" when the neighbour was being
+painted in the same instant, and how wrong it is depends on how much paint the
+frame was carrying. Hence one scale per frame at exactly the frame's travel.
+
+**The budget was not the fault.** Capping the movement by total film rather than
+by the frame's own deposit measured 0.03987 with a 32-cell repeat — no better.
+`laid * 0.8` is in fact the frame-INVARIANT term: summed over a stroke it is
+proportional to the paint laid, so it is the same total however the stroke is
+cut up. It was kept.
+
+**The fix.** The levelling moved to its own pass, `level_fresh.wgsl`, dispatched
+immediately after the deposit and before the appliers, reading post-deposit film
+for BOTH sides of every comparison. The deposit publishes what it laid and how
+hard the hairs pressed through a new `fresh` buffer, because the new pass cannot
+recompute either without redoing the segment loop four times over. It adds into
+the same outflow ledger the shove uses, under one shared ceiling, so the single
+conservative applier still moves everything.
+
+| Oil, full pipeline | before | after |
+|---|---:|---:|
+| 4 reports/frame | 0.04549 | **0.02987** |
+| 1 report/frame | 0.01288 | 0.01316 |
+| frame dependence | 3.53x | **2.27x** |
+
+Conservation holds: total film 536.21051 -> 536.20437 at deposit and
+536.24539 -> 536.27535 finished, differences of about 0.005%, which is paint
+levelling off the sheet edge slightly differently. Watercolour is byte-identical
+(0.01266 / 0.03641 / 0.05135 / 0.00000 / west face 0.00679857) — the new pass
+returns immediately for any zero-yield medium.
+
+**What is still wrong, stated plainly.** A 34% reduction at the default
+bundling, not a cure. Frame dependence is 2.27x, not 1x. The remaining mechanism
+is understood and is NOT the stale comparison: **the levelling runs once per
+frame, so a frame carrying four stylus reports gets one smoothing step where
+four single-report frames get four.** The deposit itself is frame-invariant —
+proved above, since with levelling off it returns the CPU footprint's figure at
+any bundling — so this is the last term.
+
+Two ways to close it, and both are cost decisions rather than corrections:
+
+1. **Iterate** `level_fresh` + the appliers once per brush solve step in the
+   frame, each with `laid * 0.8 / steps`. Costs that many extra applier passes
+   per frame.
+2. **Chunk the deposit per solve step**, so the GPU never sees a bundle. Cleanest
+   in principle and the most expensive: resampling puts roughly one solve step
+   per cell of travel, so a 16-cell frame becomes ~16 submits instead of one.
+
+Neither should be chosen without timing it against the D7 budget on the bench.
+**Do not reach for "submit smaller frames" as the fix** — that is a
+frame-rate-dependent mark, where the same stroke looks different on a fast
+machine and a slow one, and it is what the diagnostic deliberately exploits.
+
+**Not yet verified.** `?full-check` could not be run: the pickup and banding
+suites must run on a VISIBLE page (E5a trap), and this session's browser pane is
+hidden. Oil stacking and brush holding are therefore unmeasured against this
+change. Run them before trusting it beyond the fish-scale numbers.

@@ -24,6 +24,7 @@ import { PIGMENTS } from '../color/pigment-palette';
 
 import commonWgsl from './shaders/fluid/common.wgsl?raw';
 import depositWgsl from './shaders/fluid/deposit.wgsl?raw';
+import levelFreshWgsl from './shaders/fluid/level_fresh.wgsl?raw';
 import velWgsl from './shaders/fluid/update_velocities.wgsl?raw';
 import relaxWgsl from './shaders/fluid/relax_divergence.wgsl?raw';
 import outwardWgsl from './shaders/fluid/flow_outward.wgsl?raw';
@@ -288,6 +289,7 @@ export class FluidEngine {
 
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
+  private freshBuf: GPUBuffer;
   private segBuf: GPUBuffer;
   private inkSegBuf: GPUBuffer;
   /** The same stroke footprints in the finer dry-media coordinate system. */
@@ -406,6 +408,14 @@ export class FluidEngine {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
            | GPUBufferUsage.COPY_SRC, label: 'flux',
     });
+    this.freshBuf = device.createBuffer({
+      // vec2 per cell: what the deposit just laid here, and the hair pressure.
+      // Written for every cell by deposit.wgsl each dispatch, so it needs no
+      // clearing - but COPY_DST anyway, because this file's own comment on the
+      // flux ledger is right: never bet on lazy init.
+      size: n * n * 2 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'fresh-paint',
+    });
     this.segBuf = device.createBuffer({
       size: MAX_SEGS * SEG_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: 'segments',
@@ -490,6 +500,7 @@ export class FluidEngine {
       },
     });
     this.pipes.deposit = mk(depositWgsl, 'deposit');
+    this.pipes.levelFresh = mk(levelFreshWgsl, 'level_fresh');
     this.pipes.vel = mk(velWgsl, 'update_velocities');
     this.pipes.relax = mk(relaxWgsl, 'relax_divergence');
     this.pipes.outward = mk(outwardWgsl, 'flow_outward');
@@ -862,6 +873,7 @@ export class FluidEngine {
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
         this.paper, { buffer: this.fluxBuf }, { buffer: this.pickupBuf },
+        { buffer: this.freshBuf },
       ]);
       dpass.end();
       this.wet0.flip(); this.wet1.flip(); this.wet2.flip(); this.wet5.flip();
@@ -872,6 +884,23 @@ export class FluidEngine {
          Pigment BEFORE water — the fraction leaving is measured against the
          vehicle present before the move, which is what makes a dirty brush
          drag one colour through another instead of bleaching it. */
+      /* Fresh-paint levelling, for pastes. It MUST be its own pass: it compares
+         each cell's new height with its neighbours' NEW heights, and inside the
+         deposit those do not exist yet. Run here, after the flip and before the
+         appliers, it adds into the same outflow ledger the shove used, so the
+         one conservative applier below moves both. Doing it inside the deposit
+         compared post-deposit self against pre-deposit neighbours and was the
+         whole of oil's fish scales - one scale per frame. docs/19 E7.
+         The shader returns immediately for any zero-yield medium, so
+         watercolour is untouched and pays one cheap dispatch. */
+      {
+        const lpass = denc.beginComputePass({ label: 'level-fresh' });
+        this.dispatch(lpass, this.pipes.levelFresh, [
+          U, this.wet0.src, { buffer: this.freshBuf }, { buffer: this.fluxBuf },
+        ]);
+        lpass.end();
+      }
+
       /* Every wet material, matching the shader. Gating this on a yield stress
          would have left watercolour writing a smear flux that nothing applied —
          and `flux_compute` overwrites the buffer later in the frame, so it

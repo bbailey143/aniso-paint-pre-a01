@@ -218,28 +218,51 @@ across fresh loads. Full table: `docs/19` **E6**.
   0.04549 at four — 3.5x. The CPU footprint stays smooth (0.00312), so the brush
   geometry is fine; it is how that footprint reaches `deposit.wgsl` per frame.
 
+## OIL'S SEAM FOUND AND HALF-CLOSED (2026-08-29, Claude)
+
+**It was the fresh-paint levelling in `deposit.wgsl`, and it is now its own
+pass.** Switching that block off dropped oil's stored edge ripple 0.04277 ->
+0.00312 — the CPU footprint's own figure — and the 16-cell repeat became 2. The
+whole of oil's fish scales was those nineteen lines. Full numbers: `docs/19` E7.
+
+**Why it could not work there.** To level a ridge you compare with your
+neighbours. Inside the deposit a cell knows its own new height but reads
+neighbours from `wet0_in`, which that pass has not written yet — so it compared
+post-deposit self against PRE-deposit neighbours, and how wrong that is depends
+on how much paint the frame was carrying. One scale per frame.
+
+**Fixed** by moving it to `level_fresh.wgsl`, dispatched after the deposit and
+before the appliers, with both sides post-deposit. The deposit publishes what it
+laid via a new `fresh` buffer. Oil full-pipeline ripple **0.04549 -> 0.02987**;
+frame dependence 3.53x -> 2.27x. Conservation holds (~0.005%). Watercolour is
+byte-identical — the pass returns at once for any zero-yield medium.
+
+**STILL NOT A CURE, and the reason is known.** The levelling runs ONCE PER
+FRAME, so a frame carrying four reports gets one smoothing step where four
+single-report frames get four. The deposit itself is frame-invariant (proved:
+with levelling off it returns the CPU figure at any bundling), so this is the
+last term.
+
 ## NEXT ACTION
 
-**Find the per-frame seam inside `deposit.wgsl`.** Look for anything that
-accumulates, resets or re-normalises once per DISPATCH rather than once per
-segment — a frame's worth of segments should lay down the same paint as the same
-segments split across four frames, and it does not.
+1. **Look at it.** Oil, Flat Hog, on canvas. The measured drop is 34% at normal
+   bundling; whether that reads as fixed is the artist's call, and it decides
+   whether the remaining 2.27x is worth paying for.
+2. **`?full-check` on a VISIBLE page — NOT YET RUN against this change.** The
+   pickup and banding suites are pacing-sensitive and cannot run on a hidden
+   page, so oil stacking and brush holding are unmeasured. Do this before
+   trusting the change beyond the fish-scale numbers.
+3. If the residual must go, two options, both COST decisions to be timed against
+   the D7 budget on the bench first:
+   - iterate `level_fresh` + appliers once per brush solve step, budget split
+     `laid * 0.8 / steps`;
+   - chunk the deposit per solve step, so the GPU never sees a bundle (~16
+     submits per frame instead of one).
+   **Never "submit smaller frames" as the fix** — that is a frame-rate-dependent
+   mark, different on a fast machine than a slow one. It is the diagnostic.
 
-Do NOT "fix" this by submitting smaller frames. That trades one defect for a
-worse one: a frame-rate-dependent mark, where the same stroke looks different on
-a fast and a slow machine. Smaller frames are the DIAGNOSTIC that located it.
-
-Two instrument notes before starting:
-- Raise `TREND_RADIUS` above 16 before reading `?group=8` or higher; the detrend
-  eats a 32-cell wavelength.
-- `banding-bench.ts` found this same seam earlier (frame-locked ridge span 0.0543
-  at one report per frame against 0.0918 at four) and it was read as a Smear
-  seam. E6 shows it survives with Smear off and every flow pass off, so it is
-  upstream of both.
-
-Still open on the watercolour side: the late residual (ripple at 16 and 32 flow
-steps worse than baseline, 0.03370 -> 0.04973), and `?full-check` on a VISIBLE
-page (crossing lift 44.9% against 36% recorded 2026-08-28, not the fluid change).
+Still open on watercolour: the late residual (ripple at 16 and 32 flow steps
+worse than baseline, 0.03370 -> 0.04973).
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 

@@ -112,6 +112,11 @@ fn lift(v: f32, lane: u32) -> f32 {
  * Cleared before the frame's first chunk, summed across all of them, and handed
  * back to the reservoir on the CPU. */
 @group(0) @binding(14) var<storage, read_write> lifted: array<atomic<u32>>;
+/** What this dispatch laid into each cell, and how hard the hairs pressed it.
+ *  Handed to `level_fresh`, which cannot recompute either without redoing the
+ *  whole segment loop four more times over. Written for EVERY cell, so it
+ *  clears itself: a cell the brush missed publishes (0, 0) and levels nothing. */
+@group(0) @binding(15) var<storage, read_write> fresh: array<vec2<f32>>;
 
 /** A neighbour's film height. Off the sheet reads as nothing there. */
 fn filmAt(c: vec2<i32>, n: i32) -> f32 {
@@ -645,26 +650,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      no such flow, so without this its comb of hair ridges would just sit
      there. Running it for water as well would be levelling the same paint
      twice. */
-  if (P.yieldStress > 0.0 && press > 0.0 && laidHere > 0.0) {
-    // Level first: what the hairs are squeezing gives way before it is shoved
-    // anywhere. See `levelOut`.
-    let yieldHere = P.yieldStress * clamp(1.0 - press, 0.0, 1.0);
-    // The surface it levels ACROSS is the whole film — a ridge is a ridge
-    // whenever it was laid.
-    let top = filmBefore + laidHere;
-    var lvl = vec4<f32>(
-      levelOut(top, filmAt(vec2<i32>(c.x + 1, c.y), n), yieldHere),
-      levelOut(top, filmAt(vec2<i32>(c.x - 1, c.y), n), yieldHere),
-      levelOut(top, filmAt(vec2<i32>(c.x, c.y + 1), n), yieldHere),
-      levelOut(top, filmAt(vec2<i32>(c.x, c.y - 1), n), yieldHere),
-    );
-    // ...but the paint it may MOVE is only what just arrived. Everything under
-    // that has set as far as this pass is concerned.
-    let asks = lvl.x + lvl.y + lvl.z + lvl.w;
-    let flowing = laidHere * 0.8;
-    if (asks > flowing && asks > 0.0) { lvl = lvl * (flowing / asks); }
-    smear = lvl;
-  }
+  /* The fresh-paint levelling USED TO BE HERE, and it was the whole of oil's
+     fish scales. It compared this cell's post-deposit height against its
+     neighbours' PRE-deposit heights - `filmAt` reads wet0_in, which this pass
+     has not written yet - so a cell measured itself against neighbours that
+     were still bare, and how wrong that comparison was depended on how much
+     paint the frame happened to be carrying. One scale per frame, wavelength
+     exactly the frame's travel. [MEASURED, docs/19 E6/E7: switching this block
+     off dropped stored edge ripple 0.04277 -> 0.00312, which is the CPU
+     footprint's own figure, and the 16-cell repeat became 2. Capping by total
+     film instead of by this frame's deposit did NOT fix it - 0.03987 - so the
+     stale neighbour was the fault, not the budget.]
+
+     It cannot be repaired in place: a neighbour's new height does not exist
+     until this dispatch has finished. So it is now `level_fresh.wgsl`, running
+     immediately after this pass and before the appliers, reading post-deposit
+     film for BOTH sides. This pass publishes what it laid, in `fresh`. */
   /* EVERY wet material, not only the pastes.
    *
    * This was gated on having a yield stress, which put picking-up and pushing
@@ -750,6 +751,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (c.x <= 0)     { smear.y = 0.0; }
   if (c.y >= n - 1) { smear.z = 0.0; }
   if (c.y <= 0)     { smear.w = 0.0; }
+  fresh[idx] = vec2<f32>(max(laidHere, 0.0), press);
   flux[idx] = smear;
 
   // Containment. See `sane` in common.wgsl — this is where the 4e37 seed was
