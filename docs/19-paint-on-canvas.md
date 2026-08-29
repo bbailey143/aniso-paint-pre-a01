@@ -922,3 +922,73 @@ THE MOVE — nonlinear and compounding — and it now runs once per levelling sw
 rather than once per frame. Whether pigment transport is frame-invariant under
 that compounding has never been checked. Measure it with the TONE metric; the
 film metrics are at their floor and will report null whatever happens.
+
+### E11 — the pigment path is innocent; the ripple is in the BRUSH FOOTPRINT (2026-08-29, Claude)
+
+**The pigment hypothesis is dead, and cleanly.** Profiling film and pigment
+along the stroke separately, Oil / Flat Hog / Cotton Duck, group 4:
+
+| quantity | ripple | repeat |
+|---|---:|---:|
+| pigment ÷ film | **0.00001** | — |
+| film thickness | 0.05994 | 16 |
+| pigment | 0.05994 | 16 |
+
+**Pigment tracks the vehicle exactly** — one part in 10^5. There is no pigment
+transport bug, and `flux_apply_pigment`'s compounding is not the culprit.
+
+**A correction to E10.** E10 said "the film is already perfect", on the strength
+of edge ripple hitting the CPU footprint's figure. That was the wrong quantity
+again. **Edge WIDTH and THICKNESS are different things:** the mark's width is at
+the floor while its thickness carries a **6% ripple at frame period**. Kubelka-
+Munk turns 6% of thickness into about 15% of tone, which is what the eye sees.
+The lesson keeps repeating in this log — measure the quantity being complained
+about, not a neighbour of it.
+
+**Where it is, isolated.** The thickness ripple:
+
+| condition | ripple | repeat |
+|---|---:|---:|
+| levelling nearly off (`levelShare=0.05`) | 0.0629 | 32 |
+| shipped | 0.0599 | 16 |
+| **CPU footprint — no GPU at all** | **0.06279** | **4** |
+
+**The CPU brush footprint already contains it, larger than anything downstream,
+and its repeat is 4 cells — the stylus-report spacing.** Every GPU-side fix in
+E7 through E10 was null because the ripple is laid by the brush before the GPU
+sees it. Frame bundling then reorganises a 4-cell brush rhythm into a 16-cell
+frame rhythm, which is why it tracked frame travel so convincingly.
+
+**What the brush is doing.** Per resampled solve step, measured:
+
+- water withdrawn: **0.4097, constant, every step**
+- declared hand travel: **0.8, constant, every step**
+- **actual footprint advance: 0.28, 0.59, 0.62, 0.63, 0.63, 0.62, 0.57, 0.47,
+  0.32, 0.34, 0.52, 0.65 …** — a 2.3x swing, cycling once per stylus report
+
+The hand steps uniformly; the tuft does not follow rigidly — the bristles lag
+and catch up. So a constant packet of paint is spread over a distance that
+swings by 2.3x.
+
+**TRIED AND REVERTED: metering by the hair's own track.** `withdraw` was fed the
+hair's actual movement (`hypot(p - was)`, already computed there for the
+segment) instead of the hand's step. Physically better motivated, and it
+restores the reservoir's own stated invariant. Measured **mixed and net worse**:
+tone 0.03532 -> 0.03945 and thickness 0.05994 -> 0.06037, though frame
+correlation fell 0.76 -> 0.56, swing 12.68 -> 10.42, edge 0.01336 -> 0.01225,
+and total film 531.03 -> 528.15. Reverted: the primary metric got worse and it
+moves the loading. **It also proves the metering is not the cause** — the CPU
+footprint's own ripple barely moved (0.06279 -> 0.06179).
+
+**So the cause is the footprint GEOMETRY, not the paint accounting.** Coverage
+per unit length varies as the tuft advances unevenly. That is the tuft solver —
+`brush.ts`, `tuft.ts`, `spine.ts` — and nothing in this investigation has been
+inside it.
+
+**NEXT.** Measure the CPU footprint's coverage per unit length directly against
+tuft advance, with no GPU and no reservoir in the loop, and find why a steady
+hand produces a 2.3x swing in footprint advance. Two candidates worth separating
+first: the resampler's remainder (4 cells between reports at `maxStep = 0.9` is
+4.44 steps, so the step count per report alternates), and genuine lag in the
+bristle solver. The first is an artefact and should go; the second is real brush
+behaviour and must be kept, but paint must then be laid in proportion to it.

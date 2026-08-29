@@ -246,57 +246,63 @@ Cotton Duck: 0.03520 -> 0.01425. Conservation ~0.02%. Watercolour byte-identical
 RX 570, inside the 16.7 ms budget. Noisy, upper bound, no timestamp queries.
 **`LEVEL_SWEEP_MAX` is the dial if the iPad is tight.**
 
-## THE FILM IS FIXED. THE BANDING IS PIGMENT. (2026-08-29, docs/19 E10)
+## IT IS THE BRUSH FOOTPRINT. NOT fluid, pigment, levelling or lighting.
+(2026-08-29, docs/19 E11 — supersedes the E10 heading, which was wrong)
 
-**The film metrics had stopped tracking the artist's eye, and that is why he
-kept saying "not yet" while the numbers said fixed.** A second instrument was
-built and it settled it in one shot.
+**Pigment is innocent:** pigment/film ratio ripple is **0.00001**. Pigment
+tracks the vehicle exactly. `flux_apply_pigment` compounding is not the cause.
 
-`CanvasEngine.dumpComposite(size)` renders the composite OFFSCREEN (own submit,
-so it cannot go stale behind a stubbed rAF). The bench profiles TONE along the
-stroke - darkest eight pixels per column in a 14-cell band.
+**E10 said "the film is already perfect" and that was wrong** — it measured
+edge WIDTH. Width is at the floor; THICKNESS carries a 6% ripple at frame
+period, and Kubelka-Munk turns 6% of thickness into ~15% of tone. Measure the
+quantity being complained about, not a neighbour of it. That mistake has now
+been made three times in this log.
 
-| metric | value | repeat | r |
-|---|---:|---:|---:|
-| film edge (old) | 0.01425 | 23 | 0.27 |
-| **rendered tone (new)** | **0.03532** | **16** | **0.76** |
+| thickness ripple | value | repeat |
+|---|---:|---:|
+| levelling nearly off | 0.0629 | 32 |
+| shipped | 0.0599 | 16 |
+| **CPU footprint, no GPU at all** | **0.06279** | **4** |
 
-Tone tracks frame travel exactly: 1 report/frame -> repeat 4 (r 0.90),
-4 reports/frame -> repeat 16 (r 0.76). Swing ~15%.
+**The CPU brush footprint already contains it, bigger than anything downstream,
+repeating at 4 cells — the stylus-report spacing.** Frame bundling reorganises a
+4-cell brush rhythm into a 16-cell frame rhythm, which is why it looked so
+convincingly frame-locked. Every GPU-side fix in E7-E10 was null for this
+reason.
 
-**With levelling nearly off (`?levelShare=0.05`) the film reaches 0.00312 - the
-CPU brush footprint's own figure, exactly - while tone is 0.03811 and WORSE.**
-The film is already perfect. The levelling is not the culprit.
+**What the brush does, per solve step:** water withdrawn 0.4097 CONSTANT, hand
+travel 0.8 CONSTANT, but the footprint actually advances 0.28 / 0.59 / 0.62 /
+0.63 / 0.63 / 0.62 / 0.57 / 0.47 / 0.32 / 0.34 / 0.52 / 0.65 — a 2.3x swing
+cycling once per stylus report. A constant packet of paint over a varying
+distance.
 
-**SIX hypotheses killed - do not retry:** bare-canvas gate (null), sweep cap 32
-(null), 8-neighbour stencil for tone (null), the brush reservoir (water and
-pigment per frame identical, CV exactly 0), the tooth bridge gate (null), and
-lighting amplification (Relief 10 -> 0.5 moved tone only 25%).
-
-Also landed: the levelling reads EIGHT neighbours now, which is a real 6-8% on
-the film metrics (edge 0.01425 -> 0.01336, shape 0.01113 -> 0.01022) and does
-nothing for tone.
+**TRIED AND REVERTED — metering by the hair's own track** instead of the hand's
+step. Better motivated physically; measured net worse (tone 0.03532 -> 0.03945,
+thickness 0.05994 -> 0.06037) though correlation fell 0.76 -> 0.56 and edge
+improved. It also PROVES metering is not the cause: the CPU footprint's ripple
+barely moved (0.06279 -> 0.06179).
 
 ## NEXT ACTION
 
-**The pigment path. Nothing in this entire investigation has touched it.**
-`flux_apply_pigment` moves pigment as a fraction of the vehicle PRESENT BEFORE
-THE MOVE - nonlinear and compounding - and since E8 it runs once per levelling
-sweep rather than once per frame. Whether pigment transport is frame-invariant
-under that compounding has never been checked, and it is the first suspect.
+**Go inside the tuft solver — `brush.ts`, `tuft.ts`, `spine.ts`. Nothing in
+this whole investigation has been in there.** The cause is footprint GEOMETRY:
+coverage per unit length varies because the tuft advances unevenly under a
+steady hand.
 
-**Measure with the TONE metric.** The film metrics are at their floor and will
-report null whatever you do - that is the mistake this entry exists to stop
-being repeated.
+Measure the CPU footprint alone — no GPU, no reservoir — and separate two
+candidates:
+1. **Resampler remainder.** 4 cells between reports at `maxStep = 0.9` is 4.44
+   steps, so the step count per report alternates. An artefact; should go.
+2. **Genuine bristle lag.** Real brush behaviour; must be KEPT, but then paint
+   has to be laid in proportion to it.
 
-Run: `?fish-scale=1&medium=oil&paper=canvas-duck&group=4` and compare `group=1`.
-The tone repeat tracking 4*group is the signature; killing it is the goal.
+Use the TONE metric and the thickness profile. Edge ripple is at its floor and
+will report null whatever you do — that is the trap that cost this session
+three rounds.
 
-Still not run: `?full-check` on a VISIBLE page, against E7/E8/E10. Oil stacking
-and brush holding remain unmeasured against all of them.
-
-Still open on watercolour: the late residual (16 and 32 flow steps worse than
-baseline, 0.03370 -> 0.04973).
+Still not run: `?full-check` on a VISIBLE page against E7/E8/E10.
+Still open on watercolour: the late residual (16 and 32 flow steps, 0.03370 ->
+0.04973).
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 
