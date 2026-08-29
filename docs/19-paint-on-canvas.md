@@ -844,3 +844,81 @@ route. Two directions that have NOT been tried:
   A von Neumann stencil on anisotropic structure is a known source of striping.
   An 8-neighbour or separable smooth is untried and is the one mechanism change
   with a reason behind it rather than a knob.
+
+### E10 — a second instrument, and the residue is PIGMENT, not film (2026-08-29, Claude)
+
+**Both asks, instrument first** — because the film numbers had stopped tracking
+the artist's eye, which is exactly why he kept saying "not yet" while the
+figures said fixed.
+
+**The instrument.** `CanvasEngine.dumpComposite(size)` renders the composite
+OFFSCREEN, in its own submit, so it cannot lag a frame behind a stubbed rAF the
+way reading the swap-chain canvas does — the recorded trap that once returned
+0.0% for every comparison. The bench turns it into a tone profile along the
+stroke: per column, the mean luminance of the darkest eight pixels in a 14-cell
+band. Darkest-few rather than a band mean, because a mean is diluted by however
+much bare canvas the band includes, which would make the figure track the mark's
+WIDTH — the thing the old metric already measures.
+
+**[TRAP] It read a flat zero at first.** `(panX, panY)` is the document point
+held at the CENTRE of the window, so pan 0 puts the sheet's corner in the middle
+and three quarters of it off frame. The probe was photographing the surround and
+reporting a uniform 11.9 with a tone ripple of exactly 0.0 — a confident,
+plausible, entirely wrong null. Zoom 1 with pan at `DOC/2` is the plain contain
+fit; at `size = sim`, cell c lands on pixel c.
+
+**What it showed immediately.**
+
+| metric | value | repeat | correlation |
+|---|---:|---:|---:|
+| film edge ripple (old) | 0.01425 | 23 | 0.27 |
+| **rendered tone (new)** | **0.03532** | **16** | **0.76** |
+
+The old metric said frame dependence was down to 1.13x and essentially fixed.
+The new one says the frame signature is still strongly present in what the eye
+sees, and tracks frame travel exactly: 1 report/frame gives repeat 4 at r 0.90,
+4 reports/frame gives repeat 16 at r 0.76. Tonal swing 11-13 levels on a mean of
+74, about 15%. **That is the gap between "measured fixed" and "not yet".**
+
+**The smoother.** The levelling now reads EIGHT neighbours. The comb runs ALONG
+the stroke, so the structure is directional, and `flux_compute` already recorded
+what a von Neumann stencil does to directional structure — a round pile slumped
+into a rectangle with square corners, seen across a whole painting as a
+right-angled circuit-board pattern. Diagonals are weighted 1/sqrt(2) and split
+evenly onto the two cardinal faces they lie between, since those are the only
+faces the flux ledger owns; the budget clamp is untouched.
+
+| | edge | shape | tone |
+|---|---:|---:|---:|
+| 4-neighbour | 0.01425 | 0.01113 | 0.03532 |
+| **8-neighbour** | **0.01336** | **0.01022** | 0.03524 |
+
+A real 6-8% on the film metrics, **no effect on tone.** Kept for the former,
+reported plainly for the latter.
+
+**SIX hypotheses killed. Recorded so they are not retried.**
+
+| tried | tone result |
+|---|---|
+| Do not level into bare canvas | 0.03532 to 0.03478, null |
+| Sweep cap 8 to 32 | 0.03532 to 0.03491, null |
+| 8-neighbour stencil | 0.03532 to 0.03524, null (good on film) |
+| Brush reservoir delivery | **CV exactly 0** — water and pigment per frame identical, ratio 1.0000 |
+| Tooth bridge gate reading stale film | 0.03532 to 0.03505, null |
+| Lighting amplification, Relief 10 to 0.5 | 0.03576 to 0.02674, only -25% for a 20x dial change |
+
+**Where the residue actually is.** With the levelling turned nearly off
+(`?levelShare=0.05`) the stored film reaches **0.00312 — the CPU brush
+footprint's own figure, exactly** — while tone is **0.03811, still repeat 16,
+and WORSE than with levelling on.** So the film is already perfect, the
+levelling is not the culprit and in fact slightly reduces the banding, and it is
+not the brush, the tooth gate or the lighting. **It is the paint's own colour:
+pigment per unit area varying with frame period inside a smooth film.** Volume
+ripple 0.00752 against the CPU floor of 0.00455 is the film-side shadow of it.
+
+**NEXT: the pigment path, which this whole investigation has never touched.**
+`flux_apply_pigment` moves pigment as a fraction of the vehicle PRESENT BEFORE
+THE MOVE — nonlinear and compounding — and it now runs once per levelling sweep
+rather than once per frame. Whether pigment transport is frame-invariant under
+that compounding has never been checked. Measure it with the TONE metric; the
+film metrics are at their floor and will report null whatever happens.

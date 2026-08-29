@@ -218,6 +218,61 @@ function rasterFootprint(dst: Float64Array, n: number, data: Float32Array, count
   }
 }
 
+/**
+ * TONAL BANDING ALONG THE STROKE, from the RENDERED picture.
+ *
+ * Every other figure in this file measures `wet0.y`, the stored film, and scores
+ * the wobble in the mark's EDGE across its width. The artist has been describing
+ * something different — light and dark banding in the BODY of the mark, along
+ * its length — and by 2026-08-29 the film numbers had stopped tracking what he
+ * could see: edge ripple was flat across two surfaces and two speeds while he
+ * still reported banding. So measure the thing itself.
+ *
+ * For each column of the stroke, take the mean luminance of the DARKEST few
+ * pixels in the band. Darkest-few rather than a mean over the whole band
+ * because a mean is diluted by however much bare canvas the band happens to
+ * include, which makes the figure depend on the mark's width instead of its
+ * tone — and the mark's width is the thing the other metric already measures.
+ */
+const TONE_BAND = 14;      // cells either side of the stroke centreline
+const TONE_DARKEST = 8;    // how many darkest pixels make the column's tone
+
+function toneProfile(img: { data: Uint8Array; size: number }): number[] {
+  const { data, size } = img;
+  const out: number[] = [];
+  const col: number[] = [];
+  for (let x = X0; x <= X1; x++) {
+    col.length = 0;
+    for (let y = Y - TONE_BAND; y <= Y + TONE_BAND; y++) {
+      if (y < 0 || y >= size || x < 0 || x >= size) { continue; }
+      const o = (y * size + x) * 3;
+      // Rec.709 luma. The paint is blue on warm canvas, so a flat average over
+      // channels would under-weight exactly the channel carrying the mark.
+      col.push(0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2]);
+    }
+    col.sort((a, b) => a - b);
+    const k = Math.min(TONE_DARKEST, col.length);
+    let sum = 0;
+    for (let i = 0; i < k; i++) sum += col[i];
+    out.push(k > 0 ? sum / k : 0);
+  }
+  return out;
+}
+
+function analyseTone(img: { data: Uint8Array; size: number }) {
+  const profile = toneProfile(img);
+  const inner = profile.slice(12, -12);
+  const { lag, correlation } = repeatLag(profile);
+  return {
+    toneRipple: +relativeRms(profile).toFixed(5),
+    toneMean: +(inner.reduce((a, b) => a + b, 0) / Math.max(1, inner.length)).toFixed(2),
+    toneSwing: +(Math.max(...inner) - Math.min(...inner)).toFixed(2),
+    toneLagCells: lag,
+    toneCorrelation: correlation,
+    profile: profile.map((v) => +v.toFixed(2)),
+  };
+}
+
 function scalarFilm(wet0: Float32Array, n: number): Float64Array {
   const out = new Float64Array(n * n);
   for (let i = 0; i < n * n; i++) out[i] = Math.max(0, wet0[i * 4 + 1]);
@@ -385,6 +440,9 @@ async function oneRun(engine: AnyRec, stroke: AnyRec, stage: Stage | null) {
   if (cpu) return analyse(cpuField, n);
   const wet0 = await engine.dump('wet0') as Float32Array;
   const result: AnyRec = analyse(scalarFilm(wet0, n), n);
+  /* The same mark as the eye sees it. Rendered offscreen in its own submit, so
+     it cannot go stale behind a stubbed rAF the way a canvas read does. */
+  result.tone = analyseTone(await engine.dumpComposite(n));
   if (stage?.allow.includes('fluxCompute')) {
     const flux = await engine.dumpFlux() as Float32Array;
     result.flux = analyse(scalarFlux(flux, n), n);
@@ -614,6 +672,8 @@ function summary(result: AnyRec) {
       + `volume ${a.volumeRipple.toFixed(5)}/${b.volumeRipple.toFixed(5)}  `
       + `lag ${a.repeatLagCells}/${b.repeatLagCells}  `
       + `r ${a.repeatCorrelation.toFixed(3)}/${b.repeatCorrelation.toFixed(3)}`
+      + (a.tone ? `  TONE ${a.tone.toneRipple.toFixed(5)}/${b.tone.toneRipple.toFixed(5)}`
+        + ` tone-lag ${a.tone.toneLagCells}/${b.tone.toneLagCells}` : '')
       + (a.flux ? `  flux-edge ${a.flux.edgeRipple.toFixed(5)}/${b.flux.edgeRipple.toFixed(5)}`
         + ` flux-lag ${a.flux.repeatLagCells}/${b.flux.repeatLagCells}` : ''));
   });

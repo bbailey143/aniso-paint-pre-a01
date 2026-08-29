@@ -246,23 +246,57 @@ Cotton Duck: 0.03520 -> 0.01425. Conservation ~0.02%. Watercolour byte-identical
 RX 570, inside the 16.7 ms budget. Noisy, upper bound, no timestamp queries.
 **`LEVEL_SWEEP_MAX` is the dial if the iPad is tight.**
 
+## THE FILM IS FIXED. THE BANDING IS PIGMENT. (2026-08-29, docs/19 E10)
+
+**The film metrics had stopped tracking the artist's eye, and that is why he
+kept saying "not yet" while the numbers said fixed.** A second instrument was
+built and it settled it in one shot.
+
+`CanvasEngine.dumpComposite(size)` renders the composite OFFSCREEN (own submit,
+so it cannot go stale behind a stubbed rAF). The bench profiles TONE along the
+stroke - darkest eight pixels per column in a 14-cell band.
+
+| metric | value | repeat | r |
+|---|---:|---:|---:|
+| film edge (old) | 0.01425 | 23 | 0.27 |
+| **rendered tone (new)** | **0.03532** | **16** | **0.76** |
+
+Tone tracks frame travel exactly: 1 report/frame -> repeat 4 (r 0.90),
+4 reports/frame -> repeat 16 (r 0.76). Swing ~15%.
+
+**With levelling nearly off (`?levelShare=0.05`) the film reaches 0.00312 - the
+CPU brush footprint's own figure, exactly - while tone is 0.03811 and WORSE.**
+The film is already perfect. The levelling is not the culprit.
+
+**SIX hypotheses killed - do not retry:** bare-canvas gate (null), sweep cap 32
+(null), 8-neighbour stencil for tone (null), the brush reservoir (water and
+pigment per frame identical, CV exactly 0), the tooth bridge gate (null), and
+lighting amplification (Relief 10 -> 0.5 moved tone only 25%).
+
+Also landed: the levelling reads EIGHT neighbours now, which is a real 6-8% on
+the film metrics (edge 0.01425 -> 0.01336, shape 0.01113 -> 0.01022) and does
+nothing for tone.
+
 ## NEXT ACTION
 
-1. **Look at it.** Oil, Flat Hog, Cotton Duck. Paint the same mark slow and fast;
-   the gap photographed on 2026-08-29 should be gone. That is the acceptance
-   test, not the numbers.
-2. **`?full-check` on a VISIBLE page - STILL NOT RUN against E7 or E8.** Those
-   suites are pacing-sensitive and cannot run on a hidden page, so oil stacking
-   and brush holding are unmeasured against both changes.
-3. Time it on the iPad before assuming 2-3 ms is affordable there.
+**The pigment path. Nothing in this entire investigation has touched it.**
+`flux_apply_pigment` moves pigment as a fraction of the vehicle PRESENT BEFORE
+THE MOVE - nonlinear and compounding - and since E8 it runs once per levelling
+sweep rather than once per frame. Whether pigment transport is frame-invariant
+under that compounding has never been checked, and it is the first suspect.
 
-Still open on watercolour: the late residual (ripple at 16 and 32 flow steps
-worse than baseline, 0.03370 -> 0.04973).
+**Measure with the TONE metric.** The film metrics are at their floor and will
+report null whatever you do - that is the mistake this entry exists to stop
+being repeated.
 
-Open and unexplained: in the artist's 2026-08-29 screenshot a purple stroke
-(orange + blue) drifts warm to cool along its length, which would be the two
-pigments leaving the brush at different rates. Not measured, and separate from
-the fish scales.
+Run: `?fish-scale=1&medium=oil&paper=canvas-duck&group=4` and compare `group=1`.
+The tone repeat tracking 4*group is the signature; killing it is the goal.
+
+Still not run: `?full-check` on a VISIBLE page, against E7/E8/E10. Oil stacking
+and brush holding remain unmeasured against all of them.
+
+Still open on watercolour: the late residual (16 and 32 flow steps worse than
+baseline, 0.03370 -> 0.04973).
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 

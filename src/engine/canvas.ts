@@ -597,6 +597,82 @@ export class CanvasEngine {
     device.queue.submit([enc.finish()]);
   }
 
+  /**
+   * The RENDERED picture, at one pixel per cell, as the eye would see it.
+   *
+   * Every fish-scale figure until now measured `wet0.y` — the stored film —
+   * and scored the wobble in the stroke's EDGE. The artist has been describing
+   * something else: tonal banding in the BODY of the mark. Those are not the
+   * same quantity, and by 2026-08-29 the film numbers had stopped tracking what
+   * he could see. This renders the actual composite so the two can be compared.
+   *
+   * Offscreen ON PURPOSE. Reading the swap-chain canvas is a recorded trap:
+   * with rAF stubbed the readback lags a frame and goes stale, and every
+   * comparison came back 0.0% including one a row scan proved differed. This
+   * renders into its own texture in the same submit, so there is no frame to
+   * lag behind.
+   *
+   * Zoom 1 with the pan at the SHEET'S MIDDLE for the shot, restored after.
+   * `(panX, panY)` is the document point held at the centre of the window, so
+   * pan 0 puts the sheet's CORNER in the middle and three quarters of it off
+   * frame — which is what happened first: the probe read a uniform 11.9 and a
+   * tone ripple of exactly 0, because it was photographing the surround.
+   * At zoom 1 with pan at DOC/2 this is the plain contain fit, and rendering at
+   * `size = sim` puts cell c at pixel c exactly.
+   */
+  async dumpComposite(size: number): Promise<{ data: Uint8Array; size: number }> {
+    const { device, format } = this.gpu;
+    const savedZoom = this.zoom, savedPanX = this.panX, savedPanY = this.panY;
+    this.zoom = 1; this.panX = DOC / 2; this.panY = DOC / 2;
+    try {
+      const tex = device.createTexture({
+        size: [size, size], format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      // copyTextureToBuffer needs bytesPerRow a multiple of 256.
+      const bytesPerRow = Math.ceil((size * 4) / 256) * 256;
+      const rb = device.createBuffer({
+        size: bytesPerRow * size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      this.writeCompParams(size, size);
+      const enc = device.createCommandEncoder({ label: 'composite-probe' });
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: tex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear', storeOp: 'store',
+        }],
+      });
+      pass.setPipeline(this.compPipe);
+      pass.setBindGroup(0, this.compositeBind());
+      pass.draw(3);
+      pass.end();
+      enc.copyTextureToBuffer({ texture: tex }, { buffer: rb, bytesPerRow }, [size, size]);
+      device.queue.submit([enc.finish()]);
+      await rb.mapAsync(GPUMapMode.READ);
+      const raw = new Uint8Array(rb.getMappedRange());
+      // Repack to tight RGB, normalising the channel order so callers never
+      // have to know whether this device is bgra.
+      const bgra = format.startsWith('bgra');
+      const out = new Uint8Array(size * size * 3);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const o = y * bytesPerRow + x * 4;
+          const d = (y * size + x) * 3;
+          out[d] = bgra ? raw[o + 2] : raw[o];
+          out[d + 1] = raw[o + 1];
+          out[d + 2] = bgra ? raw[o] : raw[o + 2];
+        }
+      }
+      rb.unmap();
+      rb.destroy();
+      tex.destroy();
+      return { data: out, size };
+    } finally {
+      this.zoom = savedZoom; this.panX = savedPanX; this.panY = savedPanY;
+    }
+  }
+
   /** Debug: render the composite offscreen and read pixels back on the CPU. */
   async debugReadback(size = 64): Promise<any> {
     const { device, format } = this.gpu;

@@ -106,12 +106,39 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   // actually produced, on both sides of every comparison.
   let top = w0.y;
   let yieldHere = P.yieldStress * clamp(1.0 - press, 0.0, 1.0);
+  /* EIGHT neighbours, not four.
+   *
+   * The comb this is smoothing runs ALONG the stroke — each hair draws its own
+   * line — so the structure is strongly directional, and a von Neumann stencil
+   * on directional structure smooths across it and along it at different rates,
+   * which leaves striping. `flux_compute` already learned this the hard way and
+   * says so: taking the direction from four neighbours slumped a round pile into
+   * a RECTANGLE with square corners, and the artist saw it across a whole
+   * painting as a right-angled circuit-board pattern. That pass now reads all
+   * eight and splits the amount across the four faces it owns. This does the
+   * same.
+   *
+   * A diagonal neighbour is sqrt(2) away, so the same height difference is a
+   * gentler slope; it is weighted by 1/sqrt(2) and split evenly onto the two
+   * cardinal faces it lies between, because those are the only faces the flux
+   * ledger owns. The budget clamp below is unchanged and still governs the
+   * total, so nothing here can move more paint than before. */
   var lvl = vec4<f32>(
     levelOut(top, filmAt(vec2<i32>(c.x + 1, c.y), n), yieldHere),
     levelOut(top, filmAt(vec2<i32>(c.x - 1, c.y), n), yieldHere),
     levelOut(top, filmAt(vec2<i32>(c.x, c.y + 1), n), yieldHere),
     levelOut(top, filmAt(vec2<i32>(c.x, c.y - 1), n), yieldHere),
   );
+  let DIAG = 0.70710678;   // 1/sqrt(2): a diagonal neighbour is further away
+  for (var dy = -1; dy <= 1; dy = dy + 2) {
+    for (var dx = -1; dx <= 1; dx = dx + 2) {
+      let give = levelOut(top, filmAt(vec2<i32>(c.x + dx, c.y + dy), n), yieldHere)
+               * DIAG * 0.5;
+      // Half onto each of the two cardinal faces the diagonal lies between.
+      if (dx > 0) { lvl.x = lvl.x + give; } else { lvl.y = lvl.y + give; }
+      if (dy > 0) { lvl.z = lvl.z + give; } else { lvl.w = lvl.w + give; }
+    }
+  }
   let asks = lvl.x + lvl.y + lvl.z + lvl.w;
   /* Divided across the sweeps this chunk gets, so the TOTAL paint the levelling
      may move over a stroke is the same however the stroke was cut into frames.
