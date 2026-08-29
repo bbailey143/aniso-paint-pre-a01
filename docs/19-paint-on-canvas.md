@@ -992,3 +992,69 @@ first: the resampler's remainder (4 cells between reports at `maxStep = 0.9` is
 4.44 steps, so the step count per report alternates), and genuine lag in the
 bristle solver. The first is an artefact and should go; the second is real brush
 behaviour and must be kept, but paint must then be laid in proportion to it.
+
+### E12 — inside the tuft: stick-slip is real, the metering that ignores it is not (2026-08-29, Claude)
+
+**The artist's clue.** "Flow to 0 and the fish scaling disappeared entirely.
+Pushing to only 0.5 made it visible again." At Oil's `downRate` 0.55 and a step
+of 0.8 cells, `downRate * flow * dist` is 0.44 at Flow 1, so the `Math.min(1, …)`
+in `Reservoir.withdraw` is NOT clipping — the clue is not saturation. What it
+says is simpler and still useful: **the banding scales with how much paint is
+laid.** It is a multiplicative ripple on the deposit, not an additive artefact.
+
+**The mechanism, fully quantified.** Per resampled solve step, Oil / Flat Hog /
+Cotton Duck, hand stepping a perfectly uniform 0.8 cells:
+
+| per solve step | variation |
+|---|---:|
+| water released | **CV 0 — exactly constant** |
+| contact patch advance | **CV 0.148** (0.28 to 0.77 cells) |
+| swept area covered | **CV 0.038 — nearly constant** |
+| **paint per unit length** | **0.53 to 1.45 — a 2.7x swing** |
+
+The area barely moves with the advance because each hair's own footprint
+(pi*r^2) dominates the swept capsule (2*r*d). So: **a constant packet of paint,
+onto a nearly constant area, at an uneven spacing.** That is the banding, in
+arithmetic, and it is laid on the CPU before the GPU sees anything.
+
+**Why the tuft advances unevenly — and it is real.** `Spine.applyFloor` pulls a
+pinned joint back toward where it was by `frictionHold = min(0.98, mu*(1-eta))`.
+At 0.98 the bristle sticks, the chain loads, then it springs forward. That is
+stick-slip, it is what bristles genuinely do, and it must be KEPT. The hand
+input is uniform; the judder is the brush.
+
+**TWO METERING FIXES TRIED. BOTH REVERTED. Do not retry either blind.**
+
+1. **Charge by the hair's own track** (`hypot(p - was)`, already computed for the
+   segment). Net worse: tone 0.03532 -> 0.03945, thickness 0.05994 -> 0.06037,
+   though frame correlation fell 0.76 -> 0.56 and edge improved. A single hair's
+   displacement is noisy with splay.
+2. **Charge by the tuft's true rubbed distance** — mean movement of contacting
+   joints, published from the spine, taken once per step across all spines. This
+   is the physically correct quantity and it DID kill the long period: the
+   repeat went 16 -> 2. But it made everything else much worse — thickness
+   0.05994 -> 0.09045, CPU footprint 0.06279 -> **0.12539**, tonal swing 12.68
+   -> 29.19. Stick-slip advance is too jerky to meter by directly, and the
+   `STILL = 0.25` floor bites whenever the patch advance dips near it, handing
+   the stuck steps relatively MORE paint.
+
+**What both failures teach.** Compensating the metering is the wrong lever,
+because the covered AREA does not scale with the advance (CV 0.038 against
+0.148). Scaling paint down for a stuck step just puts less paint on the same
+area — a different unevenness, not a cure. Any fix has to make the deposited
+paint per unit length constant, which means either:
+
+- **damping the stick-slip oscillation** so the advance is even (but the judder
+  is real bristle behaviour, and flattening it costs texture that should exist);
+  or
+- **making coverage follow the advance** — the honest one. Where the patch stuck
+  and the next step overlaps it almost entirely, the two contacts should not
+  deposit twice into the same cells at full strength. That is an overlap/
+  accumulation question in `emitFootprint` and `deposit.wgsl`, not a metering
+  one, and it is the one direction not yet tried.
+
+**Not touched, still open:** whether the ~9-step oscillation period is the
+bristle solver's natural ringing or is set by the resampler's remainder (4 cells
+per report at `maxStep = 0.9` is 4.44 steps). Separating those two would say
+whether any of the judder is an artefact rather than brush behaviour, and that
+is worth knowing before anyone tries to damp it.

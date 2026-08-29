@@ -246,63 +246,68 @@ Cotton Duck: 0.03520 -> 0.01425. Conservation ~0.02%. Watercolour byte-identical
 RX 570, inside the 16.7 ms budget. Noisy, upper bound, no timestamp queries.
 **`LEVEL_SWEEP_MAX` is the dial if the iPad is tight.**
 
-## IT IS THE BRUSH FOOTPRINT. NOT fluid, pigment, levelling or lighting.
-(2026-08-29, docs/19 E11 — supersedes the E10 heading, which was wrong)
+## THE BANDING, FULLY DIAGNOSED — and why two obvious fixes both failed
+(2026-08-29, docs/19 E11/E12)
 
-**Pigment is innocent:** pigment/film ratio ripple is **0.00001**. Pigment
-tracks the vehicle exactly. `flux_apply_pigment` compounding is not the cause.
+**It is not fluid, not pigment, not levelling, not lighting, not the tooth gate.**
+Pigment/film ratio ripple is 0.00001 — pigment tracks the vehicle exactly.
 
-**E10 said "the film is already perfect" and that was wrong** — it measured
-edge WIDTH. Width is at the floor; THICKNESS carries a 6% ripple at frame
-period, and Kubelka-Munk turns 6% of thickness into ~15% of tone. Measure the
-quantity being complained about, not a neighbour of it. That mistake has now
-been made three times in this log.
+**Per solve step, hand stepping a uniform 0.8 cells:**
 
-| thickness ripple | value | repeat |
-|---|---:|---:|
-| levelling nearly off | 0.0629 | 32 |
-| shipped | 0.0599 | 16 |
-| **CPU footprint, no GPU at all** | **0.06279** | **4** |
+| | variation |
+|---|---:|
+| water released | **CV 0 — exactly constant** |
+| contact patch advance | **CV 0.148** (0.28 to 0.77) |
+| swept area covered | **CV 0.038 — nearly constant** |
+| **paint per unit length** | **0.53 to 1.45, a 2.7x swing** |
 
-**The CPU brush footprint already contains it, bigger than anything downstream,
-repeating at 4 cells — the stylus-report spacing.** Frame bundling reorganises a
-4-cell brush rhythm into a 16-cell frame rhythm, which is why it looked so
-convincingly frame-locked. Every GPU-side fix in E7-E10 was null for this
-reason.
+A constant packet, onto a near-constant area, at uneven spacing. The area does
+not follow the advance because each hair's own footprint (pi*r^2) dominates the
+sweep (2*r*d). Laid on the CPU, before the GPU sees anything.
 
-**What the brush does, per solve step:** water withdrawn 0.4097 CONSTANT, hand
-travel 0.8 CONSTANT, but the footprint actually advances 0.28 / 0.59 / 0.62 /
-0.63 / 0.63 / 0.62 / 0.57 / 0.47 / 0.32 / 0.34 / 0.52 / 0.65 — a 2.3x swing
-cycling once per stylus report. A constant packet of paint over a varying
-distance.
+**The uneven advance is REAL and must be kept.** `Spine.applyFloor` holds a
+pinned joint back by `frictionHold = min(0.98, mu*(1-eta))`; at 0.98 the
+bristle sticks, loads, and springs. That is stick-slip and it is what bristles
+do. The hand is uniform; the judder is the brush.
 
-**TRIED AND REVERTED — metering by the hair's own track** instead of the hand's
-step. Better motivated physically; measured net worse (tone 0.03532 -> 0.03945,
-thickness 0.05994 -> 0.06037) though correlation fell 0.76 -> 0.56 and edge
-improved. It also PROVES metering is not the cause: the CPU footprint's ripple
-barely moved (0.06279 -> 0.06179).
+**The artist's Flow clue** (0 = no banding, 0.5 = visible) is NOT saturation —
+`downRate*flow*dist` is 0.44 at Flow 1, well under the clamp. It says the
+banding is MULTIPLICATIVE on the deposit: more paint, more banding.
+
+## DO NOT RETRY THESE — both measured, both reverted
+
+1. **Charge by the hair's own track.** Net worse (tone 0.03532 -> 0.03945). A
+   single hair's displacement is noisy with splay.
+2. **Charge by the tuft's true rubbed distance** (mean contacting-joint
+   movement, published from the spine). Physically correct AND it killed the
+   long period — repeat 16 -> 2 — but everything else got much worse: thickness
+   0.05994 -> 0.09045, CPU footprint 0.06279 -> 0.12539, swing 12.68 -> 29.19.
+   Stick-slip is too jerky to meter by directly and the `STILL = 0.25` floor
+   hands stuck steps relatively MORE paint.
+
+**Why both failed:** metering is the wrong lever. The covered AREA does not
+scale with the advance (CV 0.038 vs 0.148), so scaling paint down for a stuck
+step just puts less paint on the same area.
 
 ## NEXT ACTION
 
-**Go inside the tuft solver — `brush.ts`, `tuft.ts`, `spine.ts`. Nothing in
-this whole investigation has been in there.** The cause is footprint GEOMETRY:
-coverage per unit length varies because the tuft advances unevenly under a
-steady hand.
+**Make COVERAGE follow the advance, not the paint.** When the patch sticks and
+the next contact overlaps the previous one almost entirely, the two should not
+deposit twice at full strength into the same cells. That is an overlap /
+accumulation question in `emitFootprint` (brush.ts) and `deposit.wgsl` — the one
+direction not yet tried, and the only one left that does not require flattening
+real bristle behaviour.
 
-Measure the CPU footprint alone — no GPU, no reservoir — and separate two
-candidates:
-1. **Resampler remainder.** 4 cells between reports at `maxStep = 0.9` is 4.44
-   steps, so the step count per report alternates. An artefact; should go.
-2. **Genuine bristle lag.** Real brush behaviour; must be KEPT, but then paint
-   has to be laid in proportion to it.
+Worth settling first, cheaply: is the ~9-step oscillation the bristle solver's
+natural ringing, or the resampler's remainder (4 cells per report at
+`maxStep = 0.9` is 4.44 steps)? If part of it is the remainder, that part is an
+artefact and should go before anyone tries to damp anything real.
 
-Use the TONE metric and the thickness profile. Edge ripple is at its floor and
-will report null whatever you do — that is the trap that cost this session
-three rounds.
+**Measure with TONE or the thickness profile. Edge ripple is at its floor and
+reports null whatever you do** — that trap cost three rounds of this session.
 
 Still not run: `?full-check` on a VISIBLE page against E7/E8/E10.
-Still open on watercolour: the late residual (16 and 32 flow steps, 0.03370 ->
-0.04973).
+Still open on watercolour: the late residual (0.03370 -> 0.04973 at 16/32 steps).
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 
