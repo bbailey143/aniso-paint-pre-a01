@@ -554,7 +554,74 @@ design decision with no card behind it, and the artist's judgement of how a
 loaded brush should behave is the deciding evidence. Measurement recorded, change
 not made.
 
+## OIL RESET, AND THE REAL DRIFT (2026-08-30, docs/19 E19)
+
+The artist: *"I'm to a point of resetting the oil paint. Start from scratch - I
+feel like we're getting too far away from pure oil and adding too many fixes."*
+
+**DONE.** `src/brush/library.ts` capacities and `downRate` are back to shipped
+values. E15/E16's coatings-model sizing is kept in docs/19 in full and is one
+`git revert` away, but should not have shipped: E18 measured **91 % of a loaded
+tuft as unreachable**, so the model's "required load" was satisfied by inflating
+a number that is mostly sealed off - compensating for a transport bug rather
+than describing oil. Its millimetre scale is also arithmetic off the brush rows,
+not a measurement, and the paper rows disagree with it.
+
+**THE AUDIT'S REAL FINDING, and it is not the code.** `docs/18-oil-body.md` §5
+is the ratified order of attack for oil. Steps 1 and 2 are done. **Step 3 reads
+"NEXT, and it is the artist's" and has not moved since 2026-08-27.**
+
+Everything in docs/19 from E1 to E18 - fish scales, frame invariance, the pickup
+path, the loading model - is a DIFFERENT investigation. Real faults, genuinely
+fixed, and **not one of them is a step in the oil plan.** The plan has been
+parked three days at a step that needs the artist's eye and no code. That is the
+drift, and no further engine work closes it.
+
+**One number has never been satisfied:** "3 % feels correct" (2026-08-26), still
+the only accepted carry verdict on record. The crossing trail today runs
+**20.6 -> 8.6 -> 5.5 -> 4 -> 3.3** - about seven times his figure where it
+begins. docs/16 is explicit: **"Do not tune this to a number. Show him a
+crossing and take the verdict."**
+
+**WHERE OIL STANDS after the reset** - original character, only invariant bugs
+fixed. Oil / Flat Hog / Cotton Duck, pickup live, against this morning:
+
+| stroke | this morning | reset build |
+|---|---:|---:|
+| 1 cell/report (slow) | 0.00752 | **0.00324** |
+| 4 cells/report | 0.03452 | **0.00775** |
+| 12 cells/report (fast) | 0.05953 | **0.01238** |
+| accelerating 1 -> 12 | 0.06918 | **0.01482** |
+
+**Four to five times cleaner at every speed**, speed dependence largely gone
+(0.0032-0.0148 across a twelvefold range, against 0.0075-0.0692). Bundling spans
+4x where it spanned 19x. Swing 7-10 against 36-80. Every row reproduces exactly.
+
+**Kept, and none of it is "a fix to oil":** the pickup exponent, the readback
+settle, the lift seeing its own frame's paint, the raised `rubbed` ceiling, the
+trimmed tone metric. All frame-packaging or instrument correctness - invariant 2
+work that applies to watercolour identically. Reverting them would restore
+measured faults in both media and blind the bench.
+
 ## NEXT ACTION
+
+**IT IS THE ARTIST'S, AND IT IS ZERO-CODE.** `docs/18` §3b, the step the plan
+stopped on:
+
+1. **Paint one oil pass at Flow well above default. Does the THICKNESS look
+   right?**
+2. **Paint a crossing. How strong should the carry feel?** His last verdict was
+   3 %; the trail currently starts at 20.6 %.
+
+Those two verdicts restart the oil plan at the step it stalled on. Until they
+exist there is nothing here worth tuning, and adding more engine work only
+widens the drift he is describing.
+
+Then, in the order docs/18 §5 gives: the berm (§3a), then the relief sweep
+(§3c). Engine-side, the largest open item remains E18's stranded paint - 91 % of
+a tuft unreachable because `wick` has no cross-bristle path - and it must be
+settled BEFORE any loading model is attempted again.
+
 
 **Settle the stranded paint above with the artist — it is the biggest lever
 left and it moves the loading and the banding with it.** Then:

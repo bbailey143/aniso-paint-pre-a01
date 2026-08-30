@@ -1743,3 +1743,81 @@ re-measure the banding — which is also multiplicative in paint and will move.
 engine design decision with no card behind it, and the artist's own judgement of
 how a loaded brush should behave is the deciding evidence. The measurement is
 recorded; the change is not made.
+
+### E19 — oil reset, and what the audit found had actually drifted (2026-08-30, Claude)
+
+**The artist:** *"I'm to a point of resetting the oil paint. Start from scratch —
+I feel like we're getting too far away from pure oil and adding too many
+'fixes'."*
+
+**RESET.** `src/brush/library.ts` capacities and `downRate` are back to their
+shipped values. E15/E16's coatings-model sizing is kept in this log in full and
+is one `git revert` from returning, but it should not have shipped:
+
+1. **E18 measured 91 % of a loaded tuft as unreachable.** No bristle shares
+   paint sideways, so most of a charge can never get to the paper. The model's
+   "required load" was being satisfied by inflating a number that is mostly
+   sealed off — **compensating for a transport bug rather than describing oil.**
+2. **Its millimetre scale is arithmetic off the brush rows, not a
+   measurement**, and the paper rows disagree with it. Exactly the sort of
+   number the fence exists to keep out of the engine. It was marked
+   `[UNVERIFIED]` and then built on anyway.
+3. Quadrupling the film put the fish scales back roughly where they had been
+   before a day of work on them.
+
+**WHAT THE AUDIT ACTUALLY FOUND, and it is not the code.**
+
+`docs/18-oil-body.md` §5 is the ratified order of attack for oil. Steps 1 and 2
+are done. **Step 3 reads: "NEXT, and it is the artist's."** It has been sitting
+untouched since **2026-08-27**.
+
+> 3. **NEXT, and it is the artist's:** the zero-code flow test in §3b. Paint one
+>    oil pass at flow well above default and say whether the THICKNESS looks
+>    right. Also judge the crossing — how strong pickup should feel is his call
+>    and his only accepted number is still "3 % feels correct".
+
+Everything in this log from E1 to E18 — the fish scales, frame invariance, the
+pickup path, the loading model — is a *different investigation*. Real faults,
+genuinely fixed, and none of them steps in the oil plan. **The oil plan has been
+parked for three days at a step that requires the artist's eye and no code at
+all.** That is the drift he is describing, and no amount of further engine work
+closes it.
+
+**AND ONE NUMBER HAS NEVER BEEN SATISFIED.** The carried-colour verdict —
+"3 % feels correct", 2026-08-26, still the only accepted number on record. Today
+the crossing trail runs **20.6 → 8.6 → 5.5 → 4 → 3.3**: about seven times his
+figure where the trail begins, arriving at roughly right only by its end.
+`docs/16` is explicit about what to do, and it is not tuning:
+
+> **Do not tune this to a number.** Show him a crossing and take the verdict.
+
+---
+
+**WHERE OIL NOW STANDS — original character, only the invariant bugs fixed.**
+Oil / Flat Hog / Cotton Duck, full pipeline, pickup live, against the same build
+at the start of 2026-08-30:
+
+| stroke | this morning | **reset build** |
+|---|---:|---:|
+| 1 cell per report (slow) | 0.00752 | **0.00324** |
+| 4 cells per report | 0.03452 | **0.00775** |
+| 12 cells per report (fast) | 0.05953 | **0.01238** |
+| accelerating 1 → 12 | 0.06918 | **0.01482** |
+| decelerating 12 → 1 | 0.05069 | **0.01467** |
+
+**Four to five times cleaner at every speed**, and the speed dependence is
+largely gone — 0.0032 to 0.0148 across a twelvefold range, where this morning it
+was 0.0075 to 0.0692. Frame bundling spans 4× where it spanned 19×. Tonal swing
+is 7–10 throughout, against 36–80. Every row reproduces exactly.
+
+**What was kept, and why it is not "a fix to oil":** the pickup exponent, the
+readback settle, the lift seeing its own frame's paint, the raised `rubbed`
+ceiling, the trimmed tone metric. Every one is frame-packaging correctness or
+instrument correctness — `docs/00-invariants.md` §2 work that applies to
+watercolour identically. None of them touches what oil IS. Reverting them would
+restore measured faults in both media and blind the bench again.
+
+**NEXT is the artist's, and it is zero-code.** `docs/18` §3b: one oil pass at
+flow well above default — does the THICKNESS look right? And a crossing — how
+strong should the carry feel? Those two verdicts restart the oil plan at the
+step it stopped on, and until they exist there is nothing here worth tuning.
