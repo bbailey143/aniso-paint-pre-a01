@@ -259,6 +259,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      They are kept apart now, which is how the lab has it. */
   var press = 0.0;
   var cover = 0.0;
+  /** How far the brush travelled WHILE THIS CELL WAS UNDER HAIRS, in cells.
+   *  Summed one resampled solve step at a time below; see the pickup block. */
+  var rubbed = 0.0;
   /** Vehicle laid into this cell by this pass. The levelling may move this and
    *  no more: paint already on the sheet has come to rest. */
   var laidHere = 0.0;
@@ -300,6 +303,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
           stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
         shoveDirection = shoveDirection + action.xy;
         shoveRemaining = shoveRemaining * (1.0 - action.z);
+        // Every step that put a hair on this cell rubbed it by that step's own
+        // hand movement. `stepMotion` is the coverage-weighted sum of `s.drag`
+        // over this step's segments and `stepMotionWeight` is that same weight,
+        // so the quotient is the step's travel exactly.
+        if (stepMotionWeight > 0.0) {
+          rubbed = rubbed + length(stepMotion / stepMotionWeight);
+        }
         stepCover = 0.0;
         stepReach = 0.0;
         stepMotion = vec2<f32>(0.0);
@@ -384,6 +394,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
       shoveDirection = shoveDirection + action.xy;
       shoveRemaining = shoveRemaining * (1.0 - action.z);
+      if (stepMotionWeight > 0.0) {
+        rubbed = rubbed + length(stepMotion / stepMotionWeight);
+      }
     }
 
     laidHere = water;
@@ -489,8 +502,44 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      *
      * A brush held still lifts nothing, because `dist` is 0. That is a real
      * simplification — a brush pressed and held does slowly load — but the
-     * alternative is a floor, and a floor is per-frame accumulation again. */
-    let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.0, 16.0);
+     * alternative is a floor, and a floor is per-frame accumulation again.
+     *
+     * ~~`clamp(length(vec2(C.travelX, C.travelY)), 0.0, 16.0)`~~ — THE FRAME'S
+     * TRAVEL. This was the fish scales, and the argument above for why it was
+     * safe is where the mistake hid.
+     *
+     * The claim was that compounding makes it frame-independent, because a
+     * stroke cut into more frames gives each frame a smaller `dist` and the
+     * exponents add back up. That is true only for a cell EVERY frame touches.
+     * A cell the brush crosses ONCE — which is every cell in an ordinary
+     * stroke — is lifted once, with whatever exponent its own frame happened to
+     * be carrying, as though the brush had rubbed it for the frame's entire
+     * journey. Move the hand faster and the same cell, crossed the same way, is
+     * scoured harder. That is a per-frame delta, which invariant 2
+     * (`docs/00-invariants.md`) forbids in those words.
+     *
+     * [MEASURED, docs/19 E13] Oil / Flat Hog / Cotton Duck, full pipeline, tone
+     * ripple with this term as it stood. Pickup is ON in the app and had been
+     * switched OFF in every bench figure ever recorded here, which is how nine
+     * experiments went past it:
+     *
+     *     stroke                pickup off   pickup on
+     *     1 cell per report        0.00480     0.00752
+     *     4 cells per report       0.00374     0.03452
+     *     12 cells per report      0.00471     0.05953
+     *     accelerating 1 -> 12     0.00554     0.06918
+     *
+     * Slow strokes barely move; fast ones are thirteen times worse. That is the
+     * artist's own report — "slow strokes perform superiorly to fast strokes" —
+     * reproduced in an instrument for the first time.
+     *
+     * THE RIGHT QUANTITY is how far the brush rubbed THIS CELL, and the pass
+     * already had it in hand. `rubbed` sums the hand's movement over the solve
+     * steps whose hairs actually touched this cell, so it is the contact length
+     * the tuft dragged across it. It is per-cell, it does not know what a frame
+     * is, and cutting a frame in two splits it in two — which is the invariance
+     * the paragraph above wanted and did not have. */
+    let dist = clamp(rubbed, 0.0, 16.0);
 
     /* INTAKE — drinking, and it is limited by how much room the tuft has left.
        Unchanged, and it is the only route a water medium ever takes. */

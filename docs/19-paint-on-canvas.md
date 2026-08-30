@@ -1058,3 +1058,158 @@ bristle solver's natural ringing or is set by the resampler's remainder (4 cells
 per report at `maxStep = 0.9` is 4.44 steps). Separating those two would say
 whether any of the judder is an artefact rather than brush behaviour, and that
 is worth knowing before anyone tries to damp it.
+
+### E13 — the fish scales are PICKUP, and the bench had it switched off (2026-08-29, Claude)
+
+Three findings, in the order they have to be read. The first invalidates a lot
+of what is above it.
+
+---
+
+**1. THE TONE INSTRUMENT WAS MEASURING THE ENDS OF THE STROKE.**
+
+`toneRipple` was `relativeRms(profile)` over the whole profile. A stroke touches
+down and lifts off, so its first and last cells ramp between bare canvas and
+full tone — measured, Oil / Flat Hog / Flat White: **100 → 78.7 → 68.3** going
+in and **77 → 82 → 107** coming out. `residual` detrends with a ±16 moving mean,
+which cannot flatten a 30-unit step sitting AT the array boundary. Those two
+ramps survived detrending and then dominated the RMS.
+
+| | reported | interior only (24 cells trimmed each end) |
+|---|---:|---:|
+| deposit only | 0.04104 | **0.00359** |
+| deposit + brush shove | 0.04129 | **0.00648** |
+
+**Ninety-one per cent of the headline figure was the stroke's own ends** —
+correct behaviour that no banding fix should ever move. It also flattened the
+stage table into one repeated number and hid the only stage that changes.
+
+This is the third time this mistake has appeared here in a different costume:
+edge ripple measured WIDTH when the complaint was THICKNESS (E10/E11), and now
+tone measured the ENDS when the complaint is the MIDDLE. **Every tone figure
+recorded before this entry is the old quantity and is not comparable with
+anything after it** — including "4.55% to 1.38%" and the "34% improvement".
+
+Fixed: `analyseTone` trims `TONE_TRIM = 24` from each end, the same 24 the film
+metrics already used. The old figure is still printed as `toneEndsIncluded`.
+
+---
+
+**2. E11 AND E12 DO NOT REPRODUCE. The brush footprint is clean.**
+
+E11 put the ripple in the CPU brush footprint at **0.06279**, and E12 went
+inside the tuft on the strength of it. Neither survives re-measurement.
+
+- A node replica of the bench's own CPU-footprint stage (`node
+  tools/brush-bench.mjs density flat-hog oil`, a line-for-line copy of
+  `rasterFootprint` with the same X0/X1, GROUP, CORRIDOR and detrend) returns
+  **0.0033 thickness / 0.0034 volume**, flat across every speed from 1 to 16
+  cells per report, every Flow from 0 to 2, and every frame bundling.
+- The browser bench's own CPU footprint row now reads **volume 0.00455**. The
+  two instruments agree. 0.06279 is not reproducible and nothing should be
+  built on it.
+- E12's stick-slip does not reproduce either. `node tools/brush-bench.mjs reach
+  flat-hog` on a hand stepping a flat 0.8 cells: contact reach **CV 0.0000**,
+  segments per step **CV 0.0000**, and the tuft advance converges to **0.800
+  and stays there** — 0.424, 0.599, 0.704, 0.757, 0.783, 0.794, 0.799, 0.801,
+  0.802, 0.802… The 0.28–0.77 swing E12 reported is the first ten steps of the
+  stroke, a start-up transient, not a cycle. Same at 2-cell and 4-cell reports.
+- **The resampler's remainder is innocent**, which E11 asked to have separated.
+  Reports alternating 3.60/3.70 cells straddle a `ceil()` boundary (4 even steps
+  of 0.900 against 5 of 0.740); held constant at 3.65 they do not. Measured
+  **0.0812 against 0.0820** — identical. `steps = ceil(dist / maxStep)` is not
+  the fish scales and needs no work.
+
+---
+
+**3. THE FISH SCALES ARE PICKUP — and this bench has never had it on.**
+
+Every `engine.step` in this file passes `0, 0` for the tuft's grab.
+Deliberately, and it is even commented ("this test follows laid paint, not
+exchange"). The consequence went unnoticed for nine experiments: **the lifting
+term in `deposit.wgsl` had never once been measured here, while the artist has
+been painting with it on the whole time.**
+
+New `STROKE SPEED` section. Same 336-cell stroke, reported more or less often —
+which is what stroke speed IS to a browser, since the pointer fires at a roughly
+fixed rate. Oil / Flat Hog / Cotton Duck, full pipeline, corrected tone ripple:
+
+| stroke | pickup OFF | pickup ON | ratio |
+|---|---:|---:|---:|
+| 1 cell per report (slow) | 0.00480 | 0.00752 | 1.6× |
+| 4 cells per report | 0.00374 | **0.03452** | 9.2× |
+| 12 cells per report (fast) | 0.00471 | **0.05953** | 12.6× |
+| accelerating 1 → 12 | 0.00554 | **0.06918** | 12.5× |
+| decelerating 12 → 1 | 0.00556 | 0.05069 | 9.1× |
+
+Volume ripple moves the same way: 0.0067 → 0.0943 at four cells, 0.0122 →
+0.1699 accelerating. **Slow strokes barely move; fast ones are thirteen times
+worse.** That is the artist's own standing report — "slow strokes perform
+superiorly to fast strokes", 2026-08-29 — reproduced in an instrument for the
+first time.
+
+**The mechanism, and it is invariant 2 in plain sight.**
+
+    let dist = clamp(length(vec2<f32>(C.travelX, C.travelY)), 0.0, 16.0);
+    let up   = 1.0 - pow(1.0 - rIntake, dist);
+
+`C.travelX/Y` is the WHOLE FRAME's travel, and every cell the frame touched is
+lifted by that same exponent — as though the brush had rubbed each of them for
+the frame's entire journey.
+
+The comment above it argued this was frame-independent, because a stroke cut
+into more frames gives each frame a smaller `dist` and the exponents add back
+up. **That holds only for a cell every frame touches.** A cell the brush crosses
+ONCE — every cell in an ordinary stroke — is lifted once, carrying whatever
+exponent its frame happened to have. Move the hand faster and the same cell,
+crossed the same way, is scoured harder. `docs/00-invariants.md` §2 forbids that
+in those words: "never a per-frame delta".
+
+**THE FIX.** The right quantity is how far the brush rubbed THIS CELL, and the
+pass already had it. `rubbed` sums the hand's movement over the solve steps
+whose hairs actually touched this cell — `stepMotion / stepMotionWeight` is that
+step's `s.drag` exactly — so it is the contact length the tuft dragged across
+that cell. Per-cell, frame-blind, and cutting a frame in two splits it in two.
+
+| stroke | pickup off | before | **after** |
+|---|---:|---:|---:|
+| 1 cell per report | 0.00480 | 0.00752 | **0.00553** |
+| 4 cells per report | 0.00374 | 0.03452 | **0.01240** |
+| 12 cells per report | 0.00471 | 0.05953 | **0.03124** |
+| accelerating 1 → 12 | 0.00554 | 0.06918 | **0.03455** |
+| decelerating 12 → 1 | 0.00556 | 0.05069 | **0.02444** |
+
+**Slow strokes land on the pickup-off floor** (0.00553 against 0.00480). Fast
+strokes halve. Pickup still lifts a proper amount — total film 536.7 → 445.2 at
+four cells per report, 17 % taken up — so this is not the term being switched
+off by the back door.
+
+**WHAT IS LEFT.** Fast strokes are still about 6× the pickup-off floor, and it
+is still inside the pickup path. Not yet attributed, and this entry does not
+guess.
+
+**TRIED AND REMOVED: freezing the tuft's grab.** A third bench row held
+`brushTake` at its stroke-start value to ask whether the residue is `brushTake`
+stepping once per frame. **It does not discriminate.** `brushTake` is `upRate *
+roomFraction()` and a freshly charged brush has no room, so the frozen value is
+about zero and the row is just pickup switched off — total film came back 547.5
+against 547.4 with no pickup at all. Its lower tone figures meant "less
+lifting", not "the same lifting without the staleness". Removed rather than left
+to mislead. Whatever replaces it must hold the grab at a value the stroke
+actually reaches.
+
+**AMBER.** The pickup rows do not reproduce bit-exactly between paired runs
+(0.00553/0.00591 at one cell per report; the pickup-off rows are identical to
+every digit). The reservoir is credited from an asynchronous readback, so run
+order can change what the tuft is holding. Read that before trusting a small
+difference in a pickup row.
+
+**NOT RUN.** `?full-check`, the pickup/stacking/holding regression suite, needs
+a VISIBLE page — it is deliberately paced on `setTimeout` and runs with pickup
+on. The pane was hidden for this session and the result could not be trusted, so
+it was not run. **It is the first thing to do next.**
+
+**New instruments.** `node tools/brush-bench.mjs density <brush> <medium>` — the
+bench's CPU footprint stage in node, in a second, with no GPU or browser.
+`node tools/brush-bench.mjs reach <brush> [cells-per-report]` — what the tooth
+gate is being handed, per solve step.

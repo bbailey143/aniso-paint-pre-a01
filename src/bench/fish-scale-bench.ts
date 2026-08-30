@@ -259,12 +259,41 @@ function toneProfile(img: { data: Uint8Array; size: number }): number[] {
   return out;
 }
 
+/** Cells trimmed from each end before any tone figure is computed. See below.
+ *  The same 24 the film metrics already use for `safeLo`/`safeHi`. */
+const TONE_TRIM = 24;
+
 function analyseTone(img: { data: Uint8Array; size: number }) {
   const profile = toneProfile(img);
-  const inner = profile.slice(12, -12);
+  /* TRIM THE ENDS BEFORE MEASURING, and this is not cosmetic.
+   *
+   * [MEASURED 2026-08-29 — the instrument was reporting the wrong thing.]
+   * `toneRipple` used to be `relativeRms(profile)` over the WHOLE profile.
+   * A stroke touches down and lifts off, so its first and last cells ramp
+   * between bare canvas and full tone — Oil / Flat Hog / Flat White measured
+   * 100 -> 78.7 -> 68.3 going in and 77 -> 82 -> 107 coming out. `residual`
+   * detrends with a +/-16 moving mean, which cannot flatten a 30-unit step
+   * sitting AT the array boundary, so those two ramps survived detrending and
+   * then dominated the RMS.
+   *
+   * How badly: reported 0.04104, interior only 0.00359. **Ninety-one per cent
+   * of the headline figure was the stroke's own ends** — behaviour that is
+   * correct and that no banding fix should ever move. It also flattened the
+   * stage table into a single repeated number and hid the one stage that does
+   * change (the brush shove, 0.00359 -> 0.00648).
+   *
+   * This is the third time in this log the same mistake has been made in a
+   * different costume: edge ripple measured WIDTH when the complaint was
+   * THICKNESS (E10/E11), and now tone measured the ENDS when the complaint is
+   * the MIDDLE. Measure the quantity being complained about.
+   *
+   * Every tone figure recorded before this date is the old quantity and is not
+   * comparable with anything after it. */
+  const inner = profile.slice(TONE_TRIM, -TONE_TRIM);
   const { lag, correlation } = repeatLag(profile);
   return {
-    toneRipple: +relativeRms(profile).toFixed(5),
+    toneRipple: +relativeRms(inner).toFixed(5),
+    toneEndsIncluded: +relativeRms(profile).toFixed(5),
     toneMean: +(inner.reduce((a, b) => a + b, 0) / Math.max(1, inner.length)).toFixed(2),
     toneSwing: +(Math.max(...inner) - Math.min(...inner)).toFixed(2),
     toneLagCells: lag,
@@ -484,6 +513,85 @@ async function postFlowRun(
   return result;
 }
 
+/* --------------------------------------------------------------- SPEED ----
+ * THE CONDITION THE ARTIST ACTUALLY PAINTS IN, and the one this bench has
+ * never run.
+ *
+ * Every other stroke in this file is reported at a dead-constant four cells per
+ * report from end to end. A hand is not. The artist's standing report since
+ * 2026-08-29 is "slow strokes perform superiorly to fast strokes", and there
+ * has been no instrument here that could either confirm or deny it.
+ *
+ * Speed is expressed the way the browser expresses it: the pointer fires at a
+ * roughly fixed RATE, so going faster puts more cells between reports. Frame
+ * bundling is held at GROUP throughout, which is also what a browser does.
+ *
+ * `ramp` accelerates smoothly from `from` cells per report to `to` across the
+ * stroke — the shape of a real drawn line, and the only one of these that can
+ * show a fault that depends on speed CHANGING rather than on speed.
+ */
+async function speedRun(
+  engine: AnyRec, stroke: AnyRec, from: number, to: number, pickup = false,
+) {
+  setup(engine, stroke, { name: 'full pipeline', smear: 1, allow: MOTION });
+  const n = engine.sim as number;
+  // Report positions: spacing sweeps linearly from `from` to `to` over the span.
+  const xs: number[] = [];
+  {
+    let x = X0;
+    while (x < X1) {
+      xs.push(x);
+      const t = (x - X0) / (X1 - X0);
+      x += from + (to - from) * t;
+    }
+    xs.push(X1);
+  }
+  stroke.begin(X0, Y, sample());
+  for (let k = 1; k < xs.length; k++) {
+    stroke.add(xs[k], Y, sample());
+    if (k % GROUP === 0 || k === xs.length - 1) {
+      const d = stroke.drain();
+      /* PICKUP: OFF everywhere else in this file, ON in the live app.
+       *
+       * `engine.step`'s last two arguments are the tuft's grab. Every other
+       * measurement here passes 0, 0 — deliberately, because those runs follow
+       * laid paint and not exchange — with the consequence that the lifting
+       * term in `deposit.wgsl` has never once been measured by this bench,
+       * while the artist has been painting with it on the whole time.
+       *
+       * It is worth measuring because of HOW it is written:
+       *
+       *     let dist = clamp(length(vec2(C.travelX, C.travelY)), 0.0, 16.0);
+       *     let up   = 1.0 - pow(1.0 - rIntake, dist);
+       *
+       * `C.travelX/Y` is the WHOLE FRAME's travel, and every cell the frame
+       * touched is lifted by that same exponent — as though the brush had
+       * rubbed each of them for the frame's entire journey. Over a stroke the
+       * exponents do sum back up, which is the invariance the comment there
+       * claims; but a cell the brush crosses ONCE is lifted once, with whatever
+       * exponent its frame happened to carry. Change speed and that exponent
+       * changes with it. */
+      /* `frozen` holds the tuft's grab at its stroke-start value instead of
+         reading it fresh each frame. `brushTake` is `upRate * roomFraction()`,
+         a single uniform for the whole frame, and the room fraction is credited
+         from an ASYNCHRONOUS readback of what the last deposit lifted. So the
+         number every cell in a frame is scoured by is the tuft's fullness as of
+         some earlier frame — a per-frame step, and the more ground a frame
+         covers the more cells share one stale value. Freezing it does not make
+         a shippable brush; it says whether that staleness is what is left. */
+      engine.step(d.data, d.count, d.dx, d.dy, stroke.brushMix,
+        pickup ? stroke.brushTake : 0, pickup ? stroke.brushGrab : 0);
+      await yieldTick();
+    }
+  }
+  stroke.end();
+  const wet0 = await engine.dump('wet0') as Float32Array;
+  const result: AnyRec = analyse(scalarFilm(wet0, n), n);
+  result.tone = analyseTone(await engine.dumpComposite(n));
+  result.reports = xs.length;
+  return result;
+}
+
 async function faceOwnershipRun(engine: AnyRec, stroke: AnyRec) {
   const depositStage = { name: 'deposit + brush shove', smear: 1, allow: [] };
   setup(engine, stroke, depositStage);
@@ -572,6 +680,7 @@ async function run(engine: AnyRec, stroke: AnyRec) {
       stages: {},
       postFlow: {},
       flowVariants: {},
+      speeds: {},
       faceOwnership: [],
       relaxSweep: {},
     };
@@ -616,6 +725,31 @@ async function run(engine: AnyRec, stroke: AnyRec) {
       const a = await postFlowRun(engine, stroke, 8, allow);
       const b = await postFlowRun(engine, stroke, 8, allow);
       result.flowVariants[name] = { runs: [a, b] };
+    }
+    /* Speed, including a hand that CHANGES speed. Full pipeline throughout, so
+       these are directly comparable with the `full pipeline` row above. */
+    for (const [name, from, to] of [
+      ['steady, 1 cell/report', 1, 1],
+      ['steady, 4 cells/report', 4, 4],
+      ['steady, 12 cells/report', 12, 12],
+      ['accelerating 1 -> 12', 1, 12],
+      ['decelerating 12 -> 1', 12, 1],
+    ] as Array<[string, number, number]>) {
+      const a = await speedRun(engine, stroke, from, to);
+      const b = await speedRun(engine, stroke, from, to);
+      result.speeds[name] = { runs: [a, b] };
+      const c = await speedRun(engine, stroke, from, to, true);
+      const d = await speedRun(engine, stroke, from, to, true);
+      result.speeds[`${name}  + PICKUP`] = { runs: [c, d] };
+      /* [TRIED AND REMOVED 2026-08-29] A third row here froze the tuft's grab
+         at its stroke-start value, to ask whether the banding left after the
+         `rubbed` fix is `brushTake` changing once per frame. It does not
+         discriminate: `brushTake` is `upRate * roomFraction()`, and a freshly
+         charged brush has no room, so the frozen value is ~0 and the row is
+         simply pickup switched off — total film came back 547.5 against 547.4
+         with no pickup at all. Its lower tone figures meant "less lifting", not
+         "the same lifting without the staleness". Whatever replaces it has to
+         hold the grab at a value the stroke actually reaches. */
     }
     /* Face ownership and the relaxation sweep read the velocity field and the
        divergence it leaves. A paste has neither — the engine never ran the
@@ -696,6 +830,18 @@ function summary(result: AnyRec) {
       + `lag ${a.repeatLagCells}/${b.repeatLagCells}  `
       + `r ${a.repeatCorrelation.toFixed(3)}/${b.repeatCorrelation.toFixed(3)}`);
   });
+  const speeds = Object.entries(result.speeds ?? {}).map(([name, value]) => {
+    const v = value as AnyRec;
+    const a = v.runs[0], b = v.runs[1];
+    return repro(same(a, b), `${name.padEnd(32)} `
+      + `TONE ${a.tone.toneRipple.toFixed(5)}/${b.tone.toneRipple.toFixed(5)}  `
+      + `tone-lag ${a.tone.toneLagCells}/${b.tone.toneLagCells}  `
+      + `swing ${a.tone.toneSwing.toFixed(2)}/${b.tone.toneSwing.toFixed(2)}  `
+      + `edge ${a.edgeRipple.toFixed(5)}/${b.edgeRipple.toFixed(5)}  `
+      + `volume ${a.volumeRipple.toFixed(5)}/${b.volumeRipple.toFixed(5)}  `
+      + `film ${a.totalFilm.toFixed(1)}/${b.totalFilm.toFixed(1)}  `
+      + `reports ${a.reports}`);
+  });
   const paste = result.setup.route === 'paste';
   const faceRows = paste ? [] : ['east', 'west', 'south', 'north'].map((side) => {
     const a = result.faceOwnership[0][side], b = result.faceOwnership[1][side];
@@ -753,6 +899,8 @@ function summary(result: AnyRec) {
     ...growth, '',
     esc('EIGHT FLOW STEPS, ONE FORCE AT A TIME'),
     ...variants, '',
+    esc('STROKE SPEED — full pipeline, the hand reported more or less often'),
+    ...speeds, '',
     ...velocitySections,
     paste ? esc('(face-ownership and relaxation sweep skipped: a paste has no velocity field)') : '',
     esc('Green = the pair reproduced. Ripple figures are diagnostic, never a pass.'),

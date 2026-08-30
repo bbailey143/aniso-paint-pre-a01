@@ -12,6 +12,7 @@
 //
 import { StrokeEngine } from '../src/input/stroke';
 import { BRUSH_BY_SLUG } from '../src/brush/library';
+import { WET_MEDIA } from '../src/media/library';
 import { SEG_FLOATS } from '../src/engine/fluid';
 import type { StylusSample } from '../src/input/pointer';
 
@@ -23,7 +24,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -1169,5 +1170,210 @@ if (MODE === 'fill') {
         `            ${String(ys.length).padStart(4)}        ${(cv * 100).toFixed(0).padStart(3)}%`);
     }
     console.log('');
+  }
+}
+
+/* ------------------------------------------------------------------ reach --
+ * What the tooth gate is being handed.
+ *
+ * `deposit.wgsl` gates every contact on `smoothstep(need - hw, need + hw, ride)`
+ * where `need = 1 - reach` and `hw` narrows with viscosity: at Oil's 0.85 it is
+ * 0.18 * 0.15 = 0.027, a ramp 0.054 wide, which is a threshold in all but name.
+ * So the question is how steady `reach` is. If it wobbles by more than a few
+ * hundredths from one solve step to the next, that near-binary gate turns the
+ * wobble into hairs switching fully on and fully off.
+ */
+if (MODE === 'reach') {
+  const which = process.argv[3] ?? 'flat-hog';
+  const st = new StrokeEngine(BRUSH_BY_SLUG.get(which)!, 1.0);
+  const m = new Float32Array(8); m[0] = 1;
+  st.charge(m, 1.0, 0);
+  const REPORT = Number(process.argv[4] ?? 0.8);
+  st.begin(60, 100, sample({ pressure: 0.65 }));
+  const rows: { n: number; mean: number; lo: number; hi: number; adv: number }[] = [];
+  let prevCx = 60;
+  for (let i = 1; i <= Math.ceil(60 * 0.8 / REPORT); i++) {
+    st.add(60 + i * REPORT, 100, sample({ pressure: 0.65, time: i }));
+    const { data, count } = st.drain();
+    let s = 0, lo = 1, hi = 0, cx = 0;
+    for (let j = 0; j < count; j++) {
+      const r = data[j * SEG_FLOATS + 7];
+      s += r; lo = Math.min(lo, r); hi = Math.max(hi, r);
+      cx += data[j * SEG_FLOATS + 2];
+    }
+    if (!count) continue;
+    rows.push({ n: count, mean: s / count, lo, hi, adv: cx / count - prevCx });
+    prevCx = cx / count;
+  }
+  const use = rows.slice(10);
+  const cv = (v: number[]) => {
+    const mu = v.reduce((a, b) => a + b, 0) / v.length;
+    return Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / v.length) / (mu || 1);
+  };
+  const means = use.map((r) => r.mean);
+  console.log(`${which} — per stylus REPORT of ${REPORT} cells (${Math.max(1, Math.ceil(REPORT / 0.9))} solve steps each)`);
+  console.log(`  contact reach: mean ${(means.reduce((a, b) => a + b, 0) / means.length).toFixed(4)}`
+    + `  swing ${Math.min(...means).toFixed(4)}-${Math.max(...means).toFixed(4)}`
+    + `  CV ${cv(means).toFixed(4)}`);
+  console.log(`  tuft advance : CV ${cv(use.map((r) => r.adv)).toFixed(4)}`
+    + `  ${Math.min(...use.map((r) => r.adv)).toFixed(3)}-${Math.max(...use.map((r) => r.adv)).toFixed(3)}`);
+  console.log(`  segments/step: CV ${cv(use.map((r) => r.n)).toFixed(4)}`
+    + `  ${Math.min(...use.map((r) => r.n))}-${Math.max(...use.map((r) => r.n))}`);
+  console.log('  reach per step: ' + use.slice(0, 30).map((r) => r.mean.toFixed(3)).join(' '));
+  console.log('  advance      : ' + use.slice(0, 30).map((r) => r.adv.toFixed(3)).join(' '));
+  // How much of the tuft sits inside Oil's gate ramp, where a hundredth of
+  // reach is the difference between laying paint and laying none.
+  console.log('  reach spread within one step: '
+    + use.slice(0, 12).map((r) => `${r.lo.toFixed(2)}-${r.hi.toFixed(2)}`).join('  '));
+}
+
+/* ---------------------------------------------------------------- density --
+ * THE FISHSCALE, MEASURED IN NODE.
+ *
+ * docs/19 E11 put the residual ripple in the BRUSH FOOTPRINT — the CPU
+ * footprint stage carried 0.06279, larger than anything downstream of it. So it
+ * can be measured here, with no GPU, no browser and no frame scheduler, which
+ * means in a second rather than a bench run and identically every time.
+ *
+ * This is a deliberate REPLICA of `fish-scale-bench.ts`'s CPU footprint stage —
+ * same X0/X1, same 84 reports (four cells apart), same GROUP of 4, same
+ * CORRIDOR, same TREND_RADIUS detrend, and `rasterFootprint` copied line for
+ * line. If it does not return the bench's figure it is not measuring the same
+ * thing and nothing it says can be trusted.
+ *
+ * [TRAP that cost a session] The first version of this probe omitted
+ * `setWetMedium`, so it ran the WATER withdrawal path. Oil is a body paint and
+ * takes a different branch in `Reservoir.withdraw` entirely. It read dead flat
+ * and looked like a refutation of E11.
+ */
+if (MODE === 'density') {
+  const which = process.argv[3] ?? 'flat-hog';
+  const mediumSlug = process.argv[4] ?? 'oil';
+  const medium = WET_MEDIA.find((m) => m.slug === mediumSlug)!;
+  const X0 = 88, X1 = 424, YMID = 256, INPUTS = 84, N = 512;
+  const CORRIDOR = 42, TREND = 16;
+
+  const movingMean = (v: number[], r: number) => {
+    const pre = new Array(v.length + 1).fill(0);
+    for (let i = 0; i < v.length; i++) pre[i + 1] = pre[i] + v[i];
+    return v.map((_x, i) => {
+      const lo = Math.max(0, i - r), hi = Math.min(v.length - 1, i + r);
+      return (pre[hi + 1] - pre[lo]) / (hi - lo + 1);
+    });
+  };
+  const residual = (v: number[], r = TREND) => {
+    const t = movingMean(v, r); return v.map((x, i) => x - t[i]);
+  };
+  const rms = (v: number[]) => Math.sqrt(v.reduce((s, x) => s + x * x, 0) / Math.max(1, v.length));
+  const smooth3 = (lo: number, hi: number, x: number) => {
+    const t = Math.max(0, Math.min(1, (x - lo) / Math.max(hi - lo, 1e-9)));
+    return t * t * (3 - 2 * t);
+  };
+  const repeatLag = (v: number[]) => {
+    const r = residual(v).slice(24, -24);
+    if (r.reduce((s, x) => s + x * x, 0) < 1e-18) return { lag: 0, c: 0 };
+    let bl = 0, best = -1;
+    for (let lag = 2; lag <= 40 && lag < r.length / 2; lag++) {
+      let ab = 0, aa = 0, bb = 0;
+      for (let i = 0; i + lag < r.length; i++) { ab += r[i] * r[i + lag]; aa += r[i] * r[i]; bb += r[i + lag] * r[i + lag]; }
+      const c = ab / Math.max(Math.sqrt(aa * bb), 1e-18);
+      if (c > best) { best = c; bl = lag; }
+    }
+    return { lag: bl, c: +best.toFixed(3) };
+  };
+
+  /** `fish-scale-bench.ts` rasterFootprint, copied. */
+  const raster = (dst: Float64Array, data: Float32Array, count: number) => {
+    for (let i = 0; i < count; i++) {
+      const o = i * SEG_FLOATS;
+      const ax = data[o], ay = data[o + 1], bx = data[o + 2], by = data[o + 3];
+      const radius = data[o + 4], water = data[o + 5], reach = data[o + 7];
+      const minX = Math.max(0, Math.floor(Math.min(ax, bx) - radius - 1));
+      const maxX = Math.min(N - 1, Math.ceil(Math.max(ax, bx) + radius + 1));
+      const minY = Math.max(0, Math.floor(Math.min(ay, by) - radius - 1));
+      const maxY = Math.min(N - 1, Math.ceil(Math.max(ay, by) + radius + 1));
+      const abx = bx - ax, aby = by - ay, len2 = abx * abx + aby * aby;
+      const need = 1 - Math.max(0, Math.min(1, reach));
+      const gate = smooth3(need - 0.18, need + 0.18, 1);
+      for (let cy = minY; cy <= maxY; cy++) for (let cx = minX; cx <= maxX; cx++) {
+        const px = cx + 0.5, py = cy + 0.5;
+        const t = len2 < 1e-8 ? 0 : Math.max(0, Math.min(1,
+          ((px - ax) * abx + (py - ay) * aby) / len2));
+        const d = Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+        if (d >= radius + 0.5) continue;
+        const cov = Math.max(0, Math.min(1, radius - d + 0.5));
+        const prof = 1 - 0.55 * Math.max(0, Math.min(1, d / Math.max(radius, 1e-3)));
+        dst[cy * N + cx] += cov * prof * gate * water;
+      }
+    }
+  };
+
+  const run = (group: number, flow: number, label: string, inputs = INPUTS) => {
+    const st = new StrokeEngine(BRUSH_BY_SLUG.get(which)!, 1);
+    st.setWetMedium(medium);
+    st.setBrush(BRUSH_BY_SLUG.get(which)!, 1);
+    if (flow !== 1) (st as any).setFlow(flow);
+    const m = new Float32Array(8); m[0] = 1;
+    st.charge(m, 1, 0);
+    const field = new Float64Array(N * N);
+    st.begin(X0, YMID, sample({ pointerType: 'mouse', pressure: 0.5 }));
+    for (let k = 1; k <= inputs; k++) {
+      st.add(X0 + ((X1 - X0) * k) / inputs, YMID, sample({ pointerType: 'mouse', pressure: 0.5 }));
+      if (k % group === 0 || k === inputs) {
+        const d = st.drain();
+        raster(field, d.data, d.count);
+      }
+    }
+    st.end();
+    const volumes: number[] = [];
+    /* THICKNESS, not volume — and the difference is the whole measurement.
+     *
+     * A column SUM over 85 rows averages the mark's own noise away: it answers
+     * "how much paint is in this column", which is nearly constant by
+     * conservation whatever the paint is doing inside the column. The eye reads
+     * Kubelka-Munk on the film depth AT A POINT. So take the same quantity
+     * `analyseTone` takes from the rendered picture: the thickest few cells in a
+     * narrow band on the centreline. On the same field the two differ by more
+     * than an order of magnitude, and only one of them is the complaint. */
+    const thick: number[] = [];
+    for (let x = X0; x <= X1; x++) {
+      let v = 0;
+      for (let y = YMID - CORRIDOR; y <= YMID + CORRIDOR; y++) v += field[y * N + x];
+      volumes.push(v);
+      const band: number[] = [];
+      for (let y = YMID - 7; y <= YMID + 7; y++) band.push(field[y * N + x]);
+      band.sort((a, b) => b - a);
+      thick.push(band.slice(0, 8).reduce((a, b) => a + b, 0) / 8);
+    }
+    const inner = volumes.slice(24, -24);
+    const mean = inner.reduce((a, b) => a + b, 0) / inner.length;
+    const ripple = rms(residual(volumes).slice(24, -24)) / Math.max(mean, 1e-9);
+    const tInner = thick.slice(24, -24);
+    const tMean = tInner.reduce((a, b) => a + b, 0) / tInner.length;
+    const tRipple = rms(residual(thick).slice(24, -24)) / Math.max(tMean, 1e-9);
+    const { lag, c } = repeatLag(thick);
+    console.log(`  ${label.padEnd(30)} thickness ${tRipple.toFixed(5)}`
+      + `   repeat ${String(lag).padStart(2)} (r ${c.toFixed(2)})`
+      + `   volume ${ripple.toFixed(5)}   mean ${tMean.toFixed(4)}`);
+    if (process.argv.includes('--profile')) {
+      const r = residual(thick);
+      console.log('      ' + r.slice(30, 100).map((v) => (v / tMean).toFixed(2)).join(' '));
+    }
+    return tRipple;
+  };
+
+  console.log(`${which} / ${medium.name} — CPU footprint, replica of the fish-scale bench`);
+  run(4, 1, 'as the bench runs it');
+  run(1, 1, 'one report per frame');
+  run(16, 1, 'sixteen reports per frame');
+  console.log('  --- the artist\'s Flow clue ---');
+  for (const f of [0, 0.25, 0.5, 1, 2]) run(4, f, `flow ${f}`);
+  /* SLOW AGAINST FAST — the artist's own observation, and the one symptom no
+     instrument here has yet reproduced. Speed is cells between stylus reports:
+     the same 336-cell stroke, reported more or less often. Frame bundling is
+     held at one report per frame so this is the hand's sampling alone. */
+  console.log('  --- speed: cells between stylus reports ---');
+  for (const [inputs, gap] of [[336, 1], [168, 2], [112, 3], [84, 4], [56, 6], [42, 8], [28, 12], [21, 16]] as const) {
+    run(1, 1, gap + ' cells per report', inputs);
   }
 }

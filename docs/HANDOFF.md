@@ -246,68 +246,129 @@ Cotton Duck: 0.03520 -> 0.01425. Conservation ~0.02%. Watercolour byte-identical
 RX 570, inside the 16.7 ms budget. Noisy, upper bound, no timestamp queries.
 **`LEVEL_SWEEP_MAX` is the dial if the iPad is tight.**
 
-## THE BANDING, FULLY DIAGNOSED — and why two obvious fixes both failed
-(2026-08-29, docs/19 E11/E12)
+## RETRACTED — the E11/E12 diagnosis does not reproduce (2026-08-29, docs/19 E13)
 
-**It is not fluid, not pigment, not levelling, not lighting, not the tooth gate.**
-Pigment/film ratio ripple is 0.00001 — pigment tracks the vehicle exactly.
+The section that used to stand here said the banding was stick-slip in the tuft
+and that the fix was an overlap question in `emitFootprint`. **Both halves are
+wrong and were built on a figure that cannot be reproduced.** Kept as a warning,
+not as guidance:
 
-**Per solve step, hand stepping a uniform 0.8 cells:**
+- E11's "CPU footprint 0.06279". Re-measured two ways — the browser bench's own
+  CPU row (**0.00455**) and a line-for-line node replica of it
+  (`node tools/brush-bench.mjs density flat-hog oil`, **0.0034**). The brush
+  footprint is clean and has been all along.
+- E12's stick-slip, "advance 0.28 to 0.77". That is the first ten steps of the
+  stroke. `node tools/brush-bench.mjs reach flat-hog` shows the advance
+  converging to **0.800 and staying there**, contact reach CV **0.0000**,
+  segments per step CV **0.0000**, at 1, 2 and 4 cells per report.
+- The resampler's remainder is innocent too: reports alternating 3.60/3.70
+  across a `ceil()` boundary measure **0.0812** against **0.0820** held
+  constant. Nothing to fix in `steps = ceil(dist / maxStep)`.
 
-| | variation |
-|---|---:|
-| water released | **CV 0 — exactly constant** |
-| contact patch advance | **CV 0.148** (0.28 to 0.77) |
-| swept area covered | **CV 0.038 — nearly constant** |
-| **paint per unit length** | **0.53 to 1.45, a 2.7x swing** |
+**Do not go back into the tuft solver on this.** Nothing has been found wrong
+with it.
 
-A constant packet, onto a near-constant area, at uneven spacing. The area does
-not follow the advance because each hair's own footprint (pi*r^2) dominates the
-sweep (2*r*d). Laid on the CPU, before the GPU sees anything.
+## THE INSTRUMENT WAS BROKEN — fixed, and it invalidates old numbers
 
-**The uneven advance is REAL and must be kept.** `Spine.applyFloor` holds a
-pinned joint back by `frictionHold = min(0.98, mu*(1-eta))`; at 0.98 the
-bristle sticks, loads, and springs. That is stick-slip and it is what bristles
-do. The hand is uniform; the judder is the brush.
+`toneRipple` was `relativeRms` over the WHOLE profile, ends included. A stroke's
+touch-down and lift-off ramp between bare canvas and full tone (100 → 78.7 →
+68.3 in, 77 → 82 → 107 out), and a ±16 moving-mean detrend cannot flatten a step
+sitting at the array boundary. Measured: reported **0.04104**, interior only
+**0.00359**. **Ninety-one per cent of the number was the ends of the stroke.**
 
-**The artist's Flow clue** (0 = no banding, 0.5 = visible) is NOT saturation —
-`downRate*flow*dist` is 0.44 at Flow 1, well under the clamp. It says the
-banding is MULTIPLICATIVE on the deposit: more paint, more banding.
+`analyseTone` now trims 24 cells from each end — the same 24 the film metrics
+already used — and still prints the old figure as `toneEndsIncluded`.
 
-## DO NOT RETRY THESE — both measured, both reverted
+**Every tone figure recorded before 2026-08-29 is the old quantity and does not
+compare with anything after it.** That includes "4.55% to 1.38%" and the "34%
+improvement". Do not read them as a baseline.
 
-1. **Charge by the hair's own track.** Net worse (tone 0.03532 -> 0.03945). A
-   single hair's displacement is noisy with splay.
-2. **Charge by the tuft's true rubbed distance** (mean contacting-joint
-   movement, published from the spine). Physically correct AND it killed the
-   long period — repeat 16 -> 2 — but everything else got much worse: thickness
-   0.05994 -> 0.09045, CPU footprint 0.06279 -> 0.12539, swing 12.68 -> 29.19.
-   Stick-slip is too jerky to meter by directly and the `STILL = 0.25` floor
-   hands stuck steps relatively MORE paint.
+This is the third time the same mistake has landed here in a different costume:
+edge ripple measured WIDTH when the complaint was THICKNESS, and tone measured
+the ENDS when the complaint is the MIDDLE. **Before optimising a number, print
+the profile it came from and look at it.**
 
-**Why both failed:** metering is the wrong lever. The covered AREA does not
-scale with the advance (CV 0.038 vs 0.148), so scaling paint down for a stuck
-step just puts less paint on the same area.
+## DONE — the fish scales are PICKUP, and the bench had it switched off
+
+Every `engine.step` in `fish-scale-bench.ts` passed `0, 0` for the tuft's grab.
+So the lifting term in `deposit.wgsl` had never once been measured by this
+bench, while the artist has been painting with it on the whole time. Nine
+experiments went past it.
+
+New `STROKE SPEED` section — the same 336-cell stroke reported more or less
+often, which is what speed IS to a browser. Oil / Flat Hog / Cotton Duck, full
+pipeline, corrected tone ripple:
+
+| stroke | pickup off | before | **after the fix** |
+|---|---:|---:|---:|
+| 1 cell per report (slow) | 0.00480 | 0.00752 | **0.00553** |
+| 4 cells per report | 0.00374 | 0.03452 | **0.01240** |
+| 12 cells per report (fast) | 0.00471 | 0.05953 | **0.03124** |
+| accelerating 1 → 12 | 0.00554 | 0.06918 | **0.03455** |
+| decelerating 12 → 1 | 0.00556 | 0.05069 | **0.02444** |
+
+Pickup on made fast strokes **thirteen times** worse than slow ones. That is the
+artist's own report — "slow strokes perform superiorly to fast strokes" —
+reproduced in an instrument for the first time.
+
+**The bug.** `deposit.wgsl` lifted with `dist = length(C.travelX, C.travelY)`,
+the WHOLE FRAME's travel, applied as the exponent for every cell the frame
+touched — as though the brush had rubbed each of them for the frame's entire
+journey. The comment claimed frame-independence because the exponents add back
+up; that holds only for a cell every frame touches, and an ordinary stroke
+crosses each cell once. `docs/00-invariants.md` §2: "never a per-frame delta".
+
+**The fix.** `rubbed` — the hand's movement summed over the solve steps whose
+hairs actually touched THIS cell. Per-cell, frame-blind, splits when a frame
+splits. Slow strokes now sit on the pickup-off floor. Pickup still lifts a
+proper amount (total film 536.7 → 445.2, 17 % taken up), so it has not been
+switched off by the back door.
 
 ## NEXT ACTION
 
-**Make COVERAGE follow the advance, not the paint.** When the patch sticks and
-the next contact overlaps the previous one almost entirely, the two should not
-deposit twice at full strength into the same cells. That is an overlap /
-accumulation question in `emitFootprint` (brush.ts) and `deposit.wgsl` — the one
-direction not yet tried, and the only one left that does not require flattening
-real bristle behaviour.
+**1. Run `?full-check` on a VISIBLE page.** It is the pickup/stacking/holding
+regression suite, it is deliberately paced on `setTimeout`, and it runs with
+pickup on — so a hidden pane makes it untrustworthy. It could not be run this
+session and the pickup path is exactly what changed. **Do this before anything
+else.**
 
-Worth settling first, cheaply: is the ~9-step oscillation the bristle solver's
-natural ringing, or the resampler's remainder (4 cells per report at
-`maxStep = 0.9` is 4.44 steps)? If part of it is the remainder, that part is an
-artefact and should go before anyone tries to damp anything real.
+**2. Then chase the remainder, which is still inside pickup.** Fast strokes are
+about 6× the pickup-off floor. Candidates, none yet tested:
 
-**Measure with TONE or the thickness profile. Edge ripple is at its floor and
-reports null whatever you do** — that trap cost three rounds of this session.
+- `brushTake` is one uniform per frame, credited from an ASYNCHRONOUS readback,
+  so every cell in a frame is scoured by the tuft's fullness as of some earlier
+  frame. Same class of fault as the one just fixed.
+- `swapCap = laidPigHere / presentPig` is a per-frame ratio and does not
+  compose: applied once over a whole crossing is not the same as applied in
+  eight pieces.
+- `cover` is clamped to 1 per frame, so a frame that covers a cell twice over is
+  treated the same as one that just covers it.
 
-Still not run: `?full-check` on a VISIBLE page against E7/E8/E10.
-Still open on watercolour: the late residual (0.03370 -> 0.04973 at 16/32 steps).
+**DO NOT retry: freezing the tuft's grab.** Tried this session, removed. A
+freshly charged brush has no room, so `brushTake` starts near zero and freezing
+it is just pickup switched off — total film came back 547.5 against 547.4 with
+pickup off entirely. Any replacement must hold the grab at a value the stroke
+actually reaches.
+
+**AMBER: pickup rows do not reproduce bit-exactly** (0.00553/0.00591 at one cell
+per report, while every pickup-off row matches to the last digit). The reservoir
+is credited from an async readback, so run order changes what the tuft holds.
+Do not read a small difference in a pickup row as a result.
+
+**Measure with TONE (now trimmed) or the thickness profile. Edge ripple is at
+its floor and reports null whatever you do.**
+
+Still open on watercolour: the late residual (0.03370 → 0.04973 at 16/32 steps),
+and that figure is on the OLD tone metric — re-measure before trusting it.
+
+## NEW INSTRUMENTS — node, no GPU, one second
+
+- `node tools/brush-bench.build.mjs` then
+  `node tools/brush-bench.mjs density <brush> <medium> [--profile]` — the
+  bench's CPU-footprint stage in node, a line-for-line copy of
+  `rasterFootprint`. Sweeps flow and speed. This is what refuted E11.
+- `node tools/brush-bench.mjs reach <brush> [cells-per-report]` — contact reach,
+  tuft advance and segments per solve step. This is what refuted E12.
 
 ## THE BENCH NOW STATES ITS OWN SCOPE (2026-08-29)
 
