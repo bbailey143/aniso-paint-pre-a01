@@ -1504,3 +1504,163 @@ now the only thing standing between this engine and a usable oil brush.
 **If the artist wants to paint rather than test in the meantime**, the Capacity
 dial is the intended lever and needs no code change: around 0.3× restores the
 old film thickness and the old, milder banding, at the cost of thin cover.
+
+### E17 — the pickup fix finished: three faults, one shape (2026-08-30, Claude)
+
+E13 found the fish scales in the lifting term and fixed the first of four
+frame-shaped faults in it. This entry finds and fixes the other three. They are
+all the same mistake wearing different clothes: **a quantity that should belong
+to a patch of canvas was instead being decided once per browser frame.**
+
+**THE TEST THAT MADE THIS POSSIBLE.** A new `bundling` ladder: the same stroke,
+reported at a fixed four cells, cut into frames of 1, 2, 4, 8 and 16 reports.
+The hand is identical in every row, so the picture must be too. Anything that
+moves is a per-frame delta, which `docs/00-invariants.md` §2 forbids in those
+words. This is invariant 2 put directly, and it should have existed years ago.
+
+---
+
+**FAULT 2 — the readback lag, and it was also the measurement blocker.**
+
+`brushTake` is `upRate * roomFraction()`, one uniform for a whole frame, and the
+room is credited from an **asynchronous** readback that `drainPickup` skips
+whenever a map is still in flight. So the credit arrived a driver-decided number
+of frames late: the scouring strength sat still for several frames, then jumped.
+
+`FluidEngine.settlePickup()` awaits the map instead of hoping for it. **For
+measuring only** — stalling the queue every frame to chase a scalar would be
+absurd in the paint loop.
+
+It fixed the nondeterminism (every bench row now reproduces to the last digit,
+where E16 had 0.13605 against 0.07979) **and it was a cause, not just a
+nuisance**, which is what made it worth doing rather than working around:
+
+| stroke, pickup on | lagged | settled |
+|---|---:|---:|
+| 1 cell per report | 0.0207 / 0.0258 | **0.00794** |
+| 4 cells per report | 0.1361 / 0.0798 | **0.01556** |
+| accelerating 1 → 12 | 0.1536 / 0.1761 | **0.04363** |
+
+Tonal swing 79.79 → 1.77.
+
+---
+
+**FAULT 3 — the ceiling on `rubbed`, small but real.**
+
+E13 replaced the frame's travel with `rubbed`, the cell's own contact length,
+but kept the old `clamp(…, 0.0, 16.0)`. Against the new quantity that clamp
+means something else: the flat hog's blade is 23 cells and lies ALONG the
+stroke, so a cell's honest `rubbed` is about 23. Bundled into one frame it was
+clipped to 16; spread over six short frames each was under the ceiling and the
+exponents summed to the full 23. **The clamp was itself a per-frame delta.**
+
+Raised to 64 — above any tuft's contact length in this library, so it is a rail
+against a degenerate frame rather than a term. Measured effect: bundling-8 tone
+0.09415 → 0.07992. **Real, and minor.** Recorded as such rather than as the fix,
+because it was tested before it was believed and it did not carry the weight.
+
+**Also ruled out on the way: `brushTake` as a per-frame scalar.** Pinning it to
+a constant the stroke actually reaches (0.5 × `brushGrab` — not the useless
+stroke-start zero of the 2026-08-29 attempt) left the frame signature standing:
+0.02535 / 0.01958 / 0.12277 at 1, 4 and 16 reports per frame. Not it.
+
+---
+
+**FAULT 4 — a frame's own paint was immune to its own lift. This was the rest.**
+
+`filmBefore` is `w0.y` captured at the top of the pass, BEFORE the deposit. So
+whatever a frame laid, that same frame could not lift.
+
+Which is wrong on its face. This tuft's blade is 23 cells and lies along the
+stroke: its trailing hairs are dragging over paint its own leading hairs laid a
+moment earlier. Whether the engine modelled that at all depended entirely on
+where the frame boundary happened to fall — with short frames the next frame's
+lift saw the previous frame's deposit and it worked, and bundling the same
+travel into one frame made it vanish.
+
+The lift now also sees **half** of what the frame laid here. Half because a rub
+falling at a uniformly distributed moment within the frame sees, on average,
+half of a quantity accumulating across it — the ordinary midpoint reading, not a
+tuning dial, and no constant from outside. Conservation is untouched: every line
+still subtracts exactly what `lift` reports, and what may be seen is at most the
+film actually standing after the deposit.
+
+**THE BUNDLING LADDER, which is the whole point:**
+
+| reports per frame | frame travel | before | **after** |
+|---|---|---:|---:|
+| 1 | 4 cells | 0.00832 | 0.00851 |
+| 2 | 8 cells | 0.00906 | 0.00842 |
+| 4 | 16 cells | 0.01555 | 0.01409 |
+| 8 | 32 cells | 0.07992 | **0.02138** |
+| 16 | 64 cells | 0.15966 | **0.01119** |
+
+A 19× spread becomes 2.5×, and the repeat lag stops tracking the frame travel.
+Tonal swing at 16 reports per frame: 40.75 → 1.14.
+
+---
+
+**WHERE THE OIL BRUSH NOW STANDS.** Oil / Flat Hog / Cotton Duck, full pipeline,
+pickup live, at the model-sized paint loads of E16:
+
+| stroke | E16 morning | **now** |
+|---|---:|---:|
+| 1 cell per report (slow) | 0.0207 / 0.0258 | **0.00839** |
+| 4 cells per report | 0.1361 / 0.0798 | **0.01409** |
+| 12 cells per report (fast) | 0.1706 / 0.1263 | **0.01655** |
+| accelerating 1 → 12 | 0.1536 / 0.1761 | **0.01792** |
+| decelerating 12 → 1 | — | **0.01650** |
+
+**The speed dependence is gone** — 0.0084 to 0.0179 across a twelve-fold range,
+where the artist's whole complaint was that fast strokes were worse than slow
+ones. Every row reproduces exactly. And pickup ON is now BETTER than pickup off
+at every speed (0.01409 against 0.02757 at four cells), which is what a lifting
+term should do: it is a negative feedback on thickness.
+
+For scale: this is at **3.75× the paint** E13 was measured with, and it is
+better at speed than E13's best (0.03124 at twelve cells per report).
+
+---
+
+**REGRESSIONS: NONE FOUND, and the suite that checks it now runs anywhere.**
+
+```
+crossing lift  35.9% / 35.9%          reference ~36% (2026-08-28)
+crossing trail 20.6 -> 8.6 -> 5.5 -> 4 -> 3.3
+stack last/first 0.936 / 0.936        reference ~0.897, but PRE-E16
+holding peak 92.9% / 92.9%  passed    reference ~92.6%
+Watercolour pigment canvas 197.2955   Watercolour drift 0.000015
+```
+
+Crossing lift landing back on its 36 % reference is the strongest evidence
+`settlePickup` is the right fix: the 2026-08-29 fast-yield experiment gave 44.9 %
+with the trail collapsed to 4.6 → 0, and was reverted as unattributed. The trail
+is now a proper decay and the number is the intended one — restored
+deterministically rather than by luck of timing.
+
+**Stacking 0.936 against a ~0.897 reference is NOT called a pass or a fail.**
+The reference predates E16's loading change, which quadrupled the film on
+purpose; a stack covering better is what that change was for. It reproduced, and
+that is all this entry claims. Re-baseline it before reading it again.
+
+**`?full-check` no longer needs a visible page.** `stroke1` awaits
+`settlePickup` after every step, so the measurement no longer depends on how
+long the yield takes — which was the entire reason the fast yield had been
+reverted. The yield is now a MessageChannel, Chrome's intensive throttling
+cannot clamp it, and the suite finishes in under forty seconds on a hidden page
+where it used to look hung. **Numbers taken before 2026-08-30 were taken under
+the old timing; re-measure rather than compare.**
+
+**WATERCOLOUR is untouched and clean.** Tone ripple 0.0022–0.0070 at every speed
+and every bundling, pickup on or off within 0.00005 of each other, and total
+film identical to the digit across all five bundlings (282.2). The lift change
+is shared code, so this was checked rather than assumed.
+
+---
+
+**WHAT IS LEFT.** The pickup path is no longer the largest term. The worst rows
+are now **pickup OFF** — 0.0276 to 0.0315 with tonal swings around 44, against
+0.0084–0.0179 with it on. Much of that swing is the brush fading along the
+stroke rather than banding, which is correct behaviour, but the deposit's own
+ripple is now the biggest thing left and has not been looked at since the paint
+loads quadrupled. That is the next thread, and `bundling` is the test for it.

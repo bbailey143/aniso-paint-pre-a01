@@ -532,6 +532,7 @@ async function postFlowRun(
  */
 async function speedRun(
   engine: AnyRec, stroke: AnyRec, from: number, to: number, pickup = false,
+  group = GROUP, fixedTake = 0,
 ) {
   setup(engine, stroke, { name: 'full pipeline', smear: 1, allow: MOTION });
   const n = engine.sim as number;
@@ -549,7 +550,7 @@ async function speedRun(
   stroke.begin(X0, Y, sample());
   for (let k = 1; k < xs.length; k++) {
     stroke.add(xs[k], Y, sample());
-    if (k % GROUP === 0 || k === xs.length - 1) {
+    if (k % group === 0 || k === xs.length - 1) {
       const d = stroke.drain();
       /* PICKUP: OFF everywhere else in this file, ON in the live app.
        *
@@ -579,8 +580,23 @@ async function speedRun(
          some earlier frame — a per-frame step, and the more ground a frame
          covers the more cells share one stale value. Freezing it does not make
          a shippable brush; it says whether that staleness is what is left. */
+      /* `fixedTake` holds the tuft's DRINKING gate at a constant the stroke
+         actually reaches, instead of `upRate * roomFraction()` recomputed once
+         a frame. `brushGrab` is already constant — it is the bare `upRate` off
+         the brush row — so `brushTake` is the only per-frame scalar in the
+         lifting path, and this is how to ask whether it is what is left
+         carrying the frame signature. Unlike the stroke-start freeze tried and
+         discarded on 2026-08-29, this value is not zero. */
       engine.step(d.data, d.count, d.dx, d.dy, stroke.brushMix,
-        pickup ? stroke.brushTake : 0, pickup ? stroke.brushGrab : 0);
+        pickup ? (fixedTake || stroke.brushTake) : 0,
+        pickup ? stroke.brushGrab : 0);
+      /* One frame's lift credited per frame, every run. Without this the
+         credit arrives a driver-dependent number of frames late and two
+         identical runs return different numbers — 0.13605 against 0.07979 at
+         the model paint loads. See `FluidEngine.settlePickup`. It also makes
+         this row a DISCRIMINATOR: if the banding falls when the lag is removed,
+         the lag is a cause and not merely a measurement nuisance. */
+      if (pickup) await engine.settlePickup();
       await yieldTick();
     }
   }
@@ -750,6 +766,27 @@ async function run(engine: AnyRec, stroke: AnyRec) {
          with no pickup at all. Its lower tone figures meant "less lifting", not
          "the same lifting without the staleness". Whatever replaces it has to
          hold the grab at a value the stroke actually reaches. */
+    }
+    /* INVARIANT 2, PUT DIRECTLY. The same stroke reported at a fixed four cells,
+       cut into frames of every size from one report to sixteen. The hand is
+       identical in all of them, so the picture must be too — anything that
+       moves with the bundling is a per-frame delta, which
+       `docs/00-invariants.md` section 2 forbids. Pickup on and settled, so this
+       is the lifting path with the readback lag already removed. */
+    for (const g of [1, 2, 4, 8, 16]) {
+      const a = await speedRun(engine, stroke, 4, 4, true, g);
+      const b = await speedRun(engine, stroke, 4, 4, true, g);
+      result.speeds[`bundling: ${String(g).padStart(2)} reports per frame`] = { runs: [a, b] };
+    }
+    /* The same ladder with the drinking gate pinned. If the frame signature
+       goes with it, `brushTake` is what is left carrying it; if it stays, the
+       remaining per-frame terms are inside the shader (`cover` clamped once a
+       frame, `swapCap` as a per-frame ratio). */
+    const pinned = 0.5 * (stroke.brushGrab as number);
+    for (const g of [1, 4, 16]) {
+      const a = await speedRun(engine, stroke, 4, 4, true, g, pinned);
+      const b = await speedRun(engine, stroke, 4, 4, true, g, pinned);
+      result.speeds[`  ^ same, take pinned (${g}/frame)`] = { runs: [a, b] };
     }
     /* Face ownership and the relaxation sweep read the velocity field and the
        divergence it leaves. A paste has neither — the engine never ran the

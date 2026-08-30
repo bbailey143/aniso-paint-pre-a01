@@ -538,8 +538,28 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * steps whose hairs actually touched this cell, so it is the contact length
      * the tuft dragged across it. It is per-cell, it does not know what a frame
      * is, and cutting a frame in two splits it in two — which is the invariance
-     * the paragraph above wanted and did not have. */
-    let dist = clamp(rubbed, 0.0, 16.0);
+     * the paragraph above wanted and did not have.
+     *
+     * THE CEILING IS A SAFETY RAIL, NOT A TERM, and at 16 it was neither.
+     *
+     * 16 came from the old quantity, where it bounded a runaway FRAME. Against
+     * `rubbed` it means something else entirely: the flat hog's blade is 23
+     * cells and lies ALONG the stroke, so a cell stays under the tuft for about
+     * 23 cells of travel and its honest `rubbed` is 23. Bundle that whole rub
+     * into one frame and it was clipped to 16; spread it over six short frames
+     * and each was under the ceiling, so the exponents summed to the full 23.
+     * **The clamp itself was the per-frame delta** — long frames lifted less
+     * than short ones over identical ground.
+     *
+     * [MEASURED, docs/19 E17] Same stroke at four cells per report, cut into
+     * frames of 1 to 16 reports, pickup on and the readback settled: tone
+     * ripple 0.00832, 0.00906, 0.01556, 0.09415, 0.15966, with the repeat lag
+     * tracking the frame travel exactly (4, 8, 16, 31). Pinning `brushTake`
+     * did not remove it, so it was not the last per-frame scalar on the host.
+     *
+     * 64 is above any tuft's contact length in this library (the widest blade
+     * is 23 cells) and stays a rail against a degenerate frame. */
+    let dist = clamp(rubbed, 0.0, 64.0);
 
     /* INTAKE — drinking, and it is limited by how much room the tuft has left.
        Unchanged, and it is the only route a water medium ever takes. */
@@ -651,17 +671,52 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // `rExchange` 0, so `upBoth` is `upIntake` and this min changes nothing.
     let up = min(upBoth, upIntake + swapCap);
 
-    /* Take the share off what was here BEFORE the hairs added anything, and
-       subtract exactly what `lift` reports rather than what was asked for. */
-    w0.y = max(w0.y - lift(max(filmBefore, 0.0) * up, 0u), 0.0);
-    glo.x = max(glo.x - lift(max(gloBefore.x, 0.0) * up, 1u), 0.0);
-    glo.y = max(glo.y - lift(max(gloBefore.y, 0.0) * up, 2u), 0.0);
-    glo.z = max(glo.z - lift(max(gloBefore.z, 0.0) * up, 3u), 0.0);
-    glo.w = max(glo.w - lift(max(gloBefore.w, 0.0) * up, 4u), 0.0);
-    ghi.x = max(ghi.x - lift(max(ghiBefore.x, 0.0) * up, 5u), 0.0);
-    ghi.y = max(ghi.y - lift(max(ghiBefore.y, 0.0) * up, 6u), 0.0);
-    ghi.z = max(ghi.z - lift(max(ghiBefore.z, 0.0) * up, 7u), 0.0);
-    ghi.w = max(ghi.w - lift(max(ghiBefore.w, 0.0) * up, 8u), 0.0);
+    /* WHAT THE LIFT MAY SEE — and this was the last frame-shaped fault in the
+     * pickup path.
+     *
+     * ~~`filmBefore` alone.~~ That is `w0.y` captured at the top of the pass,
+     * BEFORE the deposit, so a frame's own paint was completely immune to that
+     * frame's own lift. Which is wrong on its face: this tuft's blade is 23
+     * cells and lies along the stroke, so its trailing hairs are dragging over
+     * paint its own leading hairs laid a moment earlier. Whether the engine
+     * modelled that at all depended entirely on where the frame boundary fell —
+     * with short frames the next frame's lift saw the previous frame's deposit
+     * and it worked; bundle the same travel into one frame and it vanished.
+     *
+     * [MEASURED, docs/19 E17] Same stroke at four cells per report cut into
+     * frames of 1 to 16 reports, pickup on, readback settled: tone ripple
+     * 0.00832, 0.00906, 0.01555, 0.07992, 0.15966, and the repeat lag tracked
+     * the frame travel exactly (4, 8, 16, 31). Pinning `brushTake` did not
+     * remove it, so it was not a host-side scalar; raising the `rubbed` ceiling
+     * from 16 to 64 moved it only 0.09415 -> 0.07992, so the clip was real but
+     * minor. This is the rest of it.
+     *
+     * HALF, because a rub falling at a uniformly-distributed moment within the
+     * frame sees, on average, half of what that frame lays here — the ordinary
+     * midpoint reading of a quantity accumulating across the interval. It is
+     * the value that makes one long frame agree with the many short ones that
+     * were already right, and it needs no constant from outside: 0.5 is the
+     * mean of a uniform arrival over the interval, not a tuning dial.
+     *
+     * Conservation is untouched. Everything below still subtracts exactly what
+     * `lift` reports, and what may be seen is at most the film that is actually
+     * standing here after the deposit, so nothing can be lifted that was never
+     * laid. */
+    let selfSeen = 0.5 * max(laidHere, 0.0);
+    let selfPig = 0.5 * max(laidPigHere, 0.0);
+    let gloSeen = max(gloBefore, vec4<f32>(0.0)) + mix[0] * selfPig;
+    let ghiSeen = max(ghiBefore, vec4<f32>(0.0)) + mix[1] * selfPig;
+
+    /* Subtract exactly what `lift` reports rather than what was asked for. */
+    w0.y = max(w0.y - lift((max(filmBefore, 0.0) + selfSeen) * up, 0u), 0.0);
+    glo.x = max(glo.x - lift(gloSeen.x * up, 1u), 0.0);
+    glo.y = max(glo.y - lift(gloSeen.y * up, 2u), 0.0);
+    glo.z = max(glo.z - lift(gloSeen.z * up, 3u), 0.0);
+    glo.w = max(glo.w - lift(gloSeen.w * up, 4u), 0.0);
+    ghi.x = max(ghi.x - lift(ghiSeen.x * up, 5u), 0.0);
+    ghi.y = max(ghi.y - lift(ghiSeen.y * up, 6u), 0.0);
+    ghi.z = max(ghi.z - lift(ghiSeen.z * up, 7u), 0.0);
+    ghi.w = max(ghi.w - lift(ghiSeen.w * up, 8u), 0.0);
   }
 
   /* ---- Smear: the brush shoves the paint that is already there -------------

@@ -330,6 +330,8 @@ export class FluidEngine {
   private pickupRead: GPUBuffer;
   private pickupZero = new Uint32Array(PICKUP_LANES);
   private pickupBusy = false;
+  /** The map currently in the post, so `settlePickup` can await it. */
+  private pickupInFlight: Promise<void> | null = null;
   /** True while the tally may still hold something nobody has collected. */
   private pickupPending = false;
   /** Bumped whenever the brush is dipped or rinsed. See `discardPickup`. */
@@ -839,23 +841,59 @@ export class FluidEngine {
     enc.copyBufferToBuffer(this.pickupBuf, 0, this.pickupRead, 0, this.pickupRead.size);
     device.queue.submit([enc.finish()]);
     device.queue.writeBuffer(this.pickupBuf, 0, this.pickupZero);
-    this.pickupRead.mapAsync(GPUMapMode.READ).then(() => {
-      const raw = new Uint32Array(this.pickupRead.getMappedRange().slice(0));
-      this.pickupRead.unmap();
-      this.pickupBusy = false;
-      // Dipped or rinsed while this was in the post: it belongs to a brush that
-      // no longer exists. See `discardPickup`.
-      if (gen !== this.pickupGen) { this.pickupPending = false; return; }
-      const water = raw[0] / PICKUP_TALLY;
-      let any = water;
-      for (let k = 0; k < 8; k++) {
-        this.pickupOut[k] = raw[k + 1] / PICKUP_TALLY;
-        any += this.pickupOut[k];
+    this.pickupInFlight = (async () => {
+      try {
+        await this.pickupRead.mapAsync(GPUMapMode.READ);
+        const raw = new Uint32Array(this.pickupRead.getMappedRange().slice(0));
+        this.pickupRead.unmap();
+        this.pickupBusy = false;
+        // Dipped or rinsed while this was in the post: it belongs to a brush
+        // that no longer exists. See `discardPickup`.
+        if (gen !== this.pickupGen) { this.pickupPending = false; return; }
+        const water = raw[0] / PICKUP_TALLY;
+        let any = water;
+        for (let k = 0; k < 8; k++) {
+          this.pickupOut[k] = raw[k + 1] / PICKUP_TALLY;
+          any += this.pickupOut[k];
+        }
+        // Nothing came back, so the buffer is genuinely empty and may rest.
+        if (any > 0) this.onPickUp?.(water, this.pickupOut);
+        else this.pickupPending = false;
+      } catch {
+        this.pickupBusy = false;
+      } finally {
+        this.pickupInFlight = null;
       }
-      // Nothing came back, so the buffer is genuinely empty and may rest.
-      if (any > 0) this.onPickUp?.(water, this.pickupOut);
-      else this.pickupPending = false;
-    }).catch(() => { this.pickupBusy = false; });
+    })();
+  }
+
+  /**
+   * Block until everything the tuft has lifted SO FAR has been credited to it.
+   *
+   * WHY THIS EXISTS. `drainPickup` skips its read whenever a map is still in
+   * flight, so the credit reaches the brush a variable number of frames late —
+   * by design, and right for painting, where stalling the queue every frame to
+   * chase a scalar would be absurd. It is wrong for MEASURING. `brushTake` is
+   * `upRate * roomFraction()`, one uniform for a whole frame, so a credit that
+   * arrives in lumps makes the scouring strength sit still for several frames
+   * and then jump — and how many frames is decided by driver timing, which is
+   * not the same twice.
+   *
+   * [MEASURED, docs/19 E16] At the model-sized paint loads two identical bench
+   * runs returned tone ripple 0.13605 and 0.07979, with total film differing by
+   * 5 %. At the old, thinner loads the same rows agreed to the fourth decimal.
+   * The jitter was always there; more paint made it first-order.
+   *
+   * So a measuring caller awaits this between frames and gets exactly one
+   * frame's lift credited per frame, every run. It is not for the paint loop.
+   */
+  async settlePickup(): Promise<void> {
+    // Whatever is already in the post: its copy may predate the last submit.
+    if (this.pickupInFlight) await this.pickupInFlight;
+    if (!this.onPickUp || !this.pickupPending) return;
+    // Then one fresh read, which copies the tally as it stands now.
+    this.drainPickup();
+    if (this.pickupInFlight) await this.pickupInFlight;
   }
 
   /**

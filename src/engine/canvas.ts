@@ -275,6 +275,8 @@ export class CanvasEngine {
   /** Fresh gauge read. Use this for measurement; `readings` lags (see fluid.ts). */
   sampleGauges(): Promise<Gauges> { return this.fluid.sampleGauges(); }
   set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
+  /** For measuring only — see `FluidEngine.settlePickup`. */
+  settlePickup(): Promise<void> { return this.fluid.settlePickup(); }
   set capillaryAlarmEnabled(v: boolean) { this.fluid.capillaryAlarmEnabled = v; }
   set inkBandTrafficEnabled(v: boolean) { this.fluid.inkBandTrafficEnabled = v; }
   readCapillaryAlarm(): Promise<number> { return this.fluid.readCapillaryAlarm(); }

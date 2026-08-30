@@ -125,38 +125,56 @@ async function stroke1(engine: AnyRec, stroke: AnyRec,
        still omitting brushGrab, so its "standard crossing" silently exercised
        only half of the live Smear route. */
     e.step(d.data, d.count, d.dx, d.dy, s.brushMix, s.brushTake, s.brushGrab);
-    // Yield to the browser so the async pickup readback can land. Without this
-    // the credit arrives after the measurement and the brush reads empty.
+    /* Credit exactly one frame's lift, now, deterministically.
+     *
+     * This used to be the bare `yieldTick` below, and it is why the header
+     * insists this bench only be run on a VISIBLE page: the credit landed
+     * whenever the browser felt like delivering the map, so how long the yield
+     * took changed what was measured. `settlePickup` awaits the map instead of
+     * hoping for it, which makes the result the same on a hidden page, a
+     * throttled page and a fast one. The yield stays — it still lets the host's
+     * own rAF loop breathe — but nothing now depends on its duration. */
+    await (e.settlePickup as () => Promise<void>)();
     await yieldTick();
   }
   s.end();
   for (let q = 0; q < SETUP.settleSteps; q++) {
     const d = s.drain();
     e.step(d.data, d.count, 0, 0, s.brushMix, 0, 0);
+    await (e.settlePickup as () => Promise<void>)();
     await yieldTick();
   }
   return { cpuPigment, cpuWater, cpuSegments };
 }
 
 /**
- * Yield to the browser so the async pickup readback can land.
+ * Yield to the browser so the host's own loop can breathe.
  *
- * `[TRAP, measured 2026-08-29]` This MUST stay a timer, and this bench must be
- * run on a VISIBLE page. The yield is not a formality: the pickup credit
- * arrives on its own readback, and how much of it has landed by the next
- * measurement depends on how long this yield actually takes. A MessageChannel
- * yield (microseconds) was tried here to defeat Chrome intensive throttling,
- * which clamps setTimeout on a HIDDEN page to one call per MINUTE and makes
- * this suite look hung. It works, and it moves the numbers: crossing lift read
- * 44.9% with the trail collapsed to 4.6 -> 0, against 36% and 15.8 -> 1.9
- * recorded on 2026-08-28. Baseline and candidate shaders both gave 44.9%, so
- * that is the yield and/or later engine commits, NOT a fluid change - but it is
- * not attributed, so the fast yield was reverted rather than left in.
+ * `[WAS A TRAP, and the trap is gone — 2026-08-30]` This used to have to be a
+ * timer, and this suite used to have to be run on a VISIBLE page. The reason
+ * was real: the pickup credit arrived on its own asynchronous readback, so how
+ * much of it had landed by the next measurement depended on how long this yield
+ * actually took. A MessageChannel yield (microseconds) was tried, worked, and
+ * MOVED THE NUMBERS — crossing lift read 44.9 % with the trail collapsed to
+ * 4.6 -> 0, against 36 % and 15.8 -> 1.9 the day before — so it was reverted
+ * rather than left in unattributed.
  *
- * If this panel sits on "running paired crossing" forever, the page is hidden.
- * Show it. Do not make the yield faster to get an answer sooner.
+ * `stroke1` now awaits `engine.settlePickup()` after every step, which blocks
+ * until that frame's lift has actually been credited. **The measurement no
+ * longer depends on this yield's duration at all**, which is what made the fast
+ * yield unsafe. So it can be fast, and the suite runs correctly on a hidden
+ * page — which matters, because Chrome's intensive throttling clamps
+ * `setTimeout` on a hidden page to one call per MINUTE and made this suite look
+ * hung for anyone running it in a preview pane.
+ *
+ * Numbers taken before 2026-08-30 were taken under the old timing and should be
+ * re-measured rather than compared against.
  */
-const yieldTick = (): Promise<void> => new Promise<void>((r) => { setTimeout(r, 0); });
+const yieldTick = (): Promise<void> => new Promise<void>((resolve) => {
+  const ch = new MessageChannel();
+  ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
+  ch.port2.postMessage(0);
+});
 
 /**
  * Silence the APP's own animation loop for the duration of a run.

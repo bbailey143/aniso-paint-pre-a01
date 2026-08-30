@@ -422,50 +422,111 @@ the tip never brings to the paper. **The brush is not holding on too long so
 much as failing to deliver what it holds.** A `wick` question, not a capacity
 one, and untouched by any of this.
 
+## DONE — THE PICKUP FIX IS FINISHED (2026-08-30, docs/19 E17)
+
+E13 found the fish scales in the lifting term and fixed the first of FOUR
+frame-shaped faults in it. The other three are now fixed. All four were the same
+mistake in different clothes: **a quantity belonging to a patch of canvas was
+being decided once per browser frame instead.**
+
+**The test that made it possible** — a new `bundling` ladder in the fish-scale
+bench: same stroke, fixed four cells per report, cut into frames of 1/2/4/8/16
+reports. The hand is identical in every row so the picture must be too. This is
+invariant 2 put directly, and it should have existed long ago.
+
+| reports/frame | frame travel | before | after |
+|---|---|---:|---:|
+| 1 | 4 cells | 0.00832 | 0.00851 |
+| 2 | 8 cells | 0.00906 | 0.00842 |
+| 4 | 16 cells | 0.01555 | 0.01409 |
+| 8 | 32 cells | 0.07992 | **0.02138** |
+| 16 | 64 cells | 0.15966 | **0.01119** |
+
+A 19x spread becomes 2.5x; the repeat lag stops tracking frame travel; tonal
+swing at 16/frame 40.75 -> 1.14.
+
+**Fault 2, the readback lag.** `brushTake` is credited from an ASYNC readback
+that `drainPickup` skips while a map is in flight, so scouring strength sat
+still then jumped. New `FluidEngine.settlePickup()` awaits the map. **For
+measuring only** - stalling the queue every frame in the paint loop would be
+absurd. Fixed the nondeterminism AND was a real cause: 0.1361/0.0798 ->
+0.01556 at four cells per report.
+
+**Fault 3, the ceiling on `rubbed`.** E13 kept the old `clamp(..., 16)`. The
+hog's blade is 23 cells and lies ALONG the stroke, so a cell's honest `rubbed`
+is ~23: bundled into one frame it clipped, spread over six it did not. Raised
+to 64 (above any tuft's contact length; a rail, not a term). Effect 0.09415 ->
+0.07992 - **real and minor, and recorded as minor because it was tested before
+it was believed.**
+
+**Ruled out: `brushTake` as a per-frame scalar.** Pinned to a value the stroke
+actually reaches (0.5x `brushGrab`, not the useless stroke-start zero of the
+2026-08-29 attempt), the frame signature stayed. Not it.
+
+**Fault 4, and it was the rest of it: a frame's own paint was immune to its own
+lift.** `filmBefore` is captured before the deposit. But this blade is 23 cells
+lying along the stroke - its trailing hairs drag over paint its own leading
+hairs just laid. Whether that was modelled at all depended on where the frame
+boundary fell. The lift now also sees HALF of what the frame laid here: the
+midpoint reading of a quantity accumulating across the interval, not a dial.
+Conservation untouched.
+
+**WHERE THE OIL BRUSH STANDS**, at E16's model-sized loads, pickup live:
+
+| stroke | E16 morning | now |
+|---|---:|---:|
+| 1 cell/report (slow) | 0.0207/0.0258 | **0.00839** |
+| 4 cells/report | 0.1361/0.0798 | **0.01409** |
+| 12 cells/report (fast) | 0.1706/0.1263 | **0.01655** |
+| accelerating 1 -> 12 | 0.1536/0.1761 | **0.01792** |
+
+**The speed dependence is gone** - 0.0084 to 0.0179 across a twelvefold range,
+which was the artist's entire complaint. Every row reproduces exactly. Pickup ON
+is now BETTER than off at every speed, which is what a lifting term should do.
+And this is at 3.75x the paint E13 was measured with.
+
+## `?full-check` NO LONGER NEEDS A VISIBLE PAGE
+
+`stroke1` awaits `settlePickup` after every step, so the measurement no longer
+depends on how long the yield takes - which was the entire reason the fast yield
+was reverted on 2026-08-29. The yield is now a MessageChannel, throttling cannot
+clamp it, and the suite finishes in under 40 s on a hidden page. **Numbers taken
+before 2026-08-30 were taken under the old timing; re-measure, do not compare.**
+
+Latest, and no regressions found:
+
+    crossing lift  35.9% / 35.9%       reference ~36%
+    crossing trail 20.6 -> 8.6 -> 5.5 -> 4 -> 3.3
+    stack last/first 0.936 / 0.936     reference ~0.897, but PRE-E16
+    holding peak 92.9% / 92.9% passed  reference ~92.6%
+    Watercolour drift 0.000015
+
+Crossing lift landing back on 36 % is the strongest evidence `settlePickup` is
+right: the 2026-08-29 fast-yield gave 44.9 % with the trail collapsed to 4.6 ->
+0. **Stacking 0.936 is NOT called a pass or a fail** - its reference predates
+E16's loading change, which quadrupled the film on purpose. Re-baseline it.
+
+**Watercolour checked, not assumed** (shared code): tone 0.0022-0.0070 at every
+speed and bundling, pickup on/off within 0.00005, total film identical to the
+digit across all five bundlings.
+
 ## NEXT ACTION
 
-**1. Run `?full-check` on a VISIBLE page.** It is the pickup/stacking/holding
-regression suite, it is deliberately paced on `setTimeout`, and it runs with
-pickup on — so a hidden pane makes it untrustworthy. It could not be run this
-session and the pickup path is exactly what changed. **Do this before anything
-else.**
+**The pickup path is no longer the largest term.** The worst rows are now
+**pickup OFF** - 0.0276 to 0.0315, against 0.0084-0.0179 with it on. Much of
+their tonal swing (~44) is the brush fading along the stroke, which is correct,
+but the DEPOSIT's own ripple is the biggest thing left and has not been looked
+at since E16 quadrupled the paint loads. `bundling` is the test for it.
 
-**2. MEASURE A STROKE OVER EXISTING PAINT.** The artist, 2026-08-29: repeated
-strokes behave well "until heavy layers begin to build. Then the fish scale
-chopping makes a furious comeback." **Every stroke this bench has ever measured
-lands on bare canvas** — the same shape of gap as the pickup one, and pickup
-scales with how much film is there to lift, so a heavy layer hands it far more
-to work with. Consistent with E13, not demonstrated. Add a stage that lays N
-passes and measures the last one.
+Also open, and unchanged by any of this:
 
-**3. Then chase the remainder, which is still inside pickup.** Fast strokes are
-about 6× the pickup-off floor. Candidates, none yet tested:
-
-- `brushTake` is one uniform per frame, credited from an ASYNCHRONOUS readback,
-  so every cell in a frame is scoured by the tuft's fullness as of some earlier
-  frame. Same class of fault as the one just fixed.
-- `swapCap = laidPigHere / presentPig` is a per-frame ratio and does not
-  compose: applied once over a whole crossing is not the same as applied in
-  eight pieces.
-- `cover` is clamped to 1 per frame, so a frame that covers a cell twice over is
-  treated the same as one that just covers it.
-
-**DO NOT retry: freezing the tuft's grab.** Tried this session, removed. A
-freshly charged brush has no room, so `brushTake` starts near zero and freezing
-it is just pickup switched off — total film came back 547.5 against 547.4 with
-pickup off entirely. Any replacement must hold the grab at a value the stroke
-actually reaches.
-
-**AMBER: pickup rows do not reproduce bit-exactly** (0.00553/0.00591 at one cell
-per report, while every pickup-off row matches to the last digit). The reservoir
-is credited from an async readback, so run order changes what the tuft holds.
-Do not read a small difference in a pickup row as a result.
-
-**Measure with TONE (now trimmed) or the thickness profile. Edge ripple is at
-its floor and reports null whatever you do.**
-
-Still open on watercolour: the late residual (0.03370 → 0.04973 at 16/32 steps),
-and that figure is on the OLD tone metric — re-measure before trusting it.
+- **Paint stranded in the tuft.** The tuft holds 12.6 % after 3000 cells while
+  what it LAYS is down to 1 % by cell 1058. The belly holds paint the tip never
+  brings to the paper. A `wick` question, not a capacity one.
+- **Strokes over EXISTING paint have never been measured.** Every stroke this
+  bench runs lands on bare canvas. The artist reports the banding returns as
+  heavy layers build. Add a stage that lays N passes and measures the last.
+- **Re-baseline the pickup suite's stacking reference** against E16 loads.
 
 ## NEW INSTRUMENTS — node, no GPU, one second
 
