@@ -1275,6 +1275,12 @@ yet demonstrated, and the next thing the bench needs.
 
 ### E15 — the brush load, sized from the artist's coatings model (2026-08-30, Claude)
 
+> **SUPERSEDED BY E16, within the hour.** The equations and the millimetre
+> scale below are right and still stand. Three of the INPUTS were wrong —
+> the model's parameter table gives 100–250 µm dry film, not the 40 µm
+> guessed here, and transfer per bristle type rather than a flat 0.40. Every
+> µL and µm figure below is therefore about four times too small. Read E16.
+
 **The model**, supplied by the artist:
 
     wet film thickness = target dry film thickness / volume solids
@@ -1395,3 +1401,106 @@ numbers disagree because paint is stranded in parts of the tuft the contact
 never reaches: the belly holds it and only the tip lays. **The brush is not
 holding on too long so much as failing to bring what it holds to the paper.**
 That is a `wick` question, not a capacity one, and nothing here touches it.
+
+### E16 — the model's full parameter table, and what thick cover costs (2026-08-30, Claude)
+
+**E15 above used the right equations with three wrong inputs.** The artist
+supplied only the Wolfram function; the working behind it carries a parameter
+table that changes the answer by nearly four times. E15's numbers are superseded
+by this entry. What it got right — the millimetre scale, the two-knob method —
+stands.
+
+**What was missing:**
+
+| | E15 used | the table says |
+|---|---|---|
+| dry film thickness | 40 µm (guessed) | **100–250 µm**, full opacity threshold |
+| solids fraction | 0.90 | 0.85–1.00 (1.0 tube oil, lower if thinned) |
+| transfer ratio | 0.40 flat | **per bristle: sable ~0.35, hog ~0.45** |
+
+Plus a worked example: a 150 × 20 mm stroke at 150 µm dry, 0.90 solids, 0.40
+transfer → 166.67 µm wet, 0.50 mL deposited, 1.25 mL on the brush. Those are the
+inputs used here, with the transfer split per bristle type as the table directs.
+
+**Transfer is per bristle type, and that is not a detail** — a stiff hog
+releases more than soft sable. E15 set all three to a flat 0.40, which is
+exactly the sort of averaging that made the three brushes indistinguishable in
+the first place.
+
+**167 µm is corroborated from inside this repo, which is why it is trusted over
+E15's guess.** `deposit.wgsl` records: "measured Oil film 0.018 on Cotton Duck
+0.30 filled only 6 % of the gate per loaded pass and stamped the weave forever"
+— an 18 µm pass against a 300 µm weave. At 167 µm wet a single pass clears the
+bridging depth outright, which is the artist's standing "one or two thick
+strokes should cover" complaint, quoted in that same shader.
+
+---
+
+**WHERE THE BRUSHES WERE**, against the corrected target — including after
+E15's own adjustment, which had only got them a quarter of the way:
+
+| brush | model load | had (post-E15) | model lays | laid | transfer | wet film |
+|---|---:|---:|---:|---:|---:|---:|
+| flat hog | 1283 µL | 641 | 578 µL | 155 | 0.241 | 44.6 µm |
+| round sable | 631 µL | 247 | 221 µL | 59 | 0.239 | 44.3 µm |
+| flat sable | 1629 µL | 629 | 570 µL | 152 | 0.242 | 44.4 µm |
+
+**After**, same two-step convergence (`downRate` for transfer, then `capacity`
+for the film, which cannot move transfer):
+
+| brush | model load | now | model lays | now | transfer | wet film |
+|---|---:|---:|---:|---:|---:|---:|
+| flat hog | 1283 µL | **1277** | 578 µL | **577** | **0.452** | **166.5 µm** |
+| round sable | 631 µL | **634** | 221 µL | **222** | **0.350** | **167.4 µm** |
+| flat sable | 1629 µL | **1629** | 570 µL | **571** | **0.350** | **166.8 µm** |
+
+Load within 0.5 %, deposited volume exact, transfer on the per-bristle split.
+
+Rows, `src/brush/library.ts`, cumulative from the original values:
+
+| | capacityBelly | capacityTip | downRate |
+|---|---|---|---|
+| round sable | 2.6 → 1.632 | 0.6 → 0.373 | 0.012 → 0.0232 |
+| flat sable | 2.3 → 3.327 | 0.55 → 0.798 | 0.013 → 0.0245 |
+| flat hog | 1.1 → 4.102 | 0.35 → 1.299 | 0.030 → 0.0619 |
+
+**Legs, which is the artist's "holds on too long", much improved.** Flat hog /
+oil half strength **573 → 279 cells**, about two designed strokes; a tenth left
+by 564, a hundredth by 1058. The round sable and flat sable move the same way.
+
+---
+
+**THE COST, and it is severe. Read this before judging the picture.**
+
+Oil / Flat Hog / Cotton Duck, tone ripple, full pipeline, pickup on:
+
+| stroke | original | E15 (44 µm) | **now (167 µm)** |
+|---|---:|---:|---:|
+| 1 cell per report | 0.00553 | 0.00757 | 0.0207 / 0.0258 |
+| 4 cells per report | 0.01240 | 0.02066 | **0.1361 / 0.0798** |
+| 12 cells per report | 0.03124 | 0.05743 | **0.1706 / 0.1263** |
+| accelerating 1 → 12 | 0.03455 | 0.06158 | **0.1536 / 0.1761** |
+
+Total film 537 → 1064 → **2901**, as designed. Pickup-off rows moved too
+(0.00542 → 0.02757 at four cells), so this is not purely a pickup effect: **more
+paint means more banding everywhere**, which is what the artist's Flow clue said
+from the beginning.
+
+**AMBER, and it is new and it is loud.** The pickup rows no longer reproduce at
+all — 0.13605 against 0.07979 on two identical runs, with total film differing
+by 5 % (2389.9 against 2264.5). At the old paint level the same rows disagreed
+in the fourth decimal. The reservoir is credited from an asynchronous readback,
+and at this film thickness that timing jitter has become a first-order effect.
+**Do not read any single pickup figure at this paint level as a measurement**
+until that readback is made deterministic.
+
+**The honest position.** The volumes were wrong — by four times — and are now
+right, checked against the model to half a per cent and corroborated by the
+engine's own weave-bridging number. The banding is a separate, known,
+half-fixed fault (E13) that scales with paint, and it has gone from unpleasant
+to impossible to ignore. Nothing regressed; a bug got louder. Finishing E13 is
+now the only thing standing between this engine and a usable oil brush.
+
+**If the artist wants to paint rather than test in the meantime**, the Capacity
+dial is the intended lever and needs no code change: around 0.3× restores the
+old film thickness and the old, milder banding, at the cost of thin cover.

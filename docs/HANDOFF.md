@@ -364,38 +364,63 @@ so **one paint unit = 1 mm^3 = 1 microlitre**.
 (`featureFreq` 64 threads across 512 mm is far coarser than real canvas) but
 that row is marked "chosen to read correctly, not measured", so the brush wins.
 
-## BRUSH LOADS SIZED FROM THE ARTIST'S COATINGS MODEL
+## BRUSH LOADS SIZED FROM THE ARTIST'S COATINGS MODEL (docs/19 E16)
 
     wet film = dry film / volume solids;  deposited = area * wet film
-    load = deposited / transfer efficiency   (0.35 to 0.50)
+    load = deposited / transfer efficiency
 
-The three brushes disagreed with each other by more than SIX TIMES: the flat hog
-laid a 22 um film, the round sable 139 um. `node tools/brush-bench.mjs load`.
+From the model's parameter table: **dry film 100-250 um** for full opacity,
+solids 0.85-1.00, and **transfer PER BRISTLE TYPE - sable ~0.35, hog ~0.45**.
+Worked example: 150 x 20 mm at 150 um dry, 0.90 solids -> 167 um wet, 0.50 mL
+deposited, 1.25 mL on the brush. Those are the inputs used.
 
-Two knobs, genuinely independent (measured, `reservoir.ts`): `downRate` sets
-transfer and the legs; `capacity` then sets the film without moving transfer,
-because what leaves is a fraction of what is held. Converged in one pass:
+**167 um is corroborated from inside the repo**, which is why it is trusted:
+`deposit.wgsl` records an 18 um pass against Cotton Duck's 300 um weave,
+"stamped the weave forever". At 167 um one pass clears the bridging depth -
+the artist's "one or two thick strokes should cover", quoted in that shader.
+
+The three brushes disagreed with each other by more than SIX TIMES (hog 22 um,
+round sable 139 um) and all three laid about a QUARTER of what thick cover
+needs. `node tools/brush-bench.mjs load`.
+
+Two knobs, independent (measured, `reservoir.ts`): `downRate` sets transfer and
+the legs; `capacity` then sets the film without moving transfer, because what
+leaves is a fraction of what is held. Converged in one pass each time:
 
 | brush | model load | now | model lays | now | transfer | wet film |
 |---|---:|---:|---:|---:|---:|---:|
-| flat hog | 642 uL | 641 | 257 uL | 257 | 0.402 | 44.6 um |
-| round sable | 246 uL | 247 | 98 uL | 98 | 0.398 | 44.3 um |
-| flat sable | 633 uL | 629 | 253 uL | 253 | 0.403 | 44.4 um |
+| flat hog | 1283 uL | 1277 | 578 uL | 577 | 0.452 | 166.5 um |
+| round sable | 631 uL | 634 | 221 uL | 222 | 0.350 | 167.4 um |
+| flat sable | 1629 uL | 1629 | 570 uL | 571 | 0.350 | 166.8 um |
 
-**THE COST, and it is real.** The hog carries twice the paint now, so the
-banding has twice as much to chew. Tone ripple, oil / flat hog / cotton duck:
-1 cell/report 0.00553 -> 0.00757, 4 cells 0.01240 -> 0.02066, 12 cells 0.03124
--> **0.05743**, accelerating 0.03455 -> **0.06158**. Total film 537 -> 1064, as
-designed. **At speed this is roughly back where it was before E13's pickup
-fix** - exactly what the Flow clue predicted, since banding is multiplicative in
-paint. The volumes were wrong and are now right; the remaining half of the
-pickup fault is simply more visible. It makes finishing that fix urgent.
+**Legs much improved** - flat hog / oil half strength 573 -> 279 cells, about
+two designed strokes. That was the "holds on too long" complaint.
 
-**NOT FIXED: paint stranded in the tuft.** Legs shortened (half strength 573 ->
-532) but the tuft still holds 12.7 % after 3000 cells while what it LAYS is down
-to 1 % of its opening rate by cell 2017. The belly holds paint the tip never
-brings to the paper. **The brush is not holding on too long so much as failing
-to deliver what it holds.** That is a `wick` question, not a capacity one.
+**THE COST, and it is severe.** Tone ripple, oil / flat hog / cotton duck, full
+pipeline with pickup: 1 cell/report 0.00553 -> 0.021, 4 cells 0.01240 -> 0.136,
+12 cells 0.03124 -> 0.171, accelerating 0.03455 -> 0.154. Total film 537 ->
+2901 as designed. Pickup-OFF rows moved too (0.00542 -> 0.02757), so more paint
+means more banding everywhere - which is what the Flow clue always said.
+**Nothing regressed; the E13 fault got louder.** Finishing E13 is now the only
+thing between this and a usable oil brush.
+
+**AMBER, NEW AND LOUD.** The pickup rows no longer reproduce at all - 0.13605
+against 0.07979 on two identical runs, total film differing by 5 %. At the old
+paint level they agreed to the fourth decimal. The reservoir is credited from an
+ASYNCHRONOUS readback and at this film thickness that jitter is first-order.
+**Do not read any single pickup figure at this paint level as a measurement**
+until that readback is deterministic. This is now a blocker on measurement, not
+just a caveat.
+
+**To paint rather than test in the meantime:** the Capacity dial is the intended
+lever and needs no code change. About 0.3x restores the old film and the old,
+milder banding, at the cost of thin cover.
+
+**NOT FIXED: paint stranded in the tuft.** The tuft still holds 12.6 % after
+3000 cells while what it LAYS is down to 1 % by cell 1058. The belly holds paint
+the tip never brings to the paper. **The brush is not holding on too long so
+much as failing to deliver what it holds.** A `wick` question, not a capacity
+one, and untouched by any of this.
 
 ## NEXT ACTION
 

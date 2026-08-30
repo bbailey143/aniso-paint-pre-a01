@@ -1506,13 +1506,36 @@ if (MODE === 'dryout') {
  * and the thread count is the number that is wrong.
  */
 if (MODE === 'load') {
-  const DFT = Number(process.argv[3] ?? 40);        // microns, dry
+  /* [SOURCE: the artist's Gemini working, 2026-08-30, and its parameter table.]
+   *
+   *   Dry film thickness   100-250 um   full opacity threshold
+   *   Solids fraction      0.85-1.00    1.0 for tube oil, lower if thinned
+   *   Transfer ratio       0.30-0.50    soft synthetic/sable ~0.35,
+   *                                     stiff hog bristle ~0.45
+   *
+   * and a worked example: a 150 x 20 mm stroke at 150 um dry, 0.90 solids, 0.40
+   * transfer wants a 166.67 um wet film, 0.50 mL deposited, 1.25 mL on the
+   * brush. The defaults below are that example's.
+   *
+   * TRANSFER IS PER BRUSH TYPE, which the first pass at this missed and set to
+   * a flat 0.40 for all three. A hog releases more than a sable; that is what
+   * the bristle IS.
+   *
+   * 150 um DRY is corroborated from inside this repo, which is the reason to
+   * trust it over the 40 um the first pass guessed. `deposit.wgsl` records
+   * "measured Oil film 0.018 on Cotton Duck 0.30 filled only 6 % of the gate
+   * per loaded pass and stamped the weave forever" - an 18 um pass against a
+   * 300 um weave. At 167 um wet, two passes bury the weave, which is exactly
+   * the artist's standing "one or two thick strokes should cover" complaint,
+   * quoted in that same shader. */
+  const DFT = Number(process.argv[3] ?? 150);       // microns, dry
   const SOLIDS = Number(process.argv[4] ?? 0.90);
-  const TRANSFER = Number(process.argv[5] ?? 0.40);
-  const STROKE_MM = Number(process.argv[6] ?? 250); // one designed stroke
+  const STROKE_MM = Number(process.argv[5] ?? 150); // the source's own example
+  /** Stiff hog bristle releases more than soft sable hair. */
+  const transferFor = (slug: string) => (slug === 'flat-hog' ? 0.45 : 0.35);
 
-  console.log(`the artist's model: DFT ${DFT} um, solids ${SOLIDS}, transfer ${TRANSFER},`
-    + ` one stroke ${STROKE_MM} mm`);
+  console.log(`the artist's model: DFT ${DFT} um, solids ${SOLIDS},`
+    + ` transfer 0.45 hog / 0.35 sable, one stroke ${STROKE_MM} mm`);
   console.log('  1 cell = 1 mm, 1 paint unit = 1 mm^3 = 1 uL. Sheet is 512 mm.');
   console.log('');
   console.log('  brush / medium              blade   MODEL load   HAS      MODEL lays   LAYS'
@@ -1549,7 +1572,7 @@ if (MODE === 'load') {
       const areaMM2 = STROKE_MM * bladeMM;
       const wftMM = (DFT / SOLIDS) / 1000;
       const wantsLaid = areaMM2 * wftMM;          // mm^3
-      const wantsLoad = wantsLaid / TRANSFER;
+      const wantsLoad = wantsLaid / transferFor(slug);
       const transfer = laid / Math.max(capacity, 1e-9);
       const wft = 1000 * laid / areaMM2;          // microns
 
@@ -1564,15 +1587,15 @@ if (MODE === 'load') {
     }
   }
   console.log('');
-  console.log(`  transfer should land between 0.35 and 0.50; WFT should be near`
-    + ` ${(DFT / SOLIDS).toFixed(0)} um`);
+  console.log(`  transfer wants 0.45 on the hog and 0.35 on the sables;`
+    + ` WFT should be near ${(DFT / SOLIDS).toFixed(0)} um`);
 
   /* TRANSFER IS A `downRate` QUESTION AND CAPACITY CANNOT REACH IT.
    * `transfer` is what LEAVES divided by what was HELD, and what leaves is a
    * fraction of what is held, so scaling capacity scales both alike and the
    * ratio does not move. Only the rate per millimetre does. Sweep it. */
   console.log('');
-  console.log('  transfer against downRate (oil, same 250 mm stroke):');
+  console.log(`  transfer against downRate (oil, same ${STROKE_MM} mm stroke):`);
   for (const slug of ['flat-hog', 'round-sable', 'flat-sable']) {
     const base = BRUSH_BY_SLUG.get(slug);
     if (!base) continue;

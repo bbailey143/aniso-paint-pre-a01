@@ -50,18 +50,32 @@ export const BRUSHES: BrushDef[] = [
        *
        *     wet film = target dry film / volume solids
        *     deposited = stroke area * wet film
-       *     load = deposited / transfer efficiency          (0.35 to 0.50)
+       *     load = deposited / transfer efficiency
        *
-       * At 1 cell = 1 mm and 1 paint unit = 1 mm^3, a 250 mm designed stroke
-       * wants a 44 um wet film for a 40 um dry one at 90 % solids. These three
-       * brushes disagreed with each other by FOUR TIMES: the hog laid 22 um and
-       * this round sable laid 139 um, which is not a brush, it is a syringe.
-       * Each capacity is scaled so its own designed stroke lays the film the
-       * model asks for. `downRate` is untouched, so how FAR a dip goes is
-       * unchanged - capacity moves the amount, not the legs (measured, see
-       * `setFlow` in reservoir.ts). */
-      capacityBelly: 0.635, // the belly holds far more than the tip
-      capacityTip: 0.145,   // was 2.6 / 0.6 - laid a 139 um film, 3x too thick
+       * with, from the model's own parameter table: dry film 100-250 um for
+       * full opacity, solids 0.85-1.00, and transfer **per bristle type** -
+       * soft sable ~0.35, stiff hog ~0.45. At 1 cell = 1 mm and 1 paint unit =
+       * 1 mm^3, a 150 mm designed stroke at 150 um dry and 0.90 solids wants a
+       * 167 um wet film.
+       *
+       * 167 um is corroborated from inside this repo, which is why it is
+       * trusted: `deposit.wgsl` records "measured Oil film 0.018 on Cotton Duck
+       * 0.30 filled only 6 % of the gate per loaded pass and stamped the weave
+       * forever" - an 18 um pass against a 300 um weave. At 167 um two passes
+       * bury the weave, which is the artist's standing "one or two thick
+       * strokes should cover" complaint, quoted in that same shader.
+       *
+       * These three brushes disagreed with each other by more than SIX TIMES
+       * before this - the hog laid 22 um and this round sable laid 139 um,
+       * which is not a brush, it is a syringe - and all three laid roughly a
+       * quarter of what thick cover needs.
+       *
+       * `downRate` sets transfer and the legs; `capacity` then sets the film
+       * without moving transfer, because what leaves is a FRACTION of what is
+       * held so scaling the tuft scales both alike (measured - see `setFlow` in
+       * reservoir.ts). Two constraints, two independent knobs. */
+      capacityBelly: 1.632, // the belly holds far more than the tip
+      capacityTip: 0.373,   // was 2.6 / 0.6 - laid 139 um, and too little of it
       // [UNVERIFIED] Exterior water carried by a flooded sable, in nominal
       // reservoir capacities. Maximum water is intentionally a dripping brush.
       waterOvercharge: 3.0,
@@ -73,7 +87,7 @@ export const BRUSHES: BrushDef[] = [
          does not move. Only the rate per millimetre does. Each is set to land
          near 0.40. This is also what the artist meant by the brushes "holding
          on too long": a shorter leg is the same number seen from the side. */
-      downRate: 0.0158,  // was 0.012; per CELL TRAVELLED, not per step - see reservoir.ts
+      downRate: 0.0232,  // was 0.012; per CELL TRAVELLED, not per step - see reservoir.ts
       upRate: 0.10,
     },
     plasticity: 0.05,
@@ -124,14 +138,14 @@ export const BRUSHES: BrushDef[] = [
     },
     splayFromPressure: 0.75,
     reservoir: {
-      /* Model-sized, x0.73. See the note on the round sable's capacity. */
-      capacityBelly: 1.284,
-      capacityTip: 0.308,   // was 2.3 / 0.55 - laid 61 um against a 44 um target
+      /* Model-sized. See the note on the round sable's capacity. */
+      capacityBelly: 3.327,
+      capacityTip: 0.798,   // was 2.3 / 0.55 - laid 61 um against a 167 um target
       // [UNVERIFIED] Same flooded-water range as the round until reference
       // brush tests justify a different exterior holding for the flat.
       waterOvercharge: 3.0,
       /* Model-sized for transfer; see the round sable's note. */
-      downRate: 0.0169,  // was 0.013; per CELL TRAVELLED, not per step
+      downRate: 0.0245,  // was 0.013; per CELL TRAVELLED, not per step
       upRate: 0.12,
     },
     plasticity: 0.06,
@@ -216,15 +230,15 @@ export const BRUSHES: BrushDef[] = [
       // Bristle is not absorbent the way sable hair is. It carries paint on and
       // between the hairs rather than in them, so it holds well under half what
       // a sable does, and runs out sooner.
-      /* Model-sized, x2.01 - the hog was the one holding too LITTLE, and by
-         half. See the note on the round sable's capacity. */
-      capacityBelly: 2.058,
-      capacityTip: 0.652,   // was 1.1 / 0.35 - laid 22 um against a 44 um target
+      /* Model-sized - the hog was the one holding far too LITTLE. See the
+         note on the round sable's capacity. */
+      capacityBelly: 4.102,
+      capacityTip: 1.299,   // was 1.1 / 0.35 - laid 22 um against a 167 um target
       // A hog will not hold a flood. This is a stiff tool for stiff paint.
       waterOvercharge: 1.2,
       /* Model-sized for transfer; see the round sable's note. Barely moved -
          the hog was the one brush already inside the band, at 0.372. */
-      downRate: 0.0324,   // was 0.030; paste leaves a bristle faster than a wash
+      downRate: 0.0619,   // was 0.030; paste leaves a bristle faster than a wash
       upRate: 0.34,       // and it lifts what it is dragged through
     },
     // The rake stays raked. A sable springs straight back; a splayed hog keeps
