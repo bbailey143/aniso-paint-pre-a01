@@ -603,7 +603,60 @@ trimmed tone metric. All frame-packaging or instrument correctness - invariant 2
 work that applies to watercolour identically. Reverting them would restore
 measured faults in both media and blind the bench.
 
+## OIL IS BEING REBUILT FROM ZERO — read docs/20 first (2026-08-30)
+
+The artist: *"We need to start from ground 0, as if oil does not exist and start
+building it."* [`docs/20-oil-from-zero.md`](20-oil-from-zero.md) is that build.
+Nothing has been stripped yet; **the build order is his to ratify first.**
+
+**The evidence for oil is smaller than anyone assumes.** `07-media.md`'s build
+rows are Watercolor, Graphite, Ballpoint - **oil is not among them.** It sits in
+"The extended roadmap (parked, not built)", which grants it four properties:
+`solvent oil`, `bodyShrink ~= 1` (100 % peak retention), multi-day `openTime`,
+and a **fat-over-lean viscosity gradient**. `09-acceptance.md` adds zero-to-
+minimal value shift, glossy/satin, 2-7 days, one-way door. B04 (IMPaSTo) is the
+architecture, and supplies no oil constants.
+
+**The medium row is NOT where oil drifted.** `library.ts` already states its own
+derivation - six lines, each mapped to a value - and says plainly "[UNVERIFIED]
+Every value below is reasoned from the spec, not measured." That is a sound
+ground zero. Two gaps against the roadmap: `bodyShrink` is 0.85 against ~1
+(currently unread by any pass, so inert), and **fat-over-lean is not built at
+all.**
+
+**The drift is six oil-only shader behaviours, each [UNVERIFIED], each added to
+cure a real reported complaint, stacked without anyone standing back:** the
+`bridged` tooth-gate fill, the viscosity-narrowed scumble gate, the whole
+`level_fresh` pass, `rExchange` + the TVD metric (this one IS ratified plan work
+- 18 section 5 step 2), `smearStrength`, and the teflon/workable release. Table
+with what each cures is in docs/20 section 3.
+
+**NOT drift, and staying:** `relief: 10`, `hidesGround: 2`, `kInstrument: 0`.
+Each set by the artist at the easel on a stated date with reasoning recorded.
+Recorded decisions under the fence.
+
+**MUST NOT BE TOUCHED by the rebuild:** the frame-invariance and instrument work
+of docs/19 E13/E17. None of it is a fix to oil - it is all invariant 2 work
+applying to watercolour identically, and it is the bench that would judge the
+rebuild.
+
 ## NEXT ACTION
+
+**1. The artist ratifies the build order in docs/20 section 4.** Then step 0:
+one flag per behaviour so oil can be built up one at a time and each addition
+judged. Then look at BARE oil - nobody has ever seen it, because each behaviour
+was added on top of the last.
+
+**2. Still open and still his, from 18 section 5 step 3 (since 2026-08-27):**
+one oil pass at Flow well above default - does the THICKNESS look right? And a
+crossing - how strong should the CARRY feel? Last accepted figure "3 % feels
+correct"; the trail today starts at 20.6 %. `16` is explicit: do not tune it,
+show him a crossing and take the verdict.
+
+**3. Engine-side, before any loading model is attempted again:** E18's stranded
+paint. 91 % of a loaded tuft is unreachable because `wick` has no cross-bristle
+path.
+
 
 **IT IS THE ARTIST'S, AND IT IS ZERO-CODE.** `docs/18` §3b, the step the plan
 stopped on:
