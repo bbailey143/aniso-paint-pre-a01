@@ -324,6 +324,33 @@ splits. Slow strokes now sit on the pickup-off floor. Pickup still lifts a
 proper amount (total film 536.7 → 445.2, 17 % taken up), so it has not been
 switched off by the back door.
 
+## THE BRUSHES HOLD PAINT FOR THREE CANVAS WIDTHS (2026-08-29, docs/19 E14)
+
+The artist asked how long these brushes hold on to oil — "it seems too long by a
+lot". Measured, `node tools/brush-bench.mjs dryout`, one dip dragged straight,
+against a sheet **1024 cells across**:
+
+| brush / medium | half strength | 10 % | still held after 3000 cells |
+|---|---:|---:|---:|
+| flat hog / oil | 573 | 1173 | **12.8 %** |
+| round sable / oil | 567 | 1683 | 13.4 % |
+| flat hog / watercolour | 398 | 1576 | 16.8 % |
+
+**One dip lasts about three canvas widths and is still not empty.** No constant
+was changed — the call on brush legs is the artist's, by eye.
+
+**Command palette → Toggle Dry-Out Marks.** A red line at the brush's own
+contact point, along its own blade axis, at its own half-width. A LADDER (half
+full, a quarter, a tenth, a twentieth, out) because a tuft's holding decays
+towards zero and never arrives, so one line at one threshold would draw nothing
+at all on most of these brushes. Faint at half full, solid red when out. **If
+the solid line never appears, that is the answer.** On a 3000-cell drag the flat
+hog draws exactly two: half full at 359 cells, a quarter left at 738.
+
+Verified against a hand-fed ladder: marks land at screen x 360/480/600/720/840
+against expected 360/480/600/720/840, height 98 px against 96. Nothing touches
+paint — the marks are on their own transparent canvas above the picture.
+
 ## NEXT ACTION
 
 **1. Run `?full-check` on a VISIBLE page.** It is the pickup/stacking/holding
@@ -332,7 +359,15 @@ pickup on — so a hidden pane makes it untrustworthy. It could not be run this
 session and the pickup path is exactly what changed. **Do this before anything
 else.**
 
-**2. Then chase the remainder, which is still inside pickup.** Fast strokes are
+**2. MEASURE A STROKE OVER EXISTING PAINT.** The artist, 2026-08-29: repeated
+strokes behave well "until heavy layers begin to build. Then the fish scale
+chopping makes a furious comeback." **Every stroke this bench has ever measured
+lands on bare canvas** — the same shape of gap as the pickup one, and pickup
+scales with how much film is there to lift, so a heavy layer hands it far more
+to work with. Consistent with E13, not demonstrated. Add a stage that lays N
+passes and measures the last one.
+
+**3. Then chase the remainder, which is still inside pickup.** Fast strokes are
 about 6× the pickup-off floor. Candidates, none yet tested:
 
 - `brushTake` is one uniform per frame, credited from an ASYNCHRONOUS readback,

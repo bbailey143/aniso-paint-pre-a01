@@ -13,6 +13,7 @@
 import { StrokeEngine } from '../src/input/stroke';
 import { BRUSH_BY_SLUG } from '../src/brush/library';
 import { WET_MEDIA } from '../src/media/library';
+import type { Reservoir } from '../src/brush/reservoir';
 import { SEG_FLOATS } from '../src/engine/fluid';
 import type { StylusSample } from '../src/input/pointer';
 
@@ -24,7 +25,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach', 'dryout']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -1375,5 +1376,96 @@ if (MODE === 'density') {
   console.log('  --- speed: cells between stylus reports ---');
   for (const [inputs, gap] of [[336, 1], [168, 2], [112, 3], [84, 4], [56, 6], [42, 8], [28, 12], [21, 16]] as const) {
     run(1, 1, gap + ' cells per report', inputs);
+  }
+}
+
+/* ----------------------------------------------------------------- dryout --
+ * HOW LONG DOES ONE DIP LAST?
+ *
+ * The artist's question, 2026-08-29: "how long are these brushes holding on to
+ * oil? It seems too long by a lot."
+ *
+ * `legs` already asks something close, but it runs the WATER withdrawal path
+ * for every medium, and oil is a body paint that takes a different branch in
+ * `Reservoir.withdraw` entirely. This sets the medium first.
+ *
+ * Reports, for one full dip dragged in a straight line:
+ *   - what the tuft still holds, every 100 cells
+ *   - the cell where the paint being laid falls below 50 %, 10 % and 1 % of
+ *     what the same brush laid at the start
+ *   - the cell where the tuft's own holding falls below 1 % of capacity, which
+ *     is the definition the on-canvas dry-out mark uses
+ */
+if (MODE === 'dryout') {
+  const LEN = Number(process.argv[5] ?? 3000);
+  console.log('one full dip, dragged straight, 0.8 cells per report');
+  console.log('  brush / medium              laid/cell at start   50%   10%    1%   tuft empty   left at end');
+  for (const slug of ['flat-hog', 'round-sable', 'flat-sable']) {
+    const def2 = BRUSH_BY_SLUG.get(slug);
+    if (!def2) continue;
+    for (const mslug of ['oil', 'watercolour']) {
+      const med = WET_MEDIA.find((m) => m.slug === mslug);
+      if (!med) continue;
+      const st = new StrokeEngine(def2, 1);
+      st.setWetMedium(med);
+      st.setBrush(def2, 1);
+      const mx = new Float32Array(8); mx[0] = 1;
+      st.charge(mx, 1, 0);
+      st.begin(20, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+      const res = (st as { brush: { reservoir: Reservoir } }).brush.reservoir;
+      let first = 0;
+      let at50 = 0, at10 = 0, at1 = 0, empty = 0;
+      for (let cell = 1; cell <= LEN; cell++) {
+        st.add(20 + cell * 0.8, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+        const { data, count } = st.drain();
+        let w = 0;
+        for (let i = 0; i < count; i++) w += data[i * SEG_FLOATS + 5];
+        if (cell <= 10) first = Math.max(first, w);
+        if (!at50 && cell > 10 && w < first * 0.5) at50 = cell;
+        if (!at10 && cell > 10 && w < first * 0.1) at10 = cell;
+        if (!at1 && cell > 10 && w < first * 0.01) at1 = cell;
+        // The same test the on-canvas mark uses: holding under 1 % of capacity.
+        const t = res.totals();
+        if (!empty && cell > 10
+          && Math.max(t.water, t.pigment) < t.capacity * 0.01) empty = cell;
+      }
+      const t = res.totals();
+      const held = 100 * Math.max(t.water, t.pigment) / Math.max(t.capacity, 1e-9);
+      console.log(`  ${(slug + ' / ' + mslug).padEnd(28)}`
+        + `${first.toFixed(4).padEnd(20)}`
+        + `${String(at50 || '>' + LEN).padStart(5)} `
+        + `${String(at10 || '>' + LEN).padStart(5)} `
+        + `${String(at1 || '>' + LEN).padStart(5)} `
+        + `${String(empty || '>' + LEN).padStart(12)} `
+        + `${held.toFixed(1)}%`);
+    }
+  }
+  console.log('  (cells of stroke; the canvas is 1024 cells across)');
+
+  /* The on-canvas marks, from the same run. This is the check that the overlay
+     is fed at all: if the ladder never fires here it will draw nothing there. */
+  console.log('');
+  console.log('dry-out marks the overlay would draw (flat-hog / oil, 3000 cells):');
+  {
+    const def3 = BRUSH_BY_SLUG.get('flat-hog')!;
+    const med = WET_MEDIA.find((m) => m.slug === 'oil')!;
+    const st = new StrokeEngine(def3, 1);
+    st.setWetMedium(med);
+    st.setBrush(def3, 1);
+    const mx = new Float32Array(8); mx[0] = 1;
+    st.charge(mx, 1, 0);
+    st.begin(20, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+    for (let cell = 1; cell <= 3000; cell++) {
+      st.add(20 + cell * 0.8, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+      st.drain();
+    }
+    const marks = (st as unknown as { dryMarks: Array<Record<string, number>> }).dryMarks;
+    if (marks.length === 0) console.log('  none - the brush never got that low');
+    for (const m of marks) {
+      console.log(`  level ${String(m.level).padEnd(5)} at x ${m.x.toFixed(1)}`
+        + ` (${((m.x - 20) / 0.8).toFixed(0)} cells in)`
+        + `  blade ${m.dx.toFixed(2)},${m.dy.toFixed(2)}`
+        + `  half-width ${m.half.toFixed(2)} cells`);
+    }
   }
 }

@@ -1,6 +1,7 @@
 // aniso-paint — app entry.
 import { initGpu, resizeToDisplay, describeAdapter, WebGpuUnavailable, type Gpu } from './engine/gpu';
 import { maybeRunSoak } from './soak';
+import { DryOutOverlay } from './ui/dryout-overlay';
 import { maybeRunBanding } from './bench/banding-bench';
 import { maybeRunFishScale } from './bench/fish-scale-bench';
 import { esc, ok, warn, verdict, headline } from './bench/panel';
@@ -105,7 +106,7 @@ async function main() {
     onFlowChange(scale) { stroke.setFlow(scale); },
     onWaterChange(nextWaterCharge) { waterCharge = nextWaterCharge; stroke.charge(engine.mixWeights, palette.loading, waterCharge); },
     onTiltChange(gravityX, gravityY, cosAlpha) { boardTilt = { gx: gravityX, gy: gravityY, cosAlpha }; applyBoardTilt(); },
-    onClear() { strokeCount = 0; engine.clear(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); },
+    onClear() { strokeCount = 0; engine.clear(); stroke.clearDryMarks(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); },
     onWaterView(on) { engine.waterView = on; requestFrame(); },
     onBrushChange(def, size) { setConteSelected(false); stroke.setBrush(def, size); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); updatePenCursorContact(); },
     onDryMedium(medium, size) { stroke.setDryMedium(medium, size); engine.setDryMix(new Map(medium.pigments)); setConteSelected(medium.form === 'stick'); updatePenCursorContact(); },
@@ -154,10 +155,15 @@ async function main() {
   }
 
   // — Actions —
-  cmd.register({ id: 'act-clear', name: 'Clear Sheet', group: 'Actions', hint: 'Wipe the painting', keywords: 'clear wipe erase delete', action: () => { engine.clear(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); } });
+  cmd.register({ id: 'act-clear', name: 'Clear Sheet', group: 'Actions', hint: 'Wipe the painting', keywords: 'clear wipe erase delete', action: () => { engine.clear(); stroke.clearDryMarks(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); } });
   cmd.register({ id: 'act-rinse', name: 'Rinse Brush', group: 'Actions', hint: 'Pigment out, clean water in', keywords: 'rinse wash clean water', action: () => stroke.rinse(1) });
   cmd.register({ id: 'act-rinse-load', name: 'Rinse & Re-dip', group: 'Actions', hint: 'Rinse then reload current mix', keywords: 'rinse load dip reload', action: () => { stroke.rinse(1); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); } });
   cmd.register({ id: 'act-clear-mix', name: 'Clear Mix', group: 'Actions', hint: 'Empty the colour recipe', keywords: 'mix clear empty color', action: () => { palette.clear(); stroke.rinse(1); } });
+  /* Dry-out marks. See src/ui/dryout-overlay.ts for what the rungs mean and
+     why there is a ladder rather than the single line that was asked for. */
+  const dryOut = new DryOutOverlay();
+  cmd.register({ id: 'act-dryout', name: 'Toggle Dry-Out Marks', group: 'Actions', hint: 'Red lines where the brush ran low on paint', keywords: 'dry out empty reservoir paint runs out marks debug brush load', action: () => { dryOut.toggle(); requestFrame(); } });
+  cmd.register({ id: 'act-dryout-clear', name: 'Clear Dry-Out Marks', group: 'Actions', hint: 'Forget the red lines, keep the painting', keywords: 'dry out marks clear forget reset', action: () => { stroke.clearDryMarks(); requestFrame(); } });
   cmd.register({ id: 'act-water-view', name: 'Toggle Water View', group: 'Actions', hint: 'See where water is, not colour', keywords: 'water view debug display', action: () => { engine.waterView = !engine.waterView; requestFrame(); } });
   /* Topographic contours over the paint. The steps are a ladder rather than a
      slider because the useful ones span two orders of magnitude — 0.002 reads a
@@ -381,12 +387,12 @@ async function main() {
   if (document.body.classList.contains('st-readouts')) watchGauges(true);
 
   let gaugeTick = 0;
-  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake, stroke.brushGrab); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
+  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake, stroke.brushGrab); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); dryOut.draw(stroke.dryMarks, engine, gpu.canvas.width, gpu.canvas.height); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
   /* What the tuft lifts off the sheet goes back into the tuft. The engine
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
   stroke.onBrushReset = () => engine.discardPickup();
-  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
+  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__dryOut = dryOut; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
 }
 function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
   const query = new URLSearchParams(location.search);

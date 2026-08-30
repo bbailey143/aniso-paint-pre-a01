@@ -1213,3 +1213,62 @@ it was not run. **It is the first thing to do next.**
 bench's CPU footprint stage in node, in a second, with no GPU or browser.
 `node tools/brush-bench.mjs reach <brush> [cells-per-report]` — what the tooth
 gate is being handed, per solve step.
+
+### E14 — the brushes hold paint for about three canvas widths (2026-08-29, Claude)
+
+**The artist's question.** "How long are these brushes holding on to oil? It
+seems too long by a lot." He is right, and it had never been measured on the
+body-paint path — `legs` runs the WATER withdrawal branch for every medium, and
+oil takes a different branch in `Reservoir.withdraw` entirely.
+
+`node tools/brush-bench.mjs dryout`. One full dip, dragged straight, 0.8 cells
+per report. **The sheet is 1024 cells across.**
+
+| brush / medium | half strength at | 10 % at | 1 % at | still held after 3000 cells |
+|---|---:|---:|---:|---:|
+| flat hog / oil | **573** | 1173 | 2171 | **12.8 %** |
+| flat hog / watercolour | 398 | 1576 | >3000 | 16.8 % |
+| round sable / oil | 567 | 1683 | >3000 | 13.4 % |
+| round sable / watercolour | 464 | 1872 | >3000 | 21.2 % |
+| flat sable / oil | 684 | 1528 | 1639 | 0.0 % |
+| flat sable / watercolour | 557 | 2260 | >3000 | 8.1 % |
+
+**One dip of oil lasts about three canvas widths and is still not empty.** A
+loaded hog should be scumbling within a stroke or two. Flat sable is the only
+row that ever genuinely empties, at 1492 cells.
+
+This is not a new fault so much as an unasked question: `setFlow`'s own comment
+says "halve this and one dip goes twice as far", and nobody had checked what the
+shipped value buys in cells. **No constant has been changed here** — the numbers
+are recorded and the decision about brush legs is the artist's to make by eye,
+which is what the marks below are for.
+
+**ON-CANVAS DRY-OUT MARKS.** Requested: "draw a straight red line exactly the
+size and direction of the brush every time the brush runs out of oil."
+
+Command palette → **Toggle Dry-Out Marks**. A red line is drawn at the brush's
+own contact point, along its own blade axis, at its own half-width — all three
+straight off `Brush.solve`, which already computed them and dropped them.
+
+**Why a ladder and not one line.** A tuft gives up a FRACTION of what it still
+holds each step, so its holding decays towards zero and never arrives; "runs
+out" is a threshold someone has to choose. Choose one and, on the numbers above,
+most brushes would draw nothing at all for a whole painting. So the same line is
+drawn at each rung as the brush passes it — barely visible at half full, solid
+red at 1 % — and one stroke carries its own emptying curve along its path.
+**If the solid red line never appears, that is the answer to the question.**
+
+Measured on the same 3000-cell drag, flat hog / oil, the overlay draws exactly
+two marks: **half full at 359 cells in, a quarter left at 738**, and nothing
+after that. Nothing touches paint; the marks live on their own transparent
+canvas above the picture and are never composited into it.
+
+The ladder re-arms on every dip, so a re-charged brush can run out again.
+
+**Still to measure: strokes over EXISTING paint.** The artist reports that
+repeated strokes behave well "until heavy layers begin to build. Then the fish
+scale chopping makes a furious comeback." Every stroke this bench has ever
+measured lands on bare canvas. That is the same shape of gap as the pickup one
+E13 found — the lifting term scales with how much film is there to lift, so a
+heavy layer gives it far more to work with. Consistent with E13's diagnosis, not
+yet demonstrated, and the next thing the bench needs.

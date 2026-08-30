@@ -216,11 +216,77 @@ export class StrokeEngine {
   onBrushReset: (() => void) | null = null;
 
   /** Dip the brush. Called when the mix or load changes, and at stroke start. */
+
+  /* ------------------------------------------------------- DRY-OUT MARKS ---
+   *
+   * The artist's request, 2026-08-29: "draw a straight red line exactly the
+   * size and direction of the brush every time the brush runs out of oil",
+   * after asking how long these brushes hold on to paint — "it seems too long
+   * by a lot".
+   *
+   * He is right, and it is measured. `node tools/brush-bench.mjs dryout`, one
+   * full dip dragged straight, against a sheet 1024 cells across:
+   *
+   *   flat hog / oil          half strength at 573 cells, 12.8 % still held
+   *                           after 3000 — three canvas widths
+   *   round sable / oil       half strength at 567, 13.4 % held after 3000
+   *   flat hog / watercolour  half strength at 398, 16.8 % held after 3000
+   *
+   * WHY THERE IS A LADDER AND NOT ONE LINE. A tuft empties by giving up a
+   * FRACTION of what it still holds, so its holding decays towards zero and
+   * never arrives; "runs out" is a threshold someone has to choose, and a
+   * single line at one threshold would draw nothing at all on most of these
+   * brushes and teach nobody anything. So the same line is drawn at each rung
+   * as the brush passes it, faint at half full and solid red when it is
+   * genuinely out. One stroke then shows the whole emptying curve laid along
+   * its own path — and if the bright line never appears, that IS the answer.
+   *
+   * Nothing here touches paint. The marks are drawn over the picture and are
+   * never composited into it.
+   */
+  private markLevels = [0.5, 0.25, 0.1, 0.05, 0.01];
+  private markDone = 0;
+  /** Marks in GRID cells: centre, unit blade direction, half-width, rung. */
+  readonly dryMarks: Array<{
+    x: number; y: number; dx: number; dy: number; half: number; level: number;
+  }> = [];
+
+  /** Fraction of its capacity the tuft is still holding, 0..1. */
+  holdingFraction(): number {
+    const t = this.brush.reservoir.totals();
+    if (t.capacity <= 1e-9) return 0;
+    return Math.max(0, Math.min(1, Math.max(t.water, t.pigment) / t.capacity));
+  }
+
+  /** Called after every solve step, while the brush is on the paper. */
+  private noteDryOut() {
+    if (this.markDone >= this.markLevels.length) return;
+    const held = this.holdingFraction();
+    // Rungs are ordered fullest first, so a brush that drops several at once
+    // (a heavy dab) records each of them where it actually crossed them.
+    while (this.markDone < this.markLevels.length
+           && held < this.markLevels[this.markDone]) {
+      const b = this.brush;
+      this.dryMarks.push({
+        x: b.contactX, y: b.contactY,
+        dx: b.bladeX, dy: b.bladeY,
+        half: b.bladeHalfWidth,
+        level: this.markLevels[this.markDone],
+      });
+      this.markDone++;
+    }
+  }
+
+  /** Forget the marks — a fresh sheet, or the artist clearing the overlay. */
+  clearDryMarks() { this.dryMarks.length = 0; }
+
   charge(mix: Float32Array, loading: number, waterCharge = this.waterCharge) {
     this.mix.set(mix.subarray(0, 8));
     this.loading = loading;
     this.waterCharge = Math.min(1, Math.max(0, waterCharge));
     this.brush.reservoir.charge(this.mix, loading, this.waterCharge);
+    // A dip re-arms the ladder: the next stroke can run out again.
+    this.markDone = 0;
     this.onBrushReset?.();
   }
 
@@ -423,6 +489,9 @@ export class StrokeEngine {
       if (this.count < FRAME_SEGS) {
         this.count = this.brush.emitFootprint(this.buf, this.count, FRAME_SEGS);
       }
+      // After the footprint, so the mark lands where the brush had already
+      // laid whatever it had left rather than a step ahead of it.
+      this.noteDryOut();
     }
     this.last = { x: gx, y: gy, s };
   }

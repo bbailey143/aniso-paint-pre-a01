@@ -118,6 +118,18 @@ export class Brush {
    * contact, regardless of browser-frame packaging. */
   private stepSerial = 0;
   private started = false;
+  /* WHERE THE BLADE IS SITTING, published for the dry-out marks.
+   *
+   * Not used by the solver or by anything that touches paint — `solve` already
+   * has all four numbers and simply drops them, and the dry-out overlay needs
+   * exactly them to draw a line "the size and direction of the brush". Kept
+   * here rather than recomputed outside because `widthRatio * tuftLength` and
+   * the barrel's own axis are the brush's business, not the caller's. */
+  bladeX = 1;
+  bladeY = 0;
+  bladeHalfWidth = 0;
+  contactX = 0;
+  contactY = 0;
   /** Body paint runs out by losing loaded contacts, not by making every
    * contact increasingly transparent. Set from the selected medium row. */
   private bodyTransfer = false;
@@ -384,6 +396,11 @@ export class Brush {
       this.spines[i].solve(fx, fy, fz, dir, drag, [px, py], [lx / ll, ly / ll]);
     }
     this.lastCValid = true;
+    this.bladeX = bx;
+    this.bladeY = by;
+    this.bladeHalfWidth = halfWidth;
+    this.contactX = input.x;
+    this.contactY = input.y;
 
     // Paint wicks down the tuft toward whatever is being used.
     this.reservoir.wick(0.5);
