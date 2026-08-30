@@ -25,7 +25,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach', 'dryout', 'load']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach', 'dryout', 'load', 'stranded']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -1623,4 +1623,82 @@ if (MODE === 'load') {
     }
     console.log(`  ${slug.padEnd(14)} ${row.join('   ')}`);
   }
+}
+
+/* --------------------------------------------------------------- stranded --
+ * DOES THE BRUSH RELOAD ITSELF, OR DOES IT NEVER EMPTY?
+ *
+ * The artist, 2026-08-30: "Why is the brush auto-reloading without lifting it
+ * first? It should be running out of paint."
+ *
+ * It does not reload. Instrumented in the live app, a continuous 480-cell drag
+ * calls `Reservoir.charge` exactly ZERO times after the one dip at
+ * `StrokeEngine.begin`, and holding falls monotonically 0.555 -> 0.237. Pickup
+ * is not secretly refilling it either: with lifting off against on, holding
+ * after the same drag reads 0.3908 against 0.3929 straight, and 0.3910 against
+ * 0.3993 while scrubbing back over its own wet paint.
+ *
+ * So the question becomes the other one: why does it never FINISH emptying?
+ *
+ * This counts, per reservoir cell, whether any hair in that cell ever made
+ * contact during a stroke — `withdraw` is called once per contacting hair
+ * segment, so a cell that is never called is a cell whose paint has no route
+ * to the paper at all, however long the stroke runs.
+ */
+if (MODE === 'stranded') {
+  const which = process.argv[3] ?? 'flat-hog';
+  const mslug = process.argv[4] ?? 'oil';
+  const CELLS = Number(process.argv[5] ?? 600);
+  const def4 = BRUSH_BY_SLUG.get(which)!;
+  const med = WET_MEDIA.find((m) => m.slug === mslug)!;
+  const st = new StrokeEngine(def4, 1);
+  st.setWetMedium(med);
+  st.setBrush(def4, 1);
+  const mx = new Float32Array(8); mx[0] = 1;
+  st.charge(mx, 1, 0);
+  const res = (st as unknown as { brush: { reservoir: Reservoir } }).brush.reservoir;
+
+  // Which reservoir cells ever get asked for paint.
+  const touched = new Set<number>();
+  const rw = res.withdraw.bind(res);
+  (res as unknown as { withdraw: unknown }).withdraw = (
+    cell: number, ...rest: unknown[]
+  ) => {
+    touched.add(cell);
+    return (rw as (...a: unknown[]) => number)(cell, ...rest);
+  };
+
+  st.begin(20, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+  for (let k = 1; k <= CELLS; k++) {
+    st.add(20 + k * 0.8, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+    st.drain();
+  }
+  st.end();
+
+  const water = (res as unknown as { water: Float32Array }).water;
+  const cap = (res as unknown as { capacity: Float32Array }).capacity;
+  let heldTouched = 0, heldStranded = 0, capTouched = 0, capStranded = 0;
+  for (let i = 0; i < water.length; i++) {
+    if (touched.has(i)) { heldTouched += water[i]; capTouched += cap[i]; }
+    else { heldStranded += water[i]; capStranded += cap[i]; }
+  }
+  const held = heldTouched + heldStranded;
+  console.log(`${which} / ${med.name} — after ${Math.round(CELLS * 0.8)} cells of continuous stroke`);
+  console.log(`  reservoir cells        ${water.length} total, `
+    + `${touched.size} ever touched, ${water.length - touched.size} never touched`);
+  console.log(`  capacity              ${capTouched.toFixed(1)} reachable, `
+    + `${capStranded.toFixed(1)} unreachable `
+    + `(${(100 * capStranded / (capTouched + capStranded)).toFixed(0)} % of the tuft)`);
+  console.log(`  paint still held      ${held.toFixed(1)} uL`);
+  console.log(`    in cells that lay   ${heldTouched.toFixed(1)} uL `
+    + `(${(100 * heldTouched / Math.max(held, 1e-9)).toFixed(0)} %)`);
+  console.log(`    STRANDED            ${heldStranded.toFixed(1)} uL `
+    + `(${(100 * heldStranded / Math.max(held, 1e-9)).toFixed(0)} %)`);
+  console.log(`  reachable cells are   `
+    + `${(100 * heldTouched / Math.max(capTouched, 1e-9)).toFixed(1)} % full`);
+  console.log(`  the whole tuft reads  `
+    + `${(100 * held / Math.max(capTouched + capStranded, 1e-9)).toFixed(1)} % full`);
+  console.log('');
+  console.log('  A brush whose CONTACTING cells are nearly empty while the tuft as a');
+  console.log('  whole still reads full is a brush that looks like it never runs out.');
 }

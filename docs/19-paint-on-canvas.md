@@ -1664,3 +1664,82 @@ are now **pickup OFF** — 0.0276 to 0.0315 with tonal swings around 44, against
 stroke rather than banding, which is correct behaviour, but the deposit's own
 ripple is now the biggest thing left and has not been looked at since the paint
 loads quadrupled. That is the next thread, and `bundling` is the test for it.
+
+### E18 — the brush does not reload; 91 % of its paint cannot reach the paper (2026-08-30, Claude)
+
+**The artist, 2026-08-30:** "Why is the brush auto-reloading without lifting it
+first? It should be running out of paint and unless I pick up the brush (or
+release the mouse) it shouldn't reload. This may relieve this entire problem."
+
+**IT IS NOT RELOADING. That was checked, not assumed.** Instrumented in the live
+app, wrapping `Reservoir.charge` and `StrokeEngine.begin` and driving a
+continuous 480-cell drag:
+
+- `charge` called **zero** times after the single dip at `begin`
+- `begin` called **zero** extra times
+- holding falls monotonically **0.555 → 0.237**
+
+And pickup is not secretly refilling it either — the same drag with lifting off
+against on ends at **0.3908 against 0.3929** straight, and **0.3910 against
+0.3993** while scrubbing back and forth over its own wet paint. Lifting
+contributes under one per cent of the tuft's contents.
+
+**But the instinct behind the question was right, and here is what is actually
+happening.**
+
+`node tools/brush-bench.mjs stranded flat-hog oil`. `withdraw` is called once
+per contacting hair segment, so a reservoir cell never called is a cell whose
+paint has no route to the paper:
+
+| after a continuous stroke of | 480 cells | 960 cells |
+|---|---:|---:|
+| reservoir cells ever touched | **77 of 432** | 77 of 432 |
+| capacity that ever contacts | **9 %** | 9 % |
+| contacting cells still hold | **4.4 % full** | **1.3 % full** |
+| but the whole tuft reads | 18.6 % full | 14.1 % full |
+| of the paint left, stranded | **98 %** | **99 %** |
+
+**The part of the brush that touches the paper is empty. The rest is full and
+cannot get there.** That is precisely what "auto-reloading" looks like from the
+outside: the tip runs dry, and a step later it has paint again — fed by a belly
+the artist cannot see and which never runs out.
+
+**WHY IT CANNOT GET THERE.** `Reservoir.wick` moves paint along a bristle, from
+segment `s` to `s+1`:
+
+```
+for (let b = 0; b < B; b++)
+  for (let s = 0; s < S - 1; s++) { const i = b * S + s; const j = i + 1; … }
+```
+
+**There is no `b` direction.** The 72 bristles are 72 isolated straws. Paint in a
+bristle that never contacts the paper can never reach the paper by any route at
+all — not slowly, not eventually. Only the ~13 bristles' worth of cells on the
+contact side ever deliver, and they deliver from their own length by diffusion.
+
+Real bristles in a tuft are wetted against each other and paint migrates between
+them by capillarity; a loaded brush does not have three quarters of its charge
+sealed off. This is a genuine gap in the model, not a tuning value.
+
+The indexing was checked before this was believed: `new Reservoir(def.reservoir,
+def.bristles, def.segments + 1)` matches `emitFootprint`'s `cell = b * J + s`
+with `J = def.segments + 1`. There is no off-by-one; the trapping is real.
+
+---
+
+**WHAT THIS MEANS FOR E16.** The loading model sized `capacity` so that a
+designed stroke lays the right volume — and it does, measured. But it reached
+that by inflating the TOTAL load about fourfold while 91 % of it stays sealed
+off: **112 µL is reachable of a 1283 µL load.** The capacities are currently
+compensating for the trapping.
+
+**So these two must be settled together.** Give the wick a cross-bristle path
+and the reachable fraction rises sharply; the capacities then have to come back
+down, or every brush will lay far too much. `brush-bench load` re-converges them
+in one pass, so the order is: fix the transport, then re-run `load`, then
+re-measure the banding — which is also multiplicative in paint and will move.
+
+**NOT ATTEMPTED HERE.** How a tuft shares paint between its bristles is a brush
+engine design decision with no card behind it, and the artist's own judgement of
+how a loaded brush should behave is the deciding evidence. The measurement is
+recorded; the change is not made.

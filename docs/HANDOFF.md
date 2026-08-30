@@ -510,7 +510,54 @@ E16's loading change, which quadrupled the film on purpose. Re-baseline it.
 speed and bundling, pickup on/off within 0.00005, total film identical to the
 digit across all five bundlings.
 
+## THE BRUSH DOES NOT RELOAD — 91 % OF ITS PAINT CANNOT REACH THE PAPER
+(2026-08-30, docs/19 E18. The artist asked; this is the answer.)
+
+**Not reloading, and that was checked rather than assumed.** Wrapping
+`Reservoir.charge` and `StrokeEngine.begin` in the live app over a continuous
+480-cell drag: `charge` called ZERO times after the one dip at `begin`, `begin`
+called zero extra times, holding falling monotonically 0.555 -> 0.237. Pickup is
+not refilling it either - lifting off against on ends 0.3908 / 0.3929 straight
+and 0.3910 / 0.3993 while scrubbing over its own wet paint.
+
+**But the instinct was right.** `node tools/brush-bench.mjs stranded`:
+
+| after a continuous stroke of | 480 cells | 960 cells |
+|---|---:|---:|
+| reservoir cells ever touched | **77 of 432** | 77 of 432 |
+| capacity that ever contacts | **9 %** | 9 % |
+| contacting cells still hold | **4.4 % full** | **1.3 % full** |
+| whole tuft reads | 18.6 % full | 14.1 % full |
+| of the paint left, stranded | **98 %** | **99 %** |
+
+**The part that touches the paper is empty; the rest is full and cannot get
+there.** From outside that IS "auto-reloading": the tip runs dry, a step later
+it has paint again, fed by a belly you cannot see that never empties.
+
+**WHY.** `Reservoir.wick` moves paint along a bristle, `s` to `s+1`. **There is
+no `b` direction** - the 72 bristles are 72 isolated straws, and paint in a
+bristle that never contacts can never reach the paper by any route. Real
+bristles are wetted against each other and share by capillarity. A gap in the
+model, not a tuning value. Indexing checked first: `new Reservoir(..., segments
++ 1)` matches `emitFootprint`'s `cell = b * J + s`. No off-by-one.
+
+**THIS AND E16 MUST BE SETTLED TOGETHER.** The loading model reached the right
+deposited volume by inflating the TOTAL load fourfold while 91 % stays sealed:
+112 uL reachable of a 1283 uL load. Give the wick a cross-bristle path and the
+reachable fraction jumps, so the capacities must come back down or every brush
+lays far too much. Order: fix the transport, re-run `brush-bench load` (it
+re-converges in one pass), then re-measure banding, which is multiplicative in
+paint and will move.
+
+**NOT ATTEMPTED.** How a tuft shares paint between bristles is a brush-engine
+design decision with no card behind it, and the artist's judgement of how a
+loaded brush should behave is the deciding evidence. Measurement recorded, change
+not made.
+
 ## NEXT ACTION
+
+**Settle the stranded paint above with the artist — it is the biggest lever
+left and it moves the loading and the banding with it.** Then:
 
 **The pickup path is no longer the largest term.** The worst rows are now
 **pickup OFF** - 0.0276 to 0.0315, against 0.0084-0.0179 with it on. Much of
