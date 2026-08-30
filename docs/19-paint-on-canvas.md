@@ -1272,3 +1272,126 @@ measured lands on bare canvas. That is the same shape of gap as the pickup one
 E13 found — the lifting term scales with how much film is there to lift, so a
 heavy layer gives it far more to work with. Consistent with E13's diagnosis, not
 yet demonstrated, and the next thing the bench needs.
+
+### E15 — the brush load, sized from the artist's coatings model (2026-08-30, Claude)
+
+**The model**, supplied by the artist:
+
+    wet film thickness = target dry film thickness / volume solids
+    deposited volume   = stroke area * wet film thickness
+    required load      = deposited volume / transfer efficiency   (0.35 to 0.50)
+
+The load a brush carries is **one stroke's worth of paint, divided by how much
+of it actually leaves**. Two constraints, and the engine has exactly two
+independent knobs for them — which is lucky, and is why this converged.
+
+---
+
+**FIRST, THE SCALE — nothing in `docs/` recorded what a cell is in millimetres,
+which is why a model like this could not be applied before.**
+
+The brush rows record it, implicitly and unmistakably. The flat hog is
+`length: 22` with `widthRatio: 1.05` — a blade 23.1 cells wide on bristles 22
+cells long. At **one cell to one millimetre** that is a 23 mm blade on 22 mm
+bristles, which is a real #12 flat hog, and the 512-cell grid becomes a 512 mm
+sheet — a standard 20-inch canvas. No other scale makes both of those true.
+
+Film height rides the same ruler: Cotton Duck's `toothAmp` 0.30 is 0.30 mm of
+weave depth, right for cotton duck, and the measured Oil film of 0.018 is 18
+microns wet. So **one unit of paint in the reservoir is one cubic millimetre —
+one microlitre** — since depositing it at full coverage raises a 1 mm × 1 mm
+cell by that many millimetres.
+
+`[UNVERIFIED — arithmetic from the brush rows, not a measurement.]` The paper
+rows disagree: Cotton Duck's `featureFreq` 64 would be 64 threads across 512 mm,
+far coarser than real canvas. That row is explicitly marked "chosen to read
+correctly, not measured" in `papers.ts`, so the brush anchors the scale and the
+thread count is the number that is wrong.
+
+---
+
+**WHAT THE BRUSHES WERE DOING.** `node tools/brush-bench.mjs load`, oil, a
+250 mm designed stroke, 40 µm dry at 90 % solids — so a 44 µm wet film:
+
+| brush | wanted load | had | wanted to lay | laid | transfer | **wet film** |
+|---|---:|---:|---:|---:|---:|---:|
+| flat hog | 642 µL | 343 | 257 µL | 128 | 0.374 | **22.2 µm** |
+| round sable | 246 µL | 1011 | 98 µL | 307 | 0.303 | **138.8 µm** |
+| flat sable | 633 µL | 1126 | 253 µL | 348 | 0.309 | **61.1 µm** |
+
+**The three brushes disagreed with each other by more than six times.** The hog
+laid a 22 µm film — half what it should — while the round sable laid 139 µm,
+which is not a brush, it is a syringe. Transfer sat at 0.30–0.37, two of the
+three below the model's band.
+
+---
+
+**THE TWO KNOBS, and they are genuinely independent.** `reservoir.ts` records
+the measurement: "at 0.5x through 5x capacity a flat hog laid 48 units then 484,
+and faded at 88 cells every single time. Bigger tuft, heavier stroke, same
+legs." So capacity moves the AMOUNT and `downRate` moves the LEGS. And transfer
+— what leaves over what is held — cannot be reached by capacity at all, because
+what leaves is a fraction of what is held and scaling the tuft scales both
+alike. So:
+
+1. `downRate` sets transfer. Swept: flat hog ×1 → 0.372, ×1.25 → 0.457; round
+   sable ×1 → 0.302, ×1.5 → 0.453. Set each to land near 0.40.
+2. `capacity` then sets the film, with transfer already fixed and unmoved by it.
+
+Converged in one pass:
+
+| brush | model load | now | model lays | now lays | transfer | wet film |
+|---|---:|---:|---:|---:|---:|---:|
+| flat hog | 642 µL | **641** | 257 µL | **257** | 0.402 | **44.6 µm** |
+| round sable | 246 µL | **247** | 98 µL | **98** | 0.398 | **44.3 µm** |
+| flat sable | 633 µL | **629** | 253 µL | **253** | 0.403 | **44.4 µm** |
+
+Load within 0.6 % of the model, deposited volume exact, transfer inside the
+0.35–0.50 band, and **all three brushes now agree with each other**.
+
+Rows changed, in `src/brush/library.ts` — nothing else:
+
+| | capacityBelly | capacityTip | downRate |
+|---|---|---|---|
+| round sable | 2.6 → 0.635 | 0.6 → 0.145 | 0.012 → 0.0158 |
+| flat sable | 2.3 → 1.284 | 0.55 → 0.308 | 0.013 → 0.0169 |
+| flat hog | 1.1 → 2.058 | 0.35 → 0.652 | 0.030 → 0.0324 |
+
+**Watercolour rides along** at a 33 µm wet film and transfer 0.29 — thinner than
+oil, which is right for a wash, and below the coatings band, which is an oil
+model and does not claim to describe a wash. Not adjusted, and not a fault
+until something measures washes on their own terms.
+
+---
+
+**THE COST, and it is real.** The hog now carries twice the paint, so the
+banding has twice as much to work with. Oil / Flat Hog / Cotton Duck, tone
+ripple, against the same bench an hour earlier:
+
+| stroke (pickup on) | before | after |
+|---|---:|---:|
+| 1 cell per report | 0.00553 | 0.00757 |
+| 4 cells per report | 0.01240 | 0.02066 |
+| 12 cells per report | 0.03124 | **0.05743** |
+| accelerating 1 → 12 | 0.03455 | **0.06158** |
+
+Total film 537 → 1064, doubled as designed. **At fast speeds this puts the
+fishscale back roughly where it was before E13's pickup fix.** That is exactly
+what the artist's Flow clue predicted — the banding is multiplicative in the
+amount of paint — and it is the honest trade: the volumes were wrong and are now
+right, and the remaining half of the pickup fault is correspondingly more
+visible. It makes finishing that fix more urgent, not less.
+
+The pickup-off rows moved too (0.00374 → 0.00542 at four cells), so this is not
+purely a pickup effect; more paint means more banding everywhere.
+
+---
+
+**ONE THING THIS DID NOT FIX, and it is worth its own look.** E14's complaint was
+that a dip lasts three canvas widths. Legs did shorten — flat hog / oil half
+strength 573 → 532 cells — but the tuft still holds **12.7 % after 3000 cells**
+while what it LAYS has fallen to 1 % of its opening rate by cell 2017. Those two
+numbers disagree because paint is stranded in parts of the tuft the contact
+never reaches: the belly holds it and only the tip lays. **The brush is not
+holding on too long so much as failing to bring what it holds to the paper.**
+That is a `wick` question, not a capacity one, and nothing here touches it.

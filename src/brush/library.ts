@@ -46,12 +46,34 @@ export const BRUSHES: BrushDef[] = [
     },
     splayFromPressure: 0.55,
     reservoir: {
-      capacityBelly: 2.6,   // the belly holds far more than the tip
-      capacityTip: 0.6,
+      /* SIZED FROM THE ARTIST'S COATINGS MODEL, 2026-08-30. See docs/19 E15.
+       *
+       *     wet film = target dry film / volume solids
+       *     deposited = stroke area * wet film
+       *     load = deposited / transfer efficiency          (0.35 to 0.50)
+       *
+       * At 1 cell = 1 mm and 1 paint unit = 1 mm^3, a 250 mm designed stroke
+       * wants a 44 um wet film for a 40 um dry one at 90 % solids. These three
+       * brushes disagreed with each other by FOUR TIMES: the hog laid 22 um and
+       * this round sable laid 139 um, which is not a brush, it is a syringe.
+       * Each capacity is scaled so its own designed stroke lays the film the
+       * model asks for. `downRate` is untouched, so how FAR a dip goes is
+       * unchanged - capacity moves the amount, not the legs (measured, see
+       * `setFlow` in reservoir.ts). */
+      capacityBelly: 0.635, // the belly holds far more than the tip
+      capacityTip: 0.145,   // was 2.6 / 0.6 - laid a 139 um film, 3x too thick
       // [UNVERIFIED] Exterior water carried by a flooded sable, in nominal
       // reservoir capacities. Maximum water is intentionally a dripping brush.
       waterOvercharge: 3.0,
-      downRate: 0.012,   // per CELL TRAVELLED now, not per step — see reservoir.ts
+      /* TRANSFER EFFICIENCY, the model's other half. It wants 0.35 to 0.50 of
+         the load to leave in one designed stroke; measured, these three sat at
+         0.372, 0.302 and 0.309, so two of them were below the band and all
+         three disagreed. Capacity cannot reach this - what leaves is a fraction
+         of what is held, so scaling the tuft scales both alike and the RATIO
+         does not move. Only the rate per millimetre does. Each is set to land
+         near 0.40. This is also what the artist meant by the brushes "holding
+         on too long": a shorter leg is the same number seen from the side. */
+      downRate: 0.0158,  // was 0.012; per CELL TRAVELLED, not per step - see reservoir.ts
       upRate: 0.10,
     },
     plasticity: 0.05,
@@ -102,12 +124,14 @@ export const BRUSHES: BrushDef[] = [
     },
     splayFromPressure: 0.75,
     reservoir: {
-      capacityBelly: 2.3,
-      capacityTip: 0.55,
+      /* Model-sized, x0.73. See the note on the round sable's capacity. */
+      capacityBelly: 1.284,
+      capacityTip: 0.308,   // was 2.3 / 0.55 - laid 61 um against a 44 um target
       // [UNVERIFIED] Same flooded-water range as the round until reference
       // brush tests justify a different exterior holding for the flat.
       waterOvercharge: 3.0,
-      downRate: 0.013,   // per CELL TRAVELLED now, not per step — see reservoir.ts
+      /* Model-sized for transfer; see the round sable's note. */
+      downRate: 0.0169,  // was 0.013; per CELL TRAVELLED, not per step
       upRate: 0.12,
     },
     plasticity: 0.06,
@@ -192,11 +216,15 @@ export const BRUSHES: BrushDef[] = [
       // Bristle is not absorbent the way sable hair is. It carries paint on and
       // between the hairs rather than in them, so it holds well under half what
       // a sable does, and runs out sooner.
-      capacityBelly: 1.1,
-      capacityTip: 0.35,
+      /* Model-sized, x2.01 - the hog was the one holding too LITTLE, and by
+         half. See the note on the round sable's capacity. */
+      capacityBelly: 2.058,
+      capacityTip: 0.652,   // was 1.1 / 0.35 - laid 22 um against a 44 um target
       // A hog will not hold a flood. This is a stiff tool for stiff paint.
       waterOvercharge: 1.2,
-      downRate: 0.030,    // paste leaves a bristle faster than a wash leaves hair
+      /* Model-sized for transfer; see the round sable's note. Barely moved -
+         the hog was the one brush already inside the band, at 0.372. */
+      downRate: 0.0324,   // was 0.030; paste leaves a bristle faster than a wash
       upRate: 0.34,       // and it lifts what it is dragged through
     },
     // The rake stays raked. A sable springs straight back; a splayed hog keeps

@@ -25,7 +25,7 @@ const sample = (overrides: Partial<StylusSample> = {}): StylusSample => ({
 });
 
 const MODE = process.argv[2] ?? 'flat-hog';
-const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach', 'dryout']);
+const PROBES = new Set(['shape', 'sweep', 'ramp', 'field', 'turn', 'blame', 'blade', 'legs', 'model', 'film', 'tuft', 'spines', 'fan', 'chaos', 'drive', 'fill', 'pulse', 'density', 'reach', 'dryout', 'load']);
 const slug = PROBES.has(MODE) ? 'flat-hog' : MODE;
 const def = BRUSH_BY_SLUG.get(slug)!;
 const size = Number(process.argv[4] ?? 1.0);
@@ -1467,5 +1467,137 @@ if (MODE === 'dryout') {
         + `  blade ${m.dx.toFixed(2)},${m.dy.toFixed(2)}`
         + `  half-width ${m.half.toFixed(2)} cells`);
     }
+  }
+}
+
+/* ------------------------------------------------------------------- load --
+ * THE BRUSH LOAD, IN MILLILITRES.
+ *
+ * The artist supplied a coatings-industry sizing model, 2026-08-30:
+ *
+ *     wet film thickness = target dry film thickness / volume solids
+ *     deposited volume   = stroke area * wet film thickness
+ *     required load      = deposited volume / transfer efficiency
+ *
+ * with transfer efficiency 0.35 to 0.50. **The load a brush carries is one
+ * stroke's worth of paint, divided by how much of it actually leaves.** So a
+ * loaded brush should give up between a third and a half of everything it holds
+ * in a single designed stroke — and E14 measured this engine giving up half its
+ * load over 573 cells and still holding 12.8 % after three canvas widths.
+ *
+ * THE SCALE, and it had to be established before the model could be applied at
+ * all. Nothing in `docs/` records what one cell is in millimetres. The brush
+ * rows do, implicitly and unmistakably: the flat hog is `length: 22` with
+ * `widthRatio: 1.05`, so a blade 23.1 cells wide on bristles 22 cells long.
+ * At **one cell to one millimetre** that is a 23 mm blade on 22 mm bristles,
+ * which is a real #12 flat hog, and the 512-cell grid becomes a 512 mm sheet —
+ * a standard 20-inch canvas. No other scale makes both of those true at once.
+ *
+ * Film height rides the same ruler: Cotton Duck's `toothAmp` 0.30 is 0.30 mm of
+ * weave depth, which is right for cotton duck, and the measured Oil film of
+ * 0.018 is 18 microns wet. So **one unit of paint in the reservoir is one cubic
+ * millimetre — one microlitre** — since depositing it with full coverage raises
+ * a 1 mm x 1 mm cell by that many millimetres.
+ *
+ * [UNVERIFIED — arithmetic from the brush rows, not a measurement.] The paper
+ * rows disagree: Cotton Duck's `featureFreq` 64 would be 64 threads across
+ * 512 mm, far coarser than real canvas. That row is explicitly marked "chosen
+ * to read correctly, not measured" in papers.ts, so the brush anchors the scale
+ * and the thread count is the number that is wrong.
+ */
+if (MODE === 'load') {
+  const DFT = Number(process.argv[3] ?? 40);        // microns, dry
+  const SOLIDS = Number(process.argv[4] ?? 0.90);
+  const TRANSFER = Number(process.argv[5] ?? 0.40);
+  const STROKE_MM = Number(process.argv[6] ?? 250); // one designed stroke
+
+  console.log(`the artist's model: DFT ${DFT} um, solids ${SOLIDS}, transfer ${TRANSFER},`
+    + ` one stroke ${STROKE_MM} mm`);
+  console.log('  1 cell = 1 mm, 1 paint unit = 1 mm^3 = 1 uL. Sheet is 512 mm.');
+  console.log('');
+  console.log('  brush / medium              blade   MODEL load   HAS      MODEL lays   LAYS'
+    + '     transfer    WFT');
+  for (const slug of ['flat-hog', 'round-sable', 'flat-sable']) {
+    const def3 = BRUSH_BY_SLUG.get(slug);
+    if (!def3) continue;
+    for (const mslug of ['oil', 'watercolour']) {
+      const med = WET_MEDIA.find((m) => m.slug === mslug);
+      if (!med) continue;
+      const st = new StrokeEngine(def3, 1);
+      st.setWetMedium(med);
+      st.setBrush(def3, 1);
+      const mx = new Float32Array(8); mx[0] = 1;
+      st.charge(mx, 1, 0);
+      const res = (st as unknown as { brush: {
+        reservoir: Reservoir; bladeHalfWidth: number } }).brush;
+
+      // What the model asks for, in microlitres.
+      st.begin(20, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+      const capacity = res.reservoir.totals().capacity;
+
+      // What the engine does over the same stroke. Sum what LEAVES the brush;
+      // the deposit's own coverage gate can only reduce it, so this is the
+      // generous reading and the gap below is real either way.
+      let laid = 0;
+      for (let mm = 1; mm <= STROKE_MM; mm++) {
+        st.add(20 + mm, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+        const { data, count } = st.drain();
+        for (let i = 0; i < count; i++) laid += data[i * SEG_FLOATS + 5];
+      }
+      // Read the blade AFTER a solve; `begin` does not lay the tuft out.
+      const bladeMM = 2 * res.bladeHalfWidth;
+      const areaMM2 = STROKE_MM * bladeMM;
+      const wftMM = (DFT / SOLIDS) / 1000;
+      const wantsLaid = areaMM2 * wftMM;          // mm^3
+      const wantsLoad = wantsLaid / TRANSFER;
+      const transfer = laid / Math.max(capacity, 1e-9);
+      const wft = 1000 * laid / areaMM2;          // microns
+
+      console.log(`  ${(slug + ' / ' + mslug).padEnd(28)}`
+        + `${bladeMM.toFixed(0).padStart(3)}mm  `
+        + `${wantsLoad.toFixed(0).padStart(8)} uL  `
+        + `${capacity.toFixed(0).padStart(5)} uL  `
+        + `${wantsLaid.toFixed(0).padStart(8)} uL  `
+        + `${laid.toFixed(0).padStart(5)} uL  `
+        + `${transfer.toFixed(3).padStart(8)}  `
+        + `${wft.toFixed(1).padStart(6)} um`);
+    }
+  }
+  console.log('');
+  console.log(`  transfer should land between 0.35 and 0.50; WFT should be near`
+    + ` ${(DFT / SOLIDS).toFixed(0)} um`);
+
+  /* TRANSFER IS A `downRate` QUESTION AND CAPACITY CANNOT REACH IT.
+   * `transfer` is what LEAVES divided by what was HELD, and what leaves is a
+   * fraction of what is held, so scaling capacity scales both alike and the
+   * ratio does not move. Only the rate per millimetre does. Sweep it. */
+  console.log('');
+  console.log('  transfer against downRate (oil, same 250 mm stroke):');
+  for (const slug of ['flat-hog', 'round-sable', 'flat-sable']) {
+    const base = BRUSH_BY_SLUG.get(slug);
+    if (!base) continue;
+    const med = WET_MEDIA.find((m) => m.slug === 'oil')!;
+    const row: string[] = [];
+    for (const k of [1, 1.25, 1.5, 2, 3]) {
+      const probe = { ...base, slug: 'probe-load',
+        reservoir: { ...base.reservoir, downRate: base.reservoir.downRate * k } };
+      BRUSH_BY_SLUG.set('probe-load', probe);
+      const st = new StrokeEngine(probe, 1);
+      st.setWetMedium(med);
+      st.setBrush(probe, 1);
+      const mx = new Float32Array(8); mx[0] = 1;
+      st.charge(mx, 1, 0);
+      const rs = (st as unknown as { brush: { reservoir: Reservoir } }).brush.reservoir;
+      const cap = rs.totals().capacity;
+      st.begin(20, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+      let laid = 0;
+      for (let mm = 1; mm <= STROKE_MM; mm++) {
+        st.add(20 + mm, 200, sample({ pointerType: 'mouse', pressure: 0.5 }));
+        const { data, count } = st.drain();
+        for (let i = 0; i < count; i++) laid += data[i * SEG_FLOATS + 5];
+      }
+      row.push(`x${k}: ${(laid / cap).toFixed(3)}`);
+    }
+    console.log(`  ${slug.padEnd(14)} ${row.join('   ')}`);
   }
 }

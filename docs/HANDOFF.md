@@ -351,6 +351,52 @@ Verified against a hand-fed ladder: marks land at screen x 360/480/600/720/840
 against expected 360/480/600/720/840, height 98 px against 96. Nothing touches
 paint — the marks are on their own transparent canvas above the picture.
 
+## THE SCALE IS RECORDED AT LAST — 1 cell = 1 mm (2026-08-30, docs/19 E15)
+
+Nothing in `docs/` said what a cell was in millimetres, which is why no outside
+model could ever be applied. **The brush rows say it.** Flat hog `length: 22`,
+`widthRatio: 1.05` = a 23.1 mm blade on 22 mm bristles, which is a real #12 flat
+hog, and the 512-cell grid becomes a **512 mm sheet — a 20-inch canvas**. Film
+height rides the same ruler (Cotton Duck `toothAmp` 0.30 = 0.30 mm of weave),
+so **one paint unit = 1 mm^3 = 1 microlitre**.
+
+[UNVERIFIED - arithmetic from the brush rows.] The paper rows disagree
+(`featureFreq` 64 threads across 512 mm is far coarser than real canvas) but
+that row is marked "chosen to read correctly, not measured", so the brush wins.
+
+## BRUSH LOADS SIZED FROM THE ARTIST'S COATINGS MODEL
+
+    wet film = dry film / volume solids;  deposited = area * wet film
+    load = deposited / transfer efficiency   (0.35 to 0.50)
+
+The three brushes disagreed with each other by more than SIX TIMES: the flat hog
+laid a 22 um film, the round sable 139 um. `node tools/brush-bench.mjs load`.
+
+Two knobs, genuinely independent (measured, `reservoir.ts`): `downRate` sets
+transfer and the legs; `capacity` then sets the film without moving transfer,
+because what leaves is a fraction of what is held. Converged in one pass:
+
+| brush | model load | now | model lays | now | transfer | wet film |
+|---|---:|---:|---:|---:|---:|---:|
+| flat hog | 642 uL | 641 | 257 uL | 257 | 0.402 | 44.6 um |
+| round sable | 246 uL | 247 | 98 uL | 98 | 0.398 | 44.3 um |
+| flat sable | 633 uL | 629 | 253 uL | 253 | 0.403 | 44.4 um |
+
+**THE COST, and it is real.** The hog carries twice the paint now, so the
+banding has twice as much to chew. Tone ripple, oil / flat hog / cotton duck:
+1 cell/report 0.00553 -> 0.00757, 4 cells 0.01240 -> 0.02066, 12 cells 0.03124
+-> **0.05743**, accelerating 0.03455 -> **0.06158**. Total film 537 -> 1064, as
+designed. **At speed this is roughly back where it was before E13's pickup
+fix** - exactly what the Flow clue predicted, since banding is multiplicative in
+paint. The volumes were wrong and are now right; the remaining half of the
+pickup fault is simply more visible. It makes finishing that fix urgent.
+
+**NOT FIXED: paint stranded in the tuft.** Legs shortened (half strength 573 ->
+532) but the tuft still holds 12.7 % after 3000 cells while what it LAYS is down
+to 1 % of its opening rate by cell 2017. The belly holds paint the tip never
+brings to the paper. **The brush is not holding on too long so much as failing
+to deliver what it holds.** That is a `wick` question, not a capacity one.
+
 ## NEXT ACTION
 
 **1. Run `?full-check` on a VISIBLE page.** It is the pickup/stacking/holding
