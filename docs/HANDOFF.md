@@ -640,6 +640,49 @@ of docs/19 E13/E17. None of it is a fix to oil - it is all invariant 2 work
 applying to watercolour identically, and it is the bench that would judge the
 rebuild.
 
+## REAL PAINT MEASURED — THE TARGET WAS WRONG (2026-08-30, docs/20 section 7)
+
+The artist supplied reference paintings. `tools/measure-real-paint.py` reads the
+same quantity the fish-scale bench reads - along-stroke tone profile, detrended,
+relative RMS - on real oil.
+
+| detrend radius | close-up 2900px | Chris Long | palette knife |
+|---|---:|---:|---:|
+| +/-4 px | 0.0388 | 0.0901 | 0.0947 |
+| **+/-16 px** | **0.0907** | **0.1481** | **0.1717** |
+| +/-32 px | 0.1139 | 0.1734 | 0.2149 |
+
+**The engine, after a week aimed at this number: 0.003 to 0.015.**
+
+**Real oil carries TEN TO FIFTY TIMES more along-stroke tone variation than we
+produce.** Zero was the wrong target. Real oil is not smooth along a stroke -
+that structure is most of what makes it read as paint.
+
+**The banding was still a real fault** - its repeat lag tracked frame travel
+exactly, and paint cannot know what a browser frame is. **But the goal was never
+"make the stroke smooth". It is "the structure must be the brush's, not the
+frame's."** Every E13/E17 frame-invariance fix was right and stays; every
+instinct to smooth the mark further was aimed at the wrong end.
+
+**What the references show that the engine does not do at all:**
+1. **Bristle striation is the dominant texture, not a defect.** `level_fresh`
+   exists to SETTLE that comb; the reference says it should be strong.
+2. **Colour striates rather than averages** - one sweep carries several colours
+   as distinct filaments. docs/17 already named this "the scalar bottleneck";
+   it is the largest single difference from our output.
+3. **Paint TEARS when dragged thin** - hard-edged gaps, not a smooth fade.
+4. **Terminal ridges catch light** - docs/18 section 3a's berm, still unbuilt.
+
+**PROVENANCE: two of five supplied images are NOT evidence.** `1c656e12...`
+carries the watermark "Содержимое, сгенерированное ИИ" - **AI-generated**, must
+not be cited. `4c714d56...` has no relief, weave or specular; it reads as a
+digital painting. Rejected as physical reference. **Check every reference image
+for provenance before citing it.**
+
+**CAVEAT: pixels are not cells.** Without a scale reference in frame these
+figures cannot be mapped onto engine cells. The gap is far too large to be a
+confound, but the exact number is not a target until the scale is known.
+
 ## NEXT ACTION
 
 **1. The artist ratifies the build order in docs/20 section 4.** Then step 0:
