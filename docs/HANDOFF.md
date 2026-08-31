@@ -683,6 +683,54 @@ for provenance before citing it.**
 figures cannot be mapped onto engine cells. The gap is far too large to be a
 confound, but the exact number is not a target until the scale is known.
 
+## THE ENGINE HAS NO EARTH COLOURS (2026-08-30, docs/20 section 8)
+
+Second batch of artist references, and most of it is **mixing charts with named
+pigments** - evidence for the OPTICAL engine, not the fluid one.
+
+**Card 9's proof test #1, done in real oil and measured.** From the labelled
+UB+CYM panel, white-balanced on the chart's own ground:
+
+    Ultramarine Blue (Gamblin, oil)   #223066
+    Cadmium Yellow Medium (Gamblin)   #dcad02
+    their mixture, mid-ladder         #64701c   <- R 100, G 112, GREEN
+    naive RGB average predicts        #7f6e34   <- R 127, G 110, tan
+
+The channels swap order. **The product thesis is confirmed on real paint,
+measured, not cited from a figure.** First time that test has been run against
+material rather than MB21 Fig. 1.
+
+**THE FOUNDATIONAL FINDING.** The library is twelve pigments - Titanium White,
+Hansa/Diarylide Yellow, Cadmium Orange, Pyrrole/Quinacridone Reds, Quinacridone
+Magenta, Dioxazine Purple, Ultramarine, Phthalo Blue, Phthalo Green, Bone Black.
+**That is a modern synthetic palette.** The references run on Yellow Ochre, Raw
+Sienna, Burnt Umber, Light Red, Transparent Red Oxide, Cadmium Red Light,
+Cadmium Yellow Medium. **Only Ultramarine is in both. There is not one earth
+colour in the engine** - and earths are the backbone of oil painting.
+
+D1 already reserves for this ("library of 24-48 is separate"); it sits at 12.
+**Oil cannot be built from ground zero on a palette with no earth pigments.** And
+these charts are the material to validate additions with - two-pigment series
+with white tint ladders, exactly the shape a K/S spectrum is fitted against, and
+exactly acceptance proof test #3.
+
+**Worth checking, not a fault:** engine Ultramarine masstone `#382e68` against
+the reference's `#223066`. Blue and green agree closely; red is 56 against 34,
+so ours reads more violet. One photo, unknown colour management. Check against a
+colour target before changing any spectrum.
+
+**A fourth real painting** (thin, scumbled, over a visible weave) reads **0.2091**
+at +/-16 px - the highest yet. Real-paint range is now **0.091 / 0.148 / 0.172 /
+0.209** across four paintings against the engine's **0.003-0.015**.
+
+**REJECTED:** `4bdaa4d1...`, the loaded brush - a stock product photo of ACRYLIC,
+staged for a catalogue. Its one suggestive detail (paint as a blob at the tip,
+not through the tuft) is consistent with E18 but must not be cited as evidence.
+
+**STILL THE BOTTLENECK: a scale reference.** Pixels are not cells. Nothing in
+sections 7-8 can become an engine target until something of known size is
+photographed beside the paint.
+
 ## NEXT ACTION
 
 **1. The artist ratifies the build order in docs/20 section 4.** Then step 0:

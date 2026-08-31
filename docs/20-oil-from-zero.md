@@ -212,3 +212,105 @@ same quantity a flat tone render produces. JPEG noise inflates the ±4 px column
 numbers can be mapped onto engine cells. A ten-to-fifty-fold gap is far too
 large to be explained away by any of that, but the exact figure should not be
 treated as a target until the scale is known.
+
+---
+
+## 8. Second batch — and it is evidence for a different engine
+
+**Seven more images, 2026-08-30.** The first batch was paintings, which is
+evidence about how paint *behaves*. Most of this batch is **mixing charts with
+named pigments**, which is evidence about how paint *mixes* — the optical
+engine, not the fluid one. Two findings, one of them foundational.
+
+### 8a. Card 9's first proof test, in real oil paint
+
+`d6d18df…` is six labelled two-pigment studies, brand and pigment named:
+UB+CR, CR+TRO, UB+TRO, **UB+CYM**, CR+CYM, TRO+CYM, each a full mixing field
+with white tinting.
+
+**The UB+CYM panel is `09-acceptance.md`'s five-minute proof test #1 —
+blue + yellow — done in oil and photographed.** Sampled (white-balanced on the
+chart's own ground, `#e4e4e6`, so the cast is small):
+
+| | |
+|---|---|
+| Ultramarine Blue (Gamblin, oil) masstone | **`#223066`** |
+| Cadmium Yellow Medium (Gamblin, oil) | **`#dcad02`** |
+| their mixture, mid-ladder | **`#64701c`** |
+| what a naive RGB average predicts | `#7f6e34` |
+
+`#7f6e34` is R 127, G 110 — **red above green, a muddy tan.** The real mixture
+is R 100, G 112 — **green above red, an actual green.** The channels swap order.
+**The product thesis is confirmed on real oil paint, measured, not cited from a
+figure.** This is the first time that test has been run against material rather
+than against MB21 Fig. 1.
+
+**A check worth making, not a fault yet.** The engine's own Ultramarine masstone
+is `#382e68` against the reference's `#223066` — blue and green agree closely
+(104/102, 46/48) but **red is 56 against 34**, so ours reads more violet. One
+photograph, unknown colour management, and real ultramarines differ by brand and
+grind, so this is suggestive only. Worth checking properly against a colour
+target; not worth changing a spectrum over.
+
+### 8b. THE ENGINE HAS NO EARTH COLOURS — and oil is built on them
+
+The library is twelve pigments: Titanium White, Hansa Yellow, Diarylide Yellow,
+Cadmium Orange, Pyrrole Red, Quinacridone Red, Quinacridone Magenta, Dioxazine
+Purple, Ultramarine Blue, Phthalo Blue (GS), Phthalo Green (BS), Bone Black.
+
+**That is a modern synthetic palette** — the set you would pick for watercolour
+or acrylic.
+
+The reference charts run on **Yellow Ochre, Raw Sienna, Burnt Umber, Light Red,
+Transparent Red Oxide, Cadmium Red Light, Cadmium Yellow Medium** and
+Ultramarine Blue. `b64b8978…` names four of them outright and shows their
+mutual mixes; `647fb256…` is a full oil colour wheel with tint ladders built on
+the same family.
+
+**Only Ultramarine Blue is in both.** There is not one earth colour in the
+engine — no ochre, no sienna, no umber, no red oxide. Those are the backbone of
+oil painting, they are what every one of these reference palettes is made of,
+and an oil painter opening this app finds none of them.
+
+**This is a ground-zero build item nobody had written down.** D1 already
+reserves for it — *"8 pigment slots per cell; library of 24–48 is separate"* —
+and the library sits at 12. **Oil cannot be built from ground zero on a palette
+that contains no earth pigments**, and it belongs in §4's order alongside the
+behavioural work.
+
+**And these charts are the material to validate it with.** Each is a two-pigment
+series with a white tint ladder — exactly the shape of data a K/S spectrum is
+fitted and checked against, and exactly `09-acceptance.md`'s proof test #3
+("real paints *gain* saturation and shift hue mixed with white").
+
+### 8c. Behaviour: a fourth real painting, and it is the thin end
+
+`46pk728n9bhf1.jpeg` (2780×3753) is thin, scumbled, dry-brushed work over a
+visible weave — the opposite end from the impasto close-up. Same measurement as
+§7:
+
+| detrend radius | ±4 px | ±8 px | **±16 px** | ±32 px |
+|---|---:|---:|---:|---:|
+| scumbled painting | 0.1215 | 0.1736 | **0.2091** | 0.2547 |
+
+**The highest of the four**, which is what a broken dry stroke over a weave
+should read. The real-paint range at ±16 px is now **0.091, 0.148, 0.172,
+0.209** across four independent paintings, against the engine's **0.003–0.015**.
+
+It also shows, plainly and at scale: **the weave reads through every thin
+passage**, and **long dragged strokes break into skips** rather than fading.
+
+### 8d. Rejected, and why
+
+`4bdaa4d1…` — the loaded brush against paint. It is a **stock product photograph
+of acrylic** (Tri-Art tube), staged for a catalogue. The tube would give a rough
+scale only under an assumption about its volume, the medium is wrong, and the
+brush is dipped for the camera rather than painted with. The one suggestive
+detail — paint sitting as a blob at the very tip rather than through the tuft —
+is consistent with E18's stranded-paint finding but must not be cited as
+evidence for it.
+
+**Still missing, and still the bottleneck: a scale reference.** Pixels are not
+cells. The 6-to-70-fold gap in §7 and §8c is far too large to be a confound, but
+none of it can be turned into an engine target until something of known size is
+photographed beside the paint.
