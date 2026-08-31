@@ -731,6 +731,49 @@ not through the tuft) is consistent with E18 but must not be cited as evidence.
 sections 7-8 can become an engine target until something of known size is
 photographed beside the paint.
 
+## THE ZORN PALETTE IS THE RIGHT GROUND ZERO (2026-08-30, docs/20 section 9)
+
+The artist suggested it. It is the right call, and **two of its four pigments are
+already in the engine**: Titanium White (PW6), and **Bone Black PBk9 IS ivory
+black** - same pigment, traditional name. Missing: **Yellow Ochre PY43** and
+**Cadmium Red Light PR108** (the engine's Cadmium Orange PO20 is the same
+cadmium family, spectrally adjacent, not it).
+
+**Why it is right and not just convenient:**
+1. **A COMPLETE palette in four pigments** - a full-range painting can be made
+   with it, so "does oil work yet?" becomes answerable at the smallest scale.
+   Twenty-four pigments is a library; four is a test.
+2. **It supplies a second KM proof test we cannot currently run: Yellow Ochre +
+   Ivory Black -> GREEN.** Ivory black is blue-biased so real paint goes olive;
+   RGB predicts only a darker ochre. **The artist's `b64b8978...` already
+   contains it** - its lower panel is Yellow Ochre / Cadmium Red Light / into
+   Black and White, which IS a Zorn chart. Validation material already in hand.
+3. **It is the skin-tone palette** - if KM reproduces that flesh range from four
+   pigments, the optical engine is working in a way no swatch can show.
+4. It closes the earth-colour gap with the fewest possible additions.
+
+Ultramarine stays regardless - it is what makes the blue+yellow test possible.
+
+**THE BLOCKER, and it is the only thing needed:** both additions must come from
+**BE16, the Berns Artist Paint Spectral Database**, or they are invented and the
+fence stops them. Good odds they are in it - `build_pigments.py` selects by
+spreadsheet COLUMN INDEX and used columns 2,3,4,5,8,9,10,11,12,16,17,25, so the
+gaps say the database holds at least twice what was taken. **But the spreadsheet
+is not in the repo.** `build_pigments.py` takes `Final_artist_database.xlsx` as
+an argument and the file is gone. **Nothing can be added until it is back.**
+
+**Two caveats to record before this is treated as measured oil:** BE16 measured
+Golden Heavy Body **ACRYLICS**, not oils - same pigment chemistry, different
+binder; a fair K/S proxy, and the existing twelve carry the same caveat, which
+has never been written down. And transport rows (rho/omega/gamma) are not in
+BE16 at all; an ochre would take a reasoned C97 analog marked UNVERIFIED, as
+titanium-white, pyrrole-red and bone-black already do.
+
+**This is a build item in its own right, parallel to the behavioural steps.** The
+optical engine can be rebuilt and validated against the artist's charts while
+the fluid behaviours are still switched off. It does not wait on step 0, and
+step 0 does not wait on it.
+
 ## NEXT ACTION
 
 **1. The artist ratifies the build order in docs/20 section 4.** Then step 0:

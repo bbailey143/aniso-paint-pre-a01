@@ -314,3 +314,80 @@ evidence for it.
 cells. The 6-to-70-fold gap in §7 and §8c is far too large to be a confound, but
 none of it can be turned into an engine target until something of known size is
 photographed beside the paint.
+
+---
+
+## 9. The Zorn palette — the artist's suggestion, and it is the right one
+
+**Yellow Ochre, Cadmium Red Light, Ivory Black, Titanium White.** Four pigments.
+
+**Two of the four are already in the engine.**
+
+| Zorn | engine | |
+|---|---|---|
+| Titanium White | **Titanium White, PW6** | ✓ have it |
+| Ivory Black | **Bone Black, PBk9** | ✓ have it — PBk9 *is* bone/ivory char; "Ivory Black" is the traditional name for the same pigment |
+| Yellow Ochre | — | ✗ **PY43, missing** |
+| Cadmium Red Light | — | ✗ **PR108, missing.** The engine's Cadmium Orange is PO20, the same cadmium sulfoselenide family and spectrally adjacent, but not it |
+
+**Why it is the right choice for a ground-zero rebuild, and not merely a
+convenient one:**
+
+1. **It is a COMPLETE palette in four pigments.** A full-value, full-range
+   painting can be made with it. That turns "does oil work yet?" into a question
+   answerable at the smallest possible scale, which is exactly what §4's build
+   order needs. Twenty-four pigments is a library; four is a test.
+
+2. **It supplies a second Kubelka-Munk proof test the engine cannot currently
+   run.** **Yellow Ochre + Ivory Black → GREEN.** Ivory black is blue-biased, so
+   real paint goes olive; linear RGB predicts nothing but a darker ochre. It is
+   the same class of test as blue + yellow (§8a) and just as famous — and the
+   artist's own `b64b8978…` already contains it: its lower panel is *Yellow
+   Ochre / Cadmium Red Light / into Black and White*, **which is a Zorn chart.**
+   **The validation material is already in hand.**
+
+3. **It is the skin-tone palette.** Its whole reputation is the range of flesh
+   and neutral tones it yields from a warm–cool axis with no blue at all. If KM
+   reproduces that range from four pigments, the optical engine is working in a
+   way no swatch comparison can demonstrate.
+
+4. It closes §8b's earth-colour gap with **the fewest possible additions** —
+   one earth, one cadmium.
+
+**Ultramarine stays** regardless: it is already measured, and it is what makes
+§8a's blue + yellow test possible. Zorn's palette has no blue, so it replaces
+nothing.
+
+### What it costs, honestly
+
+**Both additions must come from BE16** — the Berns Artist Paint Spectral
+Database the existing twelve were built from — or they are invented and the
+fence stops them. The odds are good: `tools/build_pigments.py` selects its
+palette by **spreadsheet column index**, and the twelve it took are columns
+2, 3, 4, 5, 8, 9, 10, 11, 12, 16, 17, 25. **The gaps say the database holds at
+least twice what was used**, and an ochre and a cadmium red are exactly the sort
+of thing an artist-paint database carries.
+
+**THE BLOCKER, and it is the one thing needed:** the spreadsheet is not in the
+repo. `build_pigments.py` takes `Final_artist_database.xlsx` as an argument and
+the file is gone. Nothing can be added until it is back.
+
+**Two caveats to record before anyone treats the result as measured oil:**
+
+- **BE16 measured Golden Heavy Body ACRYLICS, not oils.** Same pigment
+  chemistry, different binder. For K/S that is a fair proxy — it is the pigment
+  that absorbs and scatters — but the binder changes refractive index, and the
+  gloss side of it is handled separately by `kInstrument` anyway. The existing
+  twelve carry the same caveat and it has never been written down.
+- **Transport rows (`rho`, `omega`, `gamma`) are not in BE16.** They come from
+  C97, and neither ochre nor cadmium red light appears in C97 Fig. 5 directly.
+  Earth pigments granulate strongly, so an ochre would take a reasoned analog
+  marked `[UNVERIFIED]` — exactly as `titanium-white`, `pyrrole-red` and
+  `bone-black` already do.
+
+### Where it sits in the build
+
+This is a **§4 build item in its own right**, parallel to the behavioural steps
+and independent of them: the optical engine can be rebuilt and validated against
+the artist's charts while the fluid behaviours are still switched off. It does
+not wait on step 0, and step 0 does not wait on it.
