@@ -22,8 +22,16 @@ Band reduction returns only for the **baked-floor per-cell reflectance** (`R_flo
 storage-driven choice made when baking lands (P3+), where a small dE is imperceptible
 and un-liftable anyway. Generated + validated by `tools/build_pigments.py`.
 
-The 12 pigments (all single-pigment masstone columns present in BE16; note the
-dataset has **no earth pigments**, so this is a high-chroma modern set): Titanium
+`[CORRECTED 2026-08-30]` This paragraph used to say the 12 were *all* the
+single-pigment columns in BE16. **They are not.** BE16 is **nineteen** Golden Heavy
+Body paints (Berns, CIC24 2016, Table I) and seven were left behind: Bismuth
+Vanadate Yellow PY184, Pyrrole Orange PO73, **C.P. Cadmium Red Light PR108**, Cobalt
+Blue PB28, Cerulean Blue Chromium PB36:1, Phthalo Blue (Red Shade) PB15:1, Phthalo
+Green (Yellow Shade) PG36. The *other* half of the old claim holds and is now
+confirmed against Table I: **there are no earth pigments in BE16** — no ochre, no
+sienna, no umber, no red oxide — so this is a high-chroma modern set.
+
+The 12 pigments taken: Titanium
 White (PW6), Hansa Yellow (PY74), Diarylide Yellow (PY83), Cadmium Orange (PO20),
 Pyrrole Red (PR254), Quinacridone Red (PV19), Quinacridone Magenta (PR122),
 Dioxazine Purple (PV23), Ultramarine Blue (PB29), Phthalo Blue GS (PB15:4), Phthalo
@@ -48,10 +56,29 @@ palette itself.
 ## Provenance status for this build
 
 `[RESOLVED]` The 12-row `K[38]/S[38]` table is built from the **real measured**
-BE16 spreadsheet (`Final_artist_database.xlsx`, sheet "k and s data"), retrieved via
-the Internet Archive after the RIT link went stale. Every K/S value is measured;
-the CIE observer × D65 weights are canonical. `src/color/pigments.ts` is generated
-by `tools/build_pigments.py` — re-run it to regenerate. Nothing here is invented.
+BE16 spreadsheet (`Final_artist_database.xlsx`, sheet "k and s data"). Every K/S
+value is measured; the CIE observer × D65 weights are canonical. Nothing here is
+invented.
+
+`[TRAP — the spreadsheet is gone, 2026-08-30]` It was retrieved via the Internet
+Archive once already, after the RIT link went stale. It is now lost from disk, and
+**both** upstream links are dead: RIT's, and the grayskyimaging one that hosts
+Berns's later 58-pigment dataset (that page states outright that the spectral
+database "is no longer available"). For a while the library was therefore a
+generated file with **no reproducible input** — the one thing the fence is supposed
+to make impossible.
+
+**Fixed.** The K/S table was read back out of the generated `pigments.ts` verbatim
+into [`data/be16-ks.csv`](../data/be16-ks.csv), which is now the default input to
+`tools/build_pigments.py` and **the provenance of record for the library**. It is
+keyed by pigment slug, not by spreadsheet column, so it cannot silently shift a
+pigment by one column. Verified: regenerating from the CSV reproduces
+`src/color/pigments.ts` **byte-identical** to the committed file, twice.
+
+**What the CSV cannot do:** it only rescued the 12 columns already built. The other
+seven BE16 paints — Cadmium Red Light among them — are not recoverable from it.
+Adding any of them still needs the original spreadsheet or an equivalent measured
+source. See [`20-oil-from-zero.md`](20-oil-from-zero.md) §9.
 
 ## The mixing law — Duncan 1940 (via MB21)
 

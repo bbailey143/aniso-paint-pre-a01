@@ -360,17 +360,81 @@ nothing.
 
 ### What it costs, honestly
 
-**Both additions must come from BE16** — the Berns Artist Paint Spectral
-Database the existing twelve were built from — or they are invented and the
-fence stops them. The odds are good: `tools/build_pigments.py` selects its
-palette by **spreadsheet column index**, and the twelve it took are columns
-2, 3, 4, 5, 8, 9, 10, 11, 12, 16, 17, 25. **The gaps say the database holds at
-least twice what was used**, and an ochre and a cadmium red are exactly the sort
-of thing an artist-paint database carries.
+`[SETTLED 2026-08-30 — this section previously guessed, and half of the guess was
+wrong.]` The guess was that BE16 "holds at least twice what was used" because the
+column indices have gaps. **BE16's own paper is on disk**
+(`ArtistSpectralDatabase.pdf`, Berns, CIC24 2016) and its Table I ends the
+question outright.
 
-**THE BLOCKER, and it is the one thing needed:** the spreadsheet is not in the
-repo. `build_pigments.py` takes `Final_artist_database.xlsx` as an argument and
-the file is gone. Nothing can be added until it is back.
+**BE16 is nineteen paints. Twelve were taken. These seven were left behind:**
+
+| left behind | |
+|---|---|
+| Bismuth Vanadate Yellow | PY 184 |
+| Pyrrole Orange | PO 73 |
+| **C.P. Cadmium Red Light** | **PR 108** |
+| Cobalt Blue | PB 28 |
+| Cerulean Blue, Chromium | PB 36:1 |
+| Phthalo Blue (Red Shade) | PB 15:1 |
+| Phthalo Green (Yellow Shade) | PG 36 |
+
+So the two halves of Zorn's gap are **not the same problem at all**:
+
+- **Cadmium Red Light IS in BE16**, measured, sitting in a column nobody read.
+  `[UNVERIFIED]` Reading the taken columns against Table I's order puts it at
+  **column 7** (Pyrrole Orange at 6) — the mapping is exact from column 8
+  onward, so this is a strong inference and a one-line test the moment a copy of
+  the spreadsheet exists: the masstone must come out red.
+- **Yellow Ochre was never there.** Confirmed against Table I: BE16 contains **no
+  earth pigment of any kind.** Berns selected for high chroma on purpose. No
+  amount of finding the file produces an ochre.
+
+**AND THE FILE IS GONE — from disk and from the web.** A machine-wide search
+found only the paper, not the spreadsheet. The RIT link is dead. So is the
+grayskyimaging link to Berns's *later* dataset — 58 Golden pigments, same lab,
+same two-constant masstone-tint method, same Saunderson constants, and the
+obvious place an ochre would have lived. **That page now says the spectral
+database "is no longer available."** Both doors are shut.
+
+**What was actually at risk, and is now fixed.** The real damage was never Zorn:
+it was that `build_pigments.py` had **no runnable input**, so the entire optical
+library was a generated file nobody could reproduce — precisely what the fence
+exists to prevent. The K/S table has been read back out of the generated
+`pigments.ts` into [`data/be16-ks.csv`](../data/be16-ks.csv), which is now the
+build's default input and the provenance of record. **Verified: it regenerates
+`src/color/pigments.ts` byte-identical, twice.** The library is safe and
+reproducible again. See [`04-color-km.md`](04-color-km.md).
+
+**What that rescue does NOT do:** it could only save the twelve columns already
+built. Cadmium Red Light is not in it. Adding either Zorn pigment still needs
+measured data we do not currently hold.
+
+**THE OPEN QUESTION IS NOW A SOURCING ONE, and it has three answers ranked:**
+
+1. **A live mirror of the Golden data.** `realtimerendering.com/downloads/GoldenSpectra.zip`
+   is up: "HB 10 mil Drawdowns over White", **78 Golden Heavy Body acrylics with
+   K/S**. That is the same manufacturer line BE16 and B22 were both built from,
+   and Golden's Heavy Body range does include Yellow Ochre PY43 and Cadmium Red
+   Light PR108. If it carries K and S *separately*, both gaps close at once and
+   §8b's earth-colour gap closes with them. **Two things to check on opening it:**
+   whether it is two-constant K and S or only the K/S ratio, and its band range —
+   the page says **400–700 nm (31 bands)** against our 380–750 (38), which would
+   need either a library-wide range change or a marked extrapolation at the ends.
+2. **The Wayback Machine.** Both dead links were live once and the RIT file was
+   already recovered that way in the first place. Worth ten minutes.
+3. **Ask Berns.** The 2022 paper says the 2016 Excel file "was made available by
+   request." The request still works, presumably; it just is not a same-day
+   answer.
+
+**Meanwhile, nothing has to wait.** Both pigments can exist *today* as **named
+recipes mixed from the measured twelve** — not invented spectra, mixtures of
+measured ones, which is exactly what the engine already does every frame and
+exactly what D13 says the artist should be able to do for themselves. Cadmium
+Red Light ≈ Cadmium Orange PO20 + Pyrrole Red (PO20 and PR108 are the same
+cadmium sulfoselenide chemistry, differing in selenium content). Yellow Ochre ≈
+Diarylide Yellow + Bone Black + a little Pyrrole Red, tuned against the artist's
+own Zorn chart. Each is labelled a **recipe, not a measurement**, and each is
+replaced the day real spectra arrive.
 
 **Two caveats to record before anyone treats the result as measured oil:**
 

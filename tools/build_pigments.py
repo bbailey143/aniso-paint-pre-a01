@@ -17,12 +17,28 @@ abandoned. The schema's "8" is pigment SLOTS per cell, not spectral bands.)
 Everything this script writes traces to measured data or canonical CIE tables.
 Nothing is invented (the fence).
 
-Usage:  python tools/build_pigments.py path/to/Final_artist_database.xlsx
+Usage:  python tools/build_pigments.py [data/be16-ks.csv | path/to/Final_artist_database.xlsx]
 Writes: src/color/pigments.ts
+
+[TRAP, 2026-08-30] The spreadsheet is LOST. The RIT link that first served it is
+dead, and so is the grayskyimaging one that replaced it, so this script could no
+longer be run at all — a generated file with no reproducible input. The K/S table
+was rescued verbatim out of the generated pigments.ts into data/be16-ks.csv and
+that CSV is now the default input and the provenance of record. Do not delete it.
 """
 import sys, json, numpy as np, openpyxl, colour
 
 # (sheet column index 0-based, display name, C.I., slug, temperature hint)
+# The column index is dead information now that the CSV is keyed by slug; it is kept
+# only to document which BE16 column each pigment came from.
+#
+# BE16 holds NINETEEN paints (Berns, CIC24 2016, Table I). These are the 12 taken.
+# The seven left behind: Bismuth Vanadate Yellow PY184, Pyrrole Orange PO73,
+# C.P. CADMIUM RED LIGHT PR108, Cobalt Blue PB28, Cerulean Blue Chromium PB36:1,
+# Phthalo Blue (Red Shade) PB15:1, Phthalo Green (Yellow Shade) PG36.
+# Cadmium Red Light is a Zorn-palette pigment and it IS in the database — but it is
+# not in the CSV, because the CSV could only rescue what had already been built.
+# There are NO earth pigments in BE16 at all; yellow ochre was never available here.
 PALETTE = [
     (25, "Titanium White",       "PW6",    "titanium-white",       "neutral"),
     (3,  "Hansa Yellow",         "PY74",   "hansa-yellow",         "cool"),
@@ -74,6 +90,30 @@ def load_ks(path):
         pig.append(dict(name=name, ci=ci, slug=slug, temp=temp, K=K, S=S))
     return wl, pig, (k1, k2, kins)
 
+def load_ks_csv(path):
+    """Read the rescued CSV instead of the lost spreadsheet.
+
+    Same numbers in the same order — see the file header for provenance. Keyed by
+    slug rather than by column index, so unlike the spreadsheet it cannot silently
+    shift a pigment by one column and hand back the wrong paint.
+    """
+    import csv
+    with open(path, encoding="utf-8") as f:
+        rows = [r for r in csv.reader(f) if r and not r[0].lstrip().startswith("#")]
+    slugs = rows[0][2:]
+    body = rows[1:]
+    wl = np.array([float(r[1]) for r in body if r[0] == "K"])
+    assert len(wl) == N_WL and wl[0] == 380 and wl[-1] == 750, wl
+    col = {q: {s: np.array([float(r[2 + i]) for r in body if r[0] == q])
+               for i, s in enumerate(slugs)} for q in ("K", "S")}
+    pig = [dict(name=name, ci=ci, slug=slug, temp=temp,
+                K=col["K"][slug], S=col["S"][slug])
+           for _c, name, ci, slug, temp in PALETTE]
+    # Saunderson constants are stated in the BE16 paper itself (CIC24 2016, "Optical
+    # Model": K1 = 0.03 collimated, K2 = 0.65 diffuse, Kinstrument = 1.0 SPIN), so
+    # they survive the loss of the spreadsheet independently.
+    return wl, pig, (0.03, 0.65, 1.0)
+
 def cie_weights(_wl):
     """Per-wavelength [X,Y,Z] weights = observer * D65, normalised so a perfect
     reflector integrates to Y = 1."""
@@ -96,8 +136,9 @@ def to_hex(R, W):
     return "#%02x%02x%02x" % tuple(int(round(c * 255)) for c in rgb)
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "artist_db.xlsx"
-    wl, pig, (k1, k2, kins) = load_ks(path)
+    path = sys.argv[1] if len(sys.argv) > 1 else "data/be16-ks.csv"
+    load = load_ks_csv if path.lower().endswith(".csv") else load_ks
+    wl, pig, (k1, k2, kins) = load(path)
     W = cie_weights(wl)
 
     print(f"Saunderson: k1={k1} k2={k2} k_instrument={kins}   bands={N_WL} (380-750@10nm)\n")

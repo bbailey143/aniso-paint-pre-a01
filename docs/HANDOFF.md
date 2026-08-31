@@ -754,13 +754,40 @@ cadmium family, spectrally adjacent, not it).
 
 Ultramarine stays regardless - it is what makes the blue+yellow test possible.
 
-**THE BLOCKER, and it is the only thing needed:** both additions must come from
-**BE16, the Berns Artist Paint Spectral Database**, or they are invented and the
-fence stops them. Good odds they are in it - `build_pigments.py` selects by
-spreadsheet COLUMN INDEX and used columns 2,3,4,5,8,9,10,11,12,16,17,25, so the
-gaps say the database holds at least twice what was taken. **But the spreadsheet
-is not in the repo.** `build_pigments.py` takes `Final_artist_database.xlsx` as
-an argument and the file is gone. **Nothing can be added until it is back.**
+**SETTLED 2026-08-30 - and the earlier guess here was half wrong.** BE16's own
+paper is on disk (`~/Downloads/ArtistSpectralDatabase.pdf`) and its Table I lists
+**nineteen** paints. Twelve were taken; seven were left: PY184, PO73, **C.P.
+CADMIUM RED LIGHT PR108**, PB28, PB36:1, PB15:1, PG36. So **Cadmium Red Light IS
+in BE16** (UNVERIFIED: column 7 by Table I order, exact from col 8 on), and
+**Yellow Ochre never was** - BE16 has NO earth pigment of any kind, by design.
+
+**The spreadsheet is gone from disk AND from the web.** Machine-wide search found
+only the paper. RIT's link is dead; so is the grayskyimaging link to Berns's later
+58-pigment dataset (that page now says the spectral database "is no longer
+available"). Both doors shut.
+
+**The real damage was never Zorn - it was that the optical library had NO
+RUNNABLE INPUT**, a generated file nobody could reproduce, exactly what the fence
+forbids. **FIXED:** K/S read back out of `pigments.ts` into `data/be16-ks.csv`,
+now the default input to `build_pigments.py` and the provenance of record; keyed
+by slug, not column, so it cannot shift a pigment. **Verified byte-identical
+regeneration, twice.** It rescues only the twelve already built - Cadmium Red
+Light is NOT in it.
+
+**Sourcing, ranked:** (1) `realtimerendering.com/downloads/GoldenSpectra.zip` is
+LIVE - 78 Golden Heavy Body acrylics with K/S, same paint line; check whether it
+is two-constant K and S or only the ratio, and note it reads 400-700nm (31 bands)
+against our 380-750 (38). (2) Wayback Machine - the RIT file was recovered that
+way once already. (3) Ask Berns; the 2022 paper says the 2016 file was available
+by request. **NEEDS THE ARTIST'S OK before downloading anything.**
+
+**Nothing waits on it.** Both pigments can exist today as **named recipes mixed
+from the measured twelve** - not invented spectra, mixtures of measured ones,
+which is what the engine does every frame and what D13 wants anyway. Cad Red
+Light ~ Cadmium Orange PO20 + Pyrrole Red (PO20/PR108 are the same cadmium
+sulfoselenide chemistry). Yellow Ochre ~ Diarylide Yellow + Bone Black + a little
+Pyrrole Red, tuned against the artist's own Zorn chart. Labelled recipe, not
+measurement; replaced the day real spectra land.
 
 **Two caveats to record before this is treated as measured oil:** BE16 measured
 Golden Heavy Body **ACRYLICS**, not oils - same pigment chemistry, different
