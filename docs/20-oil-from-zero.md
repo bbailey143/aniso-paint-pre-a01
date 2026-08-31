@@ -455,3 +455,167 @@ This is a **§4 build item in its own right**, parallel to the behavioural steps
 and independent of them: the optical engine can be rebuilt and validated against
 the artist's charts while the fluid behaviours are still switched off. It does
 not wait on step 0, and step 0 does not wait on it.
+
+---
+
+## 10. THE SCALE IS SOLVED — real oil, measured in millimetres
+
+**Artist's own oils, photographed with a steel rule in frame, 2026-08-31.** Nine
+photographs: one clean thinned stroke shot three ways, the brush laid beside it,
+a crossing, a dry-brushed passage, and two rule shots. Ultramarine + Raw Sienna,
+thinned right out, on primed canvas. The brush is a #2 synthetic flat.
+
+**This is the reference the whole of §7 and §8 was missing.** Those sections
+measured tone ripple in *pixels* and said so plainly: *"pixels are not cells …
+none of these numbers can be mapped onto engine cells until something of known
+size is photographed beside the paint."* It now has been. Everything below is in
+millimetres, and `tools/measure-scaled-paint.py` regenerates all of it.
+
+The scale photograph is kept in the repo at
+[`docs/reference/scale-ruler-blue-stroke.jpg`](reference/scale-ruler-blue-stroke.jpg)
+— every number in this section is anchored to it, so it is provenance, not an
+attachment.
+
+### 10a. The scale itself
+
+The rule's millimetre graticule read by its own periodicity, not by eye:
+
+**38.91 px per mm**, sd **0.033 px** across the best 8 of 31 independent bands on
+the rule. A tilted rule gives a period that drifts with height; this one does not,
+which is what makes the frame usable. (The wider shot `…121307` drifts 33.9 → 37.3
+px across its rule and was rejected for scale on exactly that test.)
+
+### 10b. What real thinned oil measures
+
+| | |
+|---|---:|
+| stroke width, #2 synthetic flat, pressed | **9.94 mm** (iqr 8.8–10.8) |
+| relaxed tuft width, same brush | ~7.7 mm |
+| canvas thread pitch, warp | **0.864 mm** |
+| canvas thread pitch, weft | 0.772 mm |
+| threads across one stroke | **~11.6** |
+
+**The weave reads at 0.859 mm THROUGH the paint and 0.864 mm on bare ground
+beside it.** Those are two independent measurements of the same cloth, one of
+them taken through a stroke, and they agree to half a percent. That agreement is
+the proof of two things at once: the period really is the weave, and the paint is
+thin enough that the canvas dominates what you see inside the mark.
+
+### 10c. Along-stroke ripple, in millimetres, reproduced three times
+
+The same quantity `fish-scale-bench.ts` reads — tone along the stroke, detrended
+with a moving mean, relative RMS of the residue — now with the window in physical
+units. Three separate photographs of the *same* stroke:
+
+| detrend radius | `…121216` | `…120619` | `…120717` |
+|---|---:|---:|---:|
+| ±0.25 mm | 0.0224 | 0.0190 | 0.0188 |
+| ±0.50 mm | 0.0377 | 0.0337 | 0.0354 |
+| **±1.0 mm** | **0.0472** | **0.0440** | **0.0450** |
+| ±2.0 mm | 0.0656 | 0.0649 | 0.0613 |
+| ±4.0 mm | 0.0892 | 0.0845 | 0.0766 |
+
+**Three frames, three camera positions, agreement within about 10 %.** Only the
+first carries a rule; the other two are scaled by the stroke's own width, which is
+why they are a reproduction and not an independent measurement of the scale.
+
+**The ripple has no single wavelength — it climbs steadily with the window.**
+Real paint carries structure at every scale from a quarter of a millimetre up.
+There is no characteristic bump to match, which means no single "roughness"
+constant will ever reproduce it.
+
+**And these numbers are far LOWER than §7's 0.091–0.209.** Not a contradiction:
+those were impasto and dry-scumbled paintings measured at an unknown physical
+radius. **This is a thinned wash, which is what the engine is actually trying to
+make**, so this is the closer target, and it is the one with a rule in the frame.
+
+### 10d. THE ENGINE HAS NO PHYSICAL SCALE AT ALL — and that is the real finding
+
+There is **no millimetres-per-cell anywhere in the codebase.** Not in the
+invariants, not in the cell schema, not in the substrate. Every length is in
+cells, and cells have never been given a size.
+
+**So §7's headline comparison was never valid.** "Real paint 0.091–0.209 against
+the engine's 0.003–0.015" put a ±16-*pixel* window beside a ±16-*cell* window and
+read the ratio as a fault. Those are not the same length, and nobody could have
+said what either one was. The gap may well be real — but that arithmetic did not
+show it, and it should not be quoted again until it is redone against a ratified
+scale.
+
+**The comparison that IS valid needs no scale**, because it is a ratio of two
+lengths inside the same system — threads of canvas across one brush width:
+
+| | threads across the stroke |
+|---|---:|
+| **real canvas, real #2 flat** | **11.6** |
+| engine, Fine Linen (`featureFreq` 118) | 5.3 |
+| engine, Cotton Duck (`featureFreq` 64) | 2.9 |
+
+The paper texture is built at `SIM` = 512 and `canvas_weave` puts one thread per
+unit of `p`, so a thread is `512 / featureFreq` cells: 4.34 for linen, 8.0 for
+duck. The flat brushes' blades are ~23 cells (`length` × `widthRatio`: 22 × 1.05,
+24 × 0.95).
+
+**The engine's canvas is 2.2× (linen) to 4.0× (duck) too coarse for its own
+brush.** Scale-free, so it cannot be argued away by not knowing how big the canvas
+is meant to be.
+
+### 10e. And it cannot simply be fixed by turning the number up
+
+Anchoring on the measured brush — 9.94 mm laid by a 23-cell blade — gives
+**0.432 mm per sim cell**, so the 512 grid covers about **221 mm** of canvas. At
+that scale a real canvas thread is **2.0 sim cells**. That is exactly Nyquist:
+**the simulation grid cannot represent a real canvas weave under a real brush.**
+Setting `featureFreq` to 276 would put a thread on two cells and produce aliasing,
+not cloth.
+
+`[UNVERIFIED — reasoning, not a measurement]` The way out is that these are two
+different jobs wearing one number:
+
+- **The weave you SEE** is re-derived by the composite at screen resolution
+  (`canvas.ts`: *"The composite re-derives the same grain at screen resolution"*),
+  so it is not bound by the sim grid at all. This half can be made physically
+  correct today.
+- **The tooth that the paint FEELS** — the height field that drives deposition and
+  pooling — is bound by the sim grid, and at 0.432 mm per cell it can only ever be
+  a coarser, statistical stand-in for cloth.
+
+Splitting those two is a **cross-engine decision and it is the artist's to
+ratify**, together with the millimetres-per-cell it rests on. It is not a
+specialist's change and nothing should be tuned until it is settled.
+
+### 10f. The crossing, measured — and both previous answers were low
+
+`docs/18` §5 step 3 has been open since 2026-08-27 asking *how strong the carry
+should feel* when a stroke crosses a wet one. The artist's remembered preference
+was **"3 % feels correct"**; the engine's trail starts at **20.6 %**.
+
+The ochre stroke in `…120903` crosses the wet blue and runs on past it over bare
+ground, so the pigment in that trail is carried, not shown through:
+
+| past the crossing | blue carried |
+|---|---:|
+| 0 – 8 mm | **50 – 60 %**, essentially flat |
+| 9 – 13 mm | 37 → 25 → 14 → 9 % |
+| ~16 mm | **0** |
+
+**Real thinned oil carries about 55 % of what it crosses, holds it almost
+undiminished for roughly one brush width, then loses it over the next half
+width.** Both earlier answers are far under, and the *shape* matters more than the
+number: a plateau then a knee, not the immediate decay the engine produces.
+
+`[ONE FRAME ONLY]` The plateau-then-knee shape is unambiguous across 24 sample
+points, but the absolute percentage rests on a single photograph's colour balance
+and has not been reproduced. **Treat the shape as a finding and the 55 % as
+provisional** until a second crossing is shot.
+
+### 10g. Still missing
+
+- **The tearing stroke.** Named by the artist himself as absent from this batch.
+  §7 item 3 — paint dragged thin BREAKS, leaving hard-edged gaps, rather than
+  fading. Nothing here shows it.
+- **The same stroke fast and slow.** Speed is the axis the engine is known to get
+  wrong (`19`: *slow = clean, fast = significantly better*), and every stroke in
+  this batch is at one speed.
+- **A loaded brush running out.** How the mark changes from full to empty, in one
+  continuous pass, is what `18` E18's stranded paint is really about.

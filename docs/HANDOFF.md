@@ -2066,3 +2066,62 @@ Frame everything as what happens to the paint. Give him numbers when they settle
 an argument, never as the point of a sentence. Make the call yourself rather than
 handing him a menu. And when something is done, tell him exactly what to paint to
 see it.
+
+---
+
+## THE SCALE IS SOLVED — 2026-08-31. Read this before quoting any ripple number.
+
+The artist got his own oils out and shot nine photographs of a thinned
+Ultramarine + Raw Sienna stroke **with a steel rule in frame**. Full write-up in
+`docs/20-oil-from-zero.md` §10; the scale photograph is IN THE REPO at
+`docs/reference/scale-ruler-blue-stroke.jpg`; `tools/measure-scaled-paint.py`
+regenerates every number.
+
+**38.91 px per mm**, sd 0.033 across the best 8 of 31 bands on the rule. (The
+wider shot drifts 33.9 to 37.3 px and was rejected for scale on that test —
+always check the period is flat before trusting a rule.)
+
+**What real thinned oil is:** stroke 9.94 mm from a #2 synthetic flat; canvas
+thread 0.864 mm warp / 0.772 mm weft; **11.6 threads across one stroke.** The
+weave reads 0.859 mm THROUGH the paint against 0.864 mm on bare ground beside it
+— agreement to half a percent, which proves both that the period is the weave and
+that the canvas dominates the inside of a thin mark.
+
+**Along-stroke ripple, in mm, reproduced on three separate photographs** (0.0472
+/ 0.0440 / 0.0450 at ±1 mm; 0.089 / 0.085 / 0.077 at ±4 mm). It climbs steadily
+with the window — **real paint has no characteristic wavelength**, so no single
+roughness constant will ever reproduce it.
+
+**RETRACT §7's headline.** "Real 0.091-0.209 vs engine 0.003-0.015" compared a
+±16-PIXEL window with a ±16-CELL window. **THE ENGINE HAS NO
+MILLIMETRES-PER-CELL ANYWHERE** — not in the invariants, the cell schema or the
+substrate — so that ratio never meant anything. The gap may be real; that
+arithmetic did not show it. Do not quote it again.
+
+**The comparison that survives needs no scale, and it is a genuine fault.**
+Threads of canvas across one brush width: real **11.6**, engine Fine Linen
+**5.3**, engine Cotton Duck **2.9**. (Paper is built at SIM=512, `canvas_weave`
+is one thread per unit p, so a thread is 512/featureFreq cells; flat blades are
+~23 cells.) **The engine's canvas is 2.2x to 4.0x too coarse for its own brush.**
+
+**And it cannot be fixed by turning featureFreq up.** Anchored on the measured
+brush, one sim cell is **0.432 mm**, the 512 grid covers **221 mm**, and a real
+thread is **2.0 sim cells — exactly Nyquist.** UNVERIFIED way out: the weave you
+SEE is re-derived by the composite at screen resolution and is not bound by the
+sim grid, so that half can be made right today; the tooth the paint FEELS is
+bound by it and can only be a coarser stand-in. **Splitting those, and the
+mm-per-cell under them, is a cross-engine decision and the artist's to ratify.
+Tune nothing until he does.**
+
+**THE CROSSING IS MEASURED and both previous answers were low.** `18` §5 step 3,
+open since 2026-08-27: real thinned oil carries **50-60 % flat for the first
+8 mm** (about one brush width), decays 37/25/14/9 % over the next 5 mm, and is
+**zero by 16 mm**. Against the artist's remembered "3 % feels correct" and the
+engine's 20.6 %. **The plateau-then-knee shape is the finding; the 55 % is ONE
+FRAME and unreproduced** — treat it as provisional until a second crossing is
+shot.
+
+**Still missing, and worth asking for:** the tearing stroke (he flagged it
+himself); the same stroke fast and slow, since speed is the axis the engine is
+known to get wrong; and one loaded brush run all the way to empty in a single
+pass, which is what E18's stranded paint is really about.
