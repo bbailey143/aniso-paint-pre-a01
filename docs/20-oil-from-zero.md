@@ -1141,3 +1141,54 @@ pipeline that cost two sessions in `19`. It was not: the stylus sample in the
 harness was malformed (`down` missing), so the resampler emitted no segments at
 all. **`count: 0` at the drain distinguishes the two in one line, and is worth
 checking first every time.**
+
+---
+
+## 15. EARMARKS — everywhere we chose to diverge, and what it costs to come back
+
+**Written 2026-08-31 at the artist's request, before he goes to look at bare
+oil.** Every entry is a place where a decision was deliberately deferred, a
+branch was taken over an alternative, or something was found and parked. None of
+these is a bug list. **They are the places where "we decided not to decide yet",
+so that coming back to them is a choice rather than an archaeology.**
+
+Ordered by what it costs to reopen, cheapest first.
+
+### 15a. Cheap — a session or less, nothing downstream moves
+
+| # | earmarked | where | to reopen |
+|---|---|---|---|
+| E1 | **The #8 flat may be a thickness, not a width.** A flat is a chisel and 0.5 mm is an ordinary *edge*. If the rule went across the thin way, that brush is several mm and sits on the simulated side of the line instead of the drawn side. | §13c | One measurement. Changes which side of the line one brush sits on; **does not** change the cell size, which is why it was not allowed to block. |
+| E2 | **One more fast pass, held flat.** The Fast stroke's 48 mm void is nearly five brush widths and its far end recovers to 59 % — that reads like a lifted brush, not skipping. "Fast deposits less" is solid; "fast skips 48 mm" is not. | §11c | One stroke, rule in frame. |
+| E3 | **A tear at a known brush width.** The four tear strokes were a #12 filbert, so their widths cannot be set against the #2 flat's. | §11f | One stroke with the flat. |
+| E4 | **The crossing carry is one frame.** ~55 % held flat for 8 mm then gone by 16 mm. The plateau-then-knee *shape* is unambiguous over 24 points; the **percentage is unreproduced**. | §10f | A second crossing photograph. Until then quote the shape, not the number. |
+| E5 | **`src/ui/palette.ts` is dead code** — imported nowhere; the live UI is the React studio. It already cost one wrong edit. | — | Delete it. Careful: `.pal-btn` and `.loading-row` are still used by the React tree. |
+
+### 15b. Medium — a decision is owed, and something waits on it
+
+| # | earmarked | where | to reopen |
+|---|---|---|---|
+| E6 | **`coverRate` is written but unused.** The seventh params row carries it at 0 so the schema settles once instead of twice. | §14a | Step 1 fills it. Invariant 2 binds it: **fraction per millimetre travelled**, never per frame. |
+| E7 | **The grid is square and the canvas is 4:5.** `SIM` is one constant used as `[SIM, SIM]`; a 16 × 20 board is not square. | §13d | Every pass that assumes a square grid has to stop. Work, not a decision — but it is a real slice of work and nothing above it can ship without it. |
+| E8 | **`SIM` is 512 and the ratified scale wants ~1016 × 813.** 512 was set conservatively below what the bench proved (1024² at 3.78 ms). Cell state goes 28 MB → 89 MB. | §13a | Raise it deliberately, with the memory noted, not as a side effect of something else. |
+| E9 | **Behaviour 4 cannot be judged alone.** `rExchange` is zero without behaviour 6, and zero when a colour meets itself. | §14c | **Carry this into Step 2.** The bare-oil look must cross two different colours with release on, or ratified work gets dropped for the wrong reason. |
+| E10 | **Two pigments are recipes, not measurements** — if the Zorn palette is built before BE16 is found. Yellow Ochre and Cadmium Red Light mixed from the measured twelve. | §9 | They are replaced the day real spectra land. Label them as recipes so nobody later reads them as measured. |
+
+### 15c. Expensive — reopening moves things downstream
+
+| # | earmarked | where | to reopen |
+|---|---|---|---|
+| E11 | **The weave you SEE is being split from the tooth you FEEL.** D14 leans on this: the compositor draws threads at screen resolution; the sim grid carries only the fraction. | §12c, §10e | If the split turns out not to hold — if the *physical* tooth needs thread resolution after all — D14's cost argument weakens and the grid question comes straight back. **This is the load-bearing assumption of the whole rebuild.** |
+| E12 | **0.432 vs 0.5 mm per cell.** §10e's 0.432 came from one measured brush over a 23-cell blade; §13 ratified 0.5 as the round number. They are not the same and the difference is 16 %. | §10e, §13a | Nothing depends on the distinction yet. It will the moment a brush row is sized in millimetres rather than cells. |
+| E13 | **The library's brush rows are still in cells.** `length: 22`, `widthRatio: 1.05`. They happen to land at 11–13 mm, which is right — but by luck, not by construction. | §13c | Once `cellMM` is real, those rows should be authored in millimetres and converted, or they will drift the first time the cell size moves. |
+| E14 | **BE16 is lost and its successor is offline.** The library is reproducible from `data/be16-ks.csv`, but only the twelve already built. Cadmium Red Light is in BE16 and unrecoverable from the CSV. | §9 | Three ranked sources; none started. Needs the artist's OK to download. |
+| E15 | **`docs/18` §5 step 3 is still his and still open** since 2026-08-27: one oil pass at Flow well above default (is the thickness right?), and a crossing (how strong should the carry feel?). | `18` §5 | Zero code. It is a verdict, not a task. §10f now gives it a measured number to argue with. |
+
+### 15d. The one that is not an earmark
+
+**`19`'s frame-invariance work is not on this list and must not be reopened** —
+the pickup exponent, the readback settle, the lift seeing its own frame's paint,
+the `rubbed` ceiling, the trimmed tone metric. §5 already says it: every one is
+invariant 2 work, applies to watercolour identically, and reverting any of it
+restores measured faults in both media and blinds the bench that would judge the
+rebuild. **It is the floor, not part of the pile.**

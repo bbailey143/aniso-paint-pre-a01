@@ -2392,3 +2392,44 @@ emitted no segments. **`count: 0` at the drain tells the two apart in one line.
 Check it first, every time.**
 
 Dev hook added: `window.__MEDIA` alongside `__BRUSHES`.
+
+---
+
+## EARMARKS — every deliberate divergence, in one place. 2026-08-31
+
+Written at the artist's request before he went to look at bare oil. Full table
+with "where" and "to reopen" columns: `docs/20-oil-from-zero.md` §15. Fifteen
+entries, ordered by what it costs to come back. **Not a bug list** - these are
+the places where "we decided not to decide yet", so returning is a choice rather
+than archaeology.
+
+**CHEAP (a session, nothing downstream moves):** E1 the #8 flat may be a
+thickness not a width (one measurement; changes which side of the simulated/drawn
+line one brush sits on, NOT the cell size). E2 one more fast pass held flat, to
+separate skipping from a lifted brush. E3 a tear at a known brush width. E4 the
+crossing carry is ONE FRAME - quote the plateau-then-knee shape, not the 55 %.
+E5 `src/ui/palette.ts` is dead code and already caused one wrong edit.
+
+**MEDIUM (a decision is owed):** E6 `coverRate` written but unused, Step 1 fills
+it, invariant 2 binds it to per-millimetre. E7 the grid is square and 16x20 is
+not - real work, nothing above it ships without it. E8 `SIM` is 512 where the
+ratified scale wants ~1016x813; 28 MB to 89 MB, raise it deliberately. **E9
+behaviour 4 cannot be judged alone - CARRY THIS INTO STEP 2.** E10 two Zorn
+pigments would be recipes, not measurements.
+
+**EXPENSIVE (reopening moves things downstream):** **E11 the weave you SEE split
+from the tooth you FEEL is the load-bearing assumption of the whole rebuild** -
+if the physical tooth turns out to need thread resolution after all, D14's cost
+argument weakens and the grid question returns. E12 0.432 vs 0.5 mm per cell, a
+16 % difference nothing depends on YET. E13 the brush library's rows are in cells
+and land at the right millimetres by luck, not construction - they will drift the
+first time the cell size moves. E14 BE16 lost, successor offline, Cadmium Red
+Light unrecoverable from the rescued CSV. E15 `18` §5 step 3 still his, still
+open since 2026-08-27, and §10f now gives it a measured number to argue with.
+
+**NOT AN EARMARK, AND NOT TO BE REOPENED:** `19`'s frame-invariance work - the
+pickup exponent, the readback settle, the lift seeing its own frame's paint, the
+`rubbed` ceiling, the trimmed tone metric. §5 already says it: invariant 2 work,
+applies to watercolour identically, and reverting any of it restores measured
+faults in both media and blinds the bench that would judge the rebuild. It is the
+floor, not part of the pile.
