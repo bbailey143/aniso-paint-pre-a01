@@ -210,8 +210,11 @@ fn segDist(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
  * solve. Coverage saturates inside each contact, so adding represented hairs
  * fills the contact rather than inventing force. */
 fn shoveStep(coverRaw: f32, reach: f32, motionSum: vec2<f32>, motionWeight: f32,
-             laden: f32) -> vec3<f32> {
-  if (motionWeight <= 1.0e-6 || reach <= P.yieldStress) {
+             laden: f32, yieldHere: f32) -> vec3<f32> {
+  /* E21: `yieldHere` is the row's yield scaled by how neat the paint in THIS
+     cell is, so thinned paint gives way to a hair that neat paint would stop
+     outright. It was `P.yieldStress` for every cell alike. */
+  if (motionWeight <= 1.0e-6 || reach <= yieldHere) {
     return vec3<f32>(0.0);
   }
   let motion = motionSum / motionWeight;
@@ -219,7 +222,7 @@ fn shoveStep(coverRaw: f32, reach: f32, motionSum: vec2<f32>, motionWeight: f32,
   if (speed <= 1.0e-4) { return vec3<f32>(0.0); }
   let contact = clamp(coverRaw, 0.0, 1.0);
   let pressureShare = clamp(
-    (reach - P.yieldStress) / max(0.05, 1.0 - P.yieldStress), 0.0, 0.6);
+    (reach - yieldHere) / max(0.05, 1.0 - yieldHere), 0.0, 0.6);
   let pressurePart = pressureShare * min(speed, 4.0) * contact * SMEAR_RATE;
   let grabShare = clamp(C.upRate * C.brushGrab * laden * contact, 0.0, 0.9);
   let grabPart = 1.0 - pow(1.0 - grabShare, min(speed, 4.0));
@@ -251,6 +254,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      the sheet and steadily fills the tuft with its own colour. */
   let gloBefore = glo;
   let ghiBefore = ghi;
+
+  /* E21 — THE LOCAL YIELD, and it is the whole of this change.
+   *
+   * Worked out from the paint that was here BEFORE this frame's deposit, because
+   * that is the paint the hairs are pushing; what the brush is laying this
+   * instant has not been pushed by anything yet.
+   *
+   * Neat paint reads `neatness` = 1 and the yield is the row's, unchanged — so
+   * ordinary oil painting is untouched by construction, not by luck. Thin the
+   * paint and the yield falls with it, which is the axis §18c found missing:
+   * before this, a cell of turpentine resisted exactly like a cell of paint. */
+  let pigBefore = gloBefore.x + gloBefore.y + gloBefore.z + gloBefore.w
+                + ghiBefore.x + ghiBefore.y + ghiBefore.z + ghiBefore.w;
+  let yieldHere = P.yieldStress * neatness(pigBefore, filmBefore);
 
   /* How hard the hairs are driving this cell, and how much of the cell they
      cover. Two different questions, and running them together is what made the
@@ -303,7 +320,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       let s = segs[i];
       if (stepId >= 0.0 && s.stepId != stepId) {
         let action = shoveStep(
-          stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
+          stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden, yieldHere);
         shoveDirection = shoveDirection + action.xy;
         shoveRemaining = shoveRemaining * (1.0 - action.z);
         // Every step that put a hair on this cell rubbed it by that step's own
@@ -394,7 +411,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (stepId >= 0.0) {
       let action = shoveStep(
-        stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden);
+        stepCover, stepReach, stepMotion, stepMotionWeight, tuftLaden, yieldHere);
       shoveDirection = shoveDirection + action.xy;
       shoveRemaining = shoveRemaining * (1.0 - action.z);
       if (stepMotionWeight > 0.0) {
@@ -795,7 +812,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
    * 0 the paint gives way to any pressure at all, which is exactly what water
    * does, and the share below falls out of the same arithmetic. A material that
    * holds its shape resists; one that does not, does not. */
-  if (press > P.yieldStress) {
+  if (press > yieldHere) {
     /* Each resampled contact has already contributed above. This direction is
        their pressure/grab-weighted pull; the combined fraction below is what
        the same contacts would carry if submitted one at a time. */

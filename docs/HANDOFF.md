@@ -2624,3 +2624,77 @@ scale down as concentration falls. Bites in `shoveStep`'s gate, its
 `pressureShare`, and `flux_compute`'s slump - measure before believing. **Shared
 with all oil painting, so his to ratify.** Possibly more important than E20: it is
 a whole axis of oil the engine does not currently have.
+
+---
+
+# HANDOFF — 2026-08-31, end of session. START HERE.
+
+**Branch `tuft-fill` in `D:niso-paint-pre-a01`. Everything is committed.
+NOTHING IS PUSHED — the artist has not authorised a push.** Dev server on 5174.
+
+## The one thing to know
+
+Three separate attempts to make oil smudge properly have now ended at the SAME
+ceiling, and the fourth is the only route left.
+
+| attempt | result |
+|---|---|
+| §16g — turn `smearStrength` up | 1 -> 0.53 cells, 16 -> 0.99, **64 -> 0.99.** Saturates. |
+| §17 (E19) — carry once per solve step, not per frame | 0.99 -> **2.25 cells**, a real 4.2x. Watercolour identical. |
+| §19 (E21) — make solvent actually thin the paint | Built, correct, **no-op**. A bar 90 % solvent smudges 2.30 against neat's 2.25. |
+
+**Why all three stop:** `shoveStep`'s `fraction` is clamped at 0.9 and the GRAB
+route alone already pins it there (`upRate x brushGrab` = 0.42 x 0.34, compounded
+over travel, times a smear of 16). Every lever tried feeds a term that is already
+saturated.
+
+> **The limit is not how much paint the brush takes hold of. It is that paint is
+> LEAKED one cell at a time instead of being CARRIED. That is E20.**
+
+## What is in the tree, and what is honest about it
+
+- **Step 0** (§14): six switches, one per behaviour, in Paint surface > BARE OIL,
+  oil only, all on by default. Verified; watercolour identical with them all off.
+  **Carry §14c into Step 2: behaviour 4 is invisible unless two DIFFERENT colours
+  meet AND behaviour 6 is on.** He looked and could not see what any of them do,
+  except maybe comb settling, which he thinks he likes OFF (E18).
+- **Smudge swap** (§16): slider 0-5 s in Paint surface, oil only, 0 = off. Lift
+  the pen that long and the brush empties into a smudging tool; lift again and the
+  load returns. Badge top right.
+- **E19** (§17): the shove carries once per brush solve step. A/B measured,
+  watercolour identical on both numbers.
+- **E21** (§19): solvent thins paint locally. **Correct, provably neutral, and it
+  delivers nothing today. KEEP-OR-REVERT IS HIS CALL (§19e)** — do not describe it
+  as working.
+
+## Traps that have already cost time in this session
+
+1. **`count: 0` at the drain** means the harness is broken, NOT the shader. A
+   malformed stylus sample (`down` missing) emits no segments and reads exactly
+   like the dead deposit pipeline that cost two sessions in `19`. Check it first.
+2. **Watercolour is NOT reproducible under a settle loop** — three identical runs
+   gave 78.148 / 82.566 / 83.751. Water keeps evolving; oil is a paste and settles
+   deterministically. **A watercolour A/B must use the no-settle harness**, which
+   returns 12.54 every time. A 2.6 % "regression" here was pure noise.
+3. **Measure the COLOUR, not the film, when solvent is involved.** A damped brush
+   lays solvent along the path and drags the film's centre of mass by itself —
+   that read as "six times better" and was measuring deposition (§18a).
+4. **`src/ui/palette.ts` is gone** (dead, deleted with 48 CSS rules). The live UI
+   is the React tree under `src/ui/react/`. `studio.tsx` still re-exports
+   `PaletteEvents = StudioEvents`.
+
+## The artist's open questions, unanswered
+
+- **E17: turning Release off audibly slowed his GPU fans.** Real signal, mechanism
+  unknown, no story offered. Wants a frame-time measurement, not a guess.
+- **E1**: is the small flat half a millimetre across its FACE or its EDGE? Does not
+  block anything; changes which side of the simulated/drawn line it sits on.
+- **E15 / `18` §5 step 3**, open since 2026-08-27 and still his: one oil pass at
+  high Flow, and a crossing. §10f now gives it a measured number to argue with.
+
+## Where everything is written down
+
+`docs/20-oil-from-zero.md` is the live document: §10-11 the measured real paint,
+§12 D14, §13 the scale, §14 Step 0, §15 **the earmark table (E1-E21)**, §16-19 the
+smudge work. `docs/10-decisions.md` carries D14. **`docs/20` §15 is the index to
+everything unfinished — read it before starting anything.**

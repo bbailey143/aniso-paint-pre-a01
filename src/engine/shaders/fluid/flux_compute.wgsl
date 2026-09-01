@@ -7,6 +7,10 @@
 @group(0) @binding(1) var wet0_in: texture_2d<f32>;
 @group(0) @binding(2) var press_in: texture_2d<f32>;
 @group(0) @binding(3) var<storage, read_write> flux: array<vec4<f32>>;
+/* E21: the pigment, so a cell can tell how neat its paint is. A pile that is
+   mostly solvent should run at a slope neat paint would hold. */
+@group(0) @binding(4) var wet1_in: texture_2d<f32>;
+@group(0) @binding(5) var wet2_in: texture_2d<f32>;
 
 fn pr(c: vec2<i32>, n: i32) -> f32 {
   if (oob(c, n)) { return 0.0; }
@@ -175,8 +179,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let fy = -gy + g * P.gravityY;
     let slope = sqrt(fx * fx + fy * fy);
 
-    let band = max(YIELD_FLOOR, P.yieldStress * YIELD_BAND);
-    let over = slope - P.yieldStress;
+    /* E21 — the yield this cell actually has, rather than the row's. Neat paint
+       reads `neatness` = 1 and nothing changes; thinned paint gives way on a
+       gentler slope, which is what adding solvent is supposed to do and what
+       §18c found the engine could not say. */
+    let g1 = textureLoad(wet1_in, c, 0);
+    let g2 = textureLoad(wet2_in, c, 0);
+    let pigHere = g1.x + g1.y + g1.z + g1.w + g2.x + g2.y + g2.z + g2.w;
+    let yieldHere = P.yieldStress * neatness(pigHere, h);
+    let band = max(YIELD_FLOOR, yieldHere * YIELD_BAND);
+    let over = slope - yieldHere;
     let open = smoothstep(-band, band, over);
     let give = min(h * 0.2,
                    max(over + band, 0.0) * P.dt * 0.5 / max(P.viscosity, 0.05))

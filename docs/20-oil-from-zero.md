@@ -1181,8 +1181,8 @@ Ordered by what it costs to reopen, cheapest first.
 | E16 | **A brush that runs dry mid-stroke stops interacting with the canvas entirely.** `brush.ts` emits a contact only `if (w > 0 \|\| pig > 0)`, so an empty tuft is invisible to the sheet: it cannot push, pick up or scrub. A dry brush is exactly what you scrub *with*. | §16b | Widening the gate touches **every medium and every brush that runs dry**, so it needs its own measurement, not a side effect of an oil experiment. Bears on E18's stranded paint and §11d's run-out. Currently opened for smudge mode alone. |
 | E17 | **Turning `OIL_RELEASE` off audibly slowed the artist's GPU fans.** Real signal, mechanism unknown, no story offered. | §16d | One frame-time measurement with the flag on and off. |
 | ~~E19~~ | **DONE 2026-08-31 — §17.** The smear now carries once per brush solve step. Watercolour measured identical either side; the smudge carries 4.2x its original distance. ~~The smear's carry distance is per FRAME, not per distance travelled.~~ Its fraction compounds over travel correctly, but the flux it writes reaches one cell and is applied once a frame — so paint moves two or three cells however fast the brush goes and however high the dial. Invariant 2's exact shape, in a place the invariant was never read as reaching. | §16g | The shove must carry a distance proportional to travel: sub-step the smear within a frame, or give the flux reach. **Shared with normal oil painting**, so it needs its own measurement and its own decision — not a side effect of the smudge experiment. |
-| E20 | **Paint leaks forward; it is not carried.** After E19 the shove is per-distance, but the transport is diffusive — each step leaks a share one cell on — so paint lags the brush and, with the share a cell may give capped at 0.9, the centre of mass cannot travel more than about 2.3 cells however many sweeps run. | §17d | Carrying further means carrying paint ON the tuft, picking up at A and laying down at B. §16f measured the naive version: it hoovered 6.5 % of the sheet into the brush in one pass. A real piece of work, not a dial. |
-| E21 | **SOLVENT DOES NOT THIN PAINT.** `P.yieldStress` and `P.viscosity` are global uniforms and nothing modulates them per cell, so a cell that is nine-tenths solvent is exactly as stiff as neat paint from the tube. Adding solvent raises the film and dilutes the colour and changes nothing about how the paint moves. | §18c | Scale the local yield by the cell's pigment concentration — pigment sum over film, both already in scope at the smear. Bites in three places (`shoveStep`'s gate and its `pressureShare`, and `flux_compute`'s slump), so measure before believing. **Shared with all oil painting**, so the artist's to ratify. May matter more than E20: it is a whole axis of oil the engine does not have. |
+| **E20** | **NOW THE ONLY ROUTE LEFT — three attempts have ended at the same ceiling** (a bigger dial §16g, a per-distance carry §17d, a local yield §19d). **Paint leaks forward; it is not carried.** After E19 the shove is per-distance, but the transport is diffusive — each step leaks a share one cell on — so paint lags the brush and, with the share a cell may give capped at 0.9, the centre of mass cannot travel more than about 2.3 cells however many sweeps run. | §17d | Carrying further means carrying paint ON the tuft, picking up at A and laying down at B. §16f measured the naive version: it hoovered 6.5 % of the sheet into the brush in one pass. A real piece of work, not a dial. |
+| ~~E21~~ | **BUILT 2026-08-31 — §19. Correct, provably neutral, and a NO-OP.** Solvent now thins paint locally; neat paint and watercolour are identical to the digit; and a bar that is 90 % solvent smudges no further than neat. The yield feeds a term already pinned at its 0.9 clamp by the grab route. **Keep-or-revert is the artist's call (§19e).** ~~SOLVENT DOES NOT THIN PAINT.~~ `P.yieldStress` and `P.viscosity` are global uniforms and nothing modulates them per cell, so a cell that is nine-tenths solvent is exactly as stiff as neat paint from the tube. Adding solvent raises the film and dilutes the colour and changes nothing about how the paint moves. | §18c | Scale the local yield by the cell's pigment concentration — pigment sum over film, both already in scope at the smear. Bites in three places (`shoveStep`'s gate and its `pressureShare`, and `flux_compute`'s slump), so measure before believing. **Shared with all oil painting**, so the artist's to ratify. May matter more than E20: it is a whole axis of oil the engine does not have. |
 | E18 | **The six §14 behaviours are near-invisible to the eye** even though five of six move the numbers. The artist could pick out only comb settling, and prefers it off. | §16d | Says the §14b ladder measures something finer than the eye reads. Revisit when the rebuild reaches behaviour 3. |
 
 ### 15c. Expensive — reopening moves things downstream
@@ -1533,3 +1533,117 @@ ratify and not a side effect of a smudge experiment. **Recorded as E21.**
 the smudge stronger. **E21 would make solvent mean something**, which is a whole
 axis of oil painting the engine currently does not have: thin it and it stays
 exactly as stiff.
+
+---
+
+## 19. E21 BUILT — solvent now thins paint, and it changes nothing yet
+
+**Authorised by the artist 2026-08-31.** Built, measured, and the result is
+negative. It is written up as a negative because that is what it is.
+
+### 19a. The reference came for free
+
+`neatness` is a cell's pigment as a share of its film. **No constant had to be
+invented, because the engine's own units already put neat paint at one:**
+
+| brush | pigment / film |
+|---|---:|
+| Solvent 0, load 1.0 | **1.0001** |
+| Solvent 0, load 0.6 | **1.0001** |
+| Solvent 0.5, load 1.0 | 0.625 |
+| Solvent 1.0, load 0.2 | 0.143 |
+
+Neat paint is 1 whatever the loading; solvent drives it down. So `neatness`
+needs no reference and no fitting — it is a ratio of two things the cell already
+holds.
+
+`[UNVERIFIED]` That the yield falls **linearly** with neatness is reasoning, not
+a card. A real suspension yields as `(φ − φ_c)^n` about a critical packing.
+Linear is the simplest form correct at both ends.
+
+### 19b. What was built
+
+- **`neatness()` in `common.wgsl`**, shared, documented once.
+- **`deposit.wgsl`**: `shoveStep` takes a **local** yield instead of reading
+  `P.yieldStress`. Worked out from the paint present **before** this frame's
+  deposit — that is the paint the hairs are pushing.
+- **`flux_compute.wgsl`**: the slump gate uses the same local yield, so a pile
+  that is mostly solvent should run at a slope neat paint would hold. Needed two
+  new bindings (the pigment textures).
+
+**One trap caught in the building.** Read as a bare ratio, an empty cell gives
+`0/0 → 0` — "infinitely thin" — which quietly opened the shove gate on every
+untouched cell and drifted the laid film by 0.04. **An empty cell now reads as
+NEAT**: there is no paint in it to yield, so the row's own value is the
+conservative answer. With that guard, neat paint is unchanged *by construction*.
+
+### 19c. Measured — and it is a no-op
+
+A/B against the pre-E21 build, files reverted, rebuilt, measured, restored:
+
+| | pre-E21 | with E21 |
+|---|---:|---:|
+| neat oil — film / cells / spread | **358.096 / 5743 / 13** | **358.096 / 5743 / 13** |
+| thinned oil (solvent 0.6) | **395.763 / 5743 / 12** | **395.763 / 5743 / 12** |
+| watercolour — drag | 12.54 | **12.54** |
+
+And smudging a bar that was itself laid thinned, which is the case E21 exists for:
+
+| the bar being pushed | colour moved |
+|---|---:|
+| neat | 2.25 cells |
+| half solvent | 2.29 |
+| **nine-tenths solvent** | **2.30** |
+
+**A bar that is 90 % solvent smudges no further than neat paint.**
+
+### 19d. WHY, and it points at the same place as everything else
+
+`shoveStep` adds two routes and clamps:
+
+```
+fraction = clamp((pressurePart + grabPart) * smear, 0, 0.9)
+```
+
+The yield only enters `pressurePart`, which carries `SMEAR_RATE = 0.10`. The
+**grab** route does not involve the yield at all: `grabShare = upRate ×
+brushGrab × laden × contact ≈ 0.42 × 0.34 = 0.14`, compounded over the step's
+travel to ≈ 0.46, then multiplied by the smudge's `smear` of 16.
+
+> **`fraction` is already pinned at its 0.9 ceiling by the grab route alone. The
+> yield feeds a term that is already saturated, so lowering it can add nothing.**
+
+That is the *same* ceiling §16g found, and the same one §17d ran into after E19.
+Three separate attempts — a bigger dial, a per-distance carry, a local yield —
+have now all ended at it.
+
+> **The thing standing between the artist and a real smudge is not how much paint
+> the brush takes hold of. It is that the paint is LEAKED one cell at a time
+> instead of being CARRIED. That is E20, and it is now the only route left.**
+
+### 19e. Keep it or revert it — the artist's call
+
+**Recommendation: keep it.** It is correct physics, it is provably neutral (neat
+paint identical to the digit, watercolour identical), it costs one multiply and
+two texture reads, and **without it the Solvent dial can never mean anything**.
+It is the foundation the axis needs, delivered early.
+
+**But it does nothing today, and it must not be described as if it did.** If the
+artist would rather not carry a mechanism that pays nothing yet, reverting is
+four files and no other change depends on it.
+
+`[NOT TESTED]` The slump was only exercised on a laid stroke settling flat. A
+steep pile, a tilted board, or heavy impasto might show E21 where a flat bar
+cannot. That is a gap in the measurement, not evidence either way.
+
+### 19f. A measurement trap worth keeping
+
+**Watercolour is not reproducible under a settle loop.** Three identical runs
+gave film 78.148 / 82.566 / 83.751 — water keeps evolving through evaporation
+and capillary flow, and the async yields between steps do not land the same way
+twice. Oil is a paste with no current and settles deterministically, which is
+why every oil figure here repeats exactly.
+
+**A watercolour A/B must use the deterministic harness** — the one with no settle
+loop, which returns 12.54 every time. The first pass at this test read a 2.6 %
+watercolour difference across E21 and it was pure noise.

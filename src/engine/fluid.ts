@@ -1214,7 +1214,12 @@ export class FluidEngine {
 
     // 5 — flux ledger, then pigment BEFORE water (denominator order matters)
     run('fluxCompute', () => {
-      this.dispatch(pass, this.pipes.fluxCompute, [U, this.wet0.src, this.press.src, { buffer: this.fluxBuf }]);
+      // E21: the pigment goes in too, so a cell can tell how neat its paint is
+      // and slump at its own yield rather than the whole row's.
+      this.dispatch(pass, this.pipes.fluxCompute, [
+        U, this.wet0.src, this.press.src, { buffer: this.fluxBuf },
+        this.wet1.src, this.wet2.src,
+      ]);
     });
     run('fluxPig', () => {
       this.dispatch(pass, this.pipes.fluxPig, [
