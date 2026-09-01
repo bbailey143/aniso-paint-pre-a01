@@ -2277,3 +2277,54 @@ is UNVERIFIED and is the first thing to look at once anything is on screen.
   and 13 LOOKS free. It is not. Coverage per thread is **D14**. The missing D13
   is now an open item in card 10: carry it across, or record the divergence on
   purpose - D2 permits diverging, not diverging silently.
+
+---
+
+## HOW BIG IS A CELL — the artist answered, and 16x20 FITS. 2026-08-31
+
+`docs/20-oil-from-zero.md` §13. Step 1 opens here because D14 is meaningless
+until a cell has a size.
+
+**Canvas: "changeable and customizable; start with 16x20."** 16x20 in =
+406.4 x 508 mm. At **0.5 mm per sim cell** that is **1016 x 813 = 0.83 M cells**
+and **89 MB** of cell state at D7's 54 half-floats.
+
+**IT SITS INSIDE A PROVEN ENVELOPE.** `05-fluid.md`: the `main` bench measured
+**3.78 ms/frame at 1024² = 1.05 M cells** on an RX 570 against a 16.7 ms budget,
+and says "1024² is in reach, 2048² a stretch". 0.83 M is UNDER that. Note `SIM`
+is currently 512, half this and conservative; raising it takes cell state from
+28 MB to 89 MB.
+
+**AND D14 IS WHY IT WORKS.** Before D14 the grid had to resolve a 0.86 mm thread,
+which at 0.5 mm/cell is 1.7 cells — the Nyquist wall of §10e. D14 moved the
+thread to the compositor, so **the grid only has to resolve the BRUSH, not the
+cloth.** Third time that split has paid: `INK = SIM * 4` already exists in
+`canvas.ts` for the same reason ("a ballpoint hairline needs this extra
+resolution; water movement does not").
+
+**Brushes at 0.5 mm/cell:** #2 flat (9.94 mm measured) 20 cells; a half-inch flat
+25; the #12 filbert (~17 mm) 34; a fine rigger (~1 mm) 2 cells — a mark, not a
+tuft.
+
+**UNRESOLVED, AND IT BLOCKS THE CELL SIZE.** He gave the smallest brush as "a #8
+which is 1/2 mm wide per my measure". That cannot be right and the two readings
+decide everything. **Half an INCH (12.7 mm)** is standard US flat sizing and is
+25 cells, comfortable — but then it is LARGER than the #2 flat already measured
+at 9.94 mm, so it is not the smallest and the question stands. **Half a
+MILLIMETRE** is finer than a rigger and not a flat; giving it 8 cells needs
+0.06 mm/cell, which over 16x20 is **66 MILLION cells** — not possible.
+**One measurement with the rule already on his bench settles it.** UNVERIFIED
+guess: "smallest" meant the smallest brush that must be SIMULATED, with the
+riggers he mentioned in the same breath being marks to be DRAWN — the D14 split
+again, which would make 0.5 mm/cell right.
+
+**"CHANGEABLE" FORCES ITS OWN DECISION, UNRATIFIED:** (a) fixed grid, cell size
+follows the canvas — memory constant, but the same brush goes coarser on a bigger
+board; or (b) fixed cell size, grid follows the canvas — paint feels identical at
+any size, memory scales, needs a ceiling. **Recommend (b) with a cap**: hold
+0.5 mm/cell to about 16x20, past that the cell grows rather than the budget. A
+bigger canvas should not blunt the brush.
+
+**AND IT MAKES THE GRID NON-SQUARE.** `SIM` is one constant used as `[SIM, SIM]`
+and 16x20 is 4:5. Every pass assuming a square grid has to stop. Build item, not
+a decision.

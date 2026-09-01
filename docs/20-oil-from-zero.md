@@ -909,3 +909,102 @@ D14.**
 The gap is now an open item in card 10: D13 either gets carried across or its
 absence gets recorded on purpose. D2 permits this branch to diverge; it does not
 permit diverging silently.
+
+---
+
+## 13. How big is a cell — the artist's answers, and what they cost
+
+**2026-08-31.** §12's D14 is meaningless until a cell has a size, so Step 1 opens
+here. Two answers from the artist, one of them still to be confirmed.
+
+> **Canvas:** *"moot, it should be changeable and customizable. For all intents
+> and purposes we can start with 16x20."*
+>
+> **Smallest brush:** *"that little flat I've used, a #8 which is 1/2 mm wide per
+> my measure… I have tiny riggers for extra fine detail, soooo, for all intents
+> again we'll just start with the little #8 flat."*
+
+### 13a. 16 × 20 at half a millimetre a cell — and it fits
+
+16 × 20 in = **406.4 × 508 mm**. At **0.5 mm per sim cell** that is
+**1016 × 813 = 0.83 M cells**.
+
+| | |
+|---|---:|
+| cells to simulate | **0.83 M** |
+| the `main` bench's proven load ([`05-fluid.md`](05-fluid.md)) | **1024² = 1.05 M at 3.78 ms/frame**, RX 570, against a 16.7 ms budget |
+| cell state at D7's 54 half-floats | **89 MB** |
+
+**A 16 × 20 at half a millimetre is SMALLER than the grid the bench already ran
+at 3.78 ms.** It sits inside a proven envelope rather than asking for a new one.
+`05-fluid.md` says the same in its own words: *"1024² is in reach, 2048² a
+stretch"* — and this is under 1024².
+
+`[NOTE]` `SIM` is currently **512**, which is half this and was set conservatively
+below what the bench proved. Raising it is a change to make deliberately, not a
+free one: cell state goes 28 MB → 89 MB.
+
+### 13b. And it is D14 that made this possible
+
+**Yesterday this answer would have been unbuildable.** Before D14 the sim grid
+had to resolve a **0.86 mm canvas thread**, and at 0.5 mm per cell a thread is
+1.7 cells — under Nyquist, exactly the wall §10e hit.
+
+D14 moved the thread to the compositor, which draws it at screen resolution. So
+**the grid no longer has to resolve the cloth. It only has to resolve the
+brush.** That is a far weaker requirement, and it is what lets a 16 × 20 board
+work at all.
+
+It is also the third time the same split has paid: `INK = SIM * 4` already exists
+in `canvas.ts` for exactly this reason — *"a ballpoint hairline needs this extra
+resolution; water movement does not."* Fine detail is drawn fine; fluid is
+simulated coarse.
+
+### 13c. Do the brushes fit? Yes, except one
+
+At 0.5 mm per cell:
+
+| brush | width | cells across |
+|---|---:|---:|
+| the #2 flat, measured §10b | 9.94 mm | **20** ✓ |
+| a ½-inch flat | 12.7 mm | **25** ✓ |
+| the #12 filbert, measured §11b | ~17 mm | **34** ✓ |
+| a fine rigger | ~1 mm | **2** — a mark, not a tuft |
+
+**`[UNRESOLVED]` The #8 at "1/2 mm" cannot be right, and the two readings differ
+by a factor that decides everything.**
+
+- **If ½ inch (12.7 mm)** — standard US flat sizing, and the ruler in these
+  photographs is an Alvin & Co: it is **25 cells and entirely comfortable.** But
+  then it is *larger* than the #2 flat already measured at 9.94 mm, so it is not
+  the smallest brush and the question is still open.
+- **If genuinely ½ mm** — that is finer than a rigger and not a flat at all. To
+  give it 8 cells needs 0.06 mm per cell, which over a 16 × 20 board is
+  **66 million cells.** Not a stretch; not possible.
+
+**It needs one measurement with the rule that is already on the bench.** Nothing
+downstream can be fixed until it lands.
+
+`[UNVERIFIED]` The likely resolution is that "smallest" meant *the smallest
+brush whose behaviour must be SIMULATED*, and the riggers he set aside in the
+same breath are marks to be DRAWN — which is the D14 split again, and would mean
+0.5 mm per cell is right.
+
+### 13d. "Changeable and customizable" forces its own decision
+
+Two ways to honour it, and they feel completely different to paint on:
+
+- **(a) Fixed grid, cell size follows the canvas.** Memory constant. But a 24 × 36
+  board gets 1.1 mm cells and **the same brush behaves coarser on a bigger
+  canvas.**
+- **(b) Fixed cell size, grid follows the canvas.** Paint behaves identically at
+  any size, which is what an artist expects. Memory scales with area, so it needs
+  a ceiling.
+
+**`[UNRATIFIED — recommendation]` (b), with a cap.** Hold 0.5 mm per cell up to
+about 16 × 20 (0.83 M cells, 89 MB); past that the cell grows rather than the
+budget. A bigger canvas should not blunt the brush.
+
+**And it makes the grid non-square, which is real work.** `SIM` is one constant
+used as `[SIM, SIM]`; 16 × 20 is 4:5. Every pass that assumes a square grid has to
+stop assuming it. That is a build item, not a decision.
