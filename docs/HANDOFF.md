@@ -783,7 +783,8 @@ by request. **NEEDS THE ARTIST'S OK before downloading anything.**
 
 **Nothing waits on it.** Both pigments can exist today as **named recipes mixed
 from the measured twelve** - not invented spectra, mixtures of measured ones,
-which is what the engine does every frame and what D13 wants anyway. Cad Red
+which is what the engine does every frame and what the (UNRATIFIED, not in card
+10, and NOT D13 - D13 is coverage per thread) studio idea wants anyway. Cad Red
 Light ~ Cadmium Orange PO20 + Pyrrole Red (PO20/PR108 are the same cadmium
 sulfoselenide chemistry). Yellow Ochre ~ Diarylide Yellow + Bone Black + a little
 Pyrrole Red, tuned against the artist's own Zorn chart. Labelled recipe, not
@@ -2214,3 +2215,61 @@ property of the paint rather than the brush, and it matches.
 
 **Still unasked-for and still open:** one more fast pass held flat on the board,
 to separate skipping from a lifted brush (§11c).
+
+---
+
+## D13 IS RATIFIED — coverage is a fraction of threads, not a film alpha
+
+**2026-08-31, by the artist.** Row in `docs/10-decisions.md`; evidence, open
+questions and acceptance tests in `docs/20-oil-from-zero.md` §12. It is the
+standing ground for §4's Step 1.
+
+**The decision.** A cell stores what FRACTION of its canvas threads carry paint,
+not how transparent the paint is. Deposition raises it; running out, tearing and
+lifting lower it. **The compositor decides WHICH threads at draw time**, by
+threshold against the weave field it already evaluates at screen resolution — so
+the drawn edge is hard at thread scale at any zoom, and the fade across a mark is
+the change in the fraction. A thread is painted or bare; paint renders at full KM
+strength and the ground shows only where threads are uncovered.
+
+**Why, in one line:** no single alpha can be hard at 0.7 mm and soft over 30 mm,
+and real paint measures both, in the same stroke. Two quantities were being asked
+of one number.
+
+**Why not a finer grid:** a thread is 2.0 sim cells, so resolving it is 4x the
+cells against a 3.78 ms bench. The fraction costs one number, and it is
+`00-invariants.md` §4 ("coarse sim under fine display") APPLIED, not excepted.
+
+**WHAT D13 DOES NOT SETTLE — do not treat any of these as decided:**
+1. **Millimetres per cell.** Open. §10e's 0.432 mm/sim cell is UNVERIFIED,
+   reasoned from one brush over a 23-cell blade. **Step 1 opens by settling it**;
+   the fraction is meaningless until a cell has a size.
+2. How the fraction evolves — deposition, lifting, drying, tearing rates. Step 1.
+3. Where it lives in the cell — schema, canvas engine's call, under D8 RGBA16F.
+4. Wet-on-wet: whether two wet coverages merge, and how.
+
+**INVARIANT 2 BINDS IT.** The coverage rate must be per unit DISTANCE TRAVELLED
+or per unit TIME — never per frame, never per cell stepped. A per-frame coverage
+rate reproduces `19`'s fish-scale banding exactly, in a new place. E13 and E17 are
+the record of how long that takes to find.
+
+**Acceptance tests, written before the code so they cannot be fitted to it:**
+(1) a cross-section anywhere along a stroke, dying tail included, crosses bare to
+covered in <=1 mm; (2) a brush running out falls 60 % to 25 % coverage over
+30 mm +/- 10; (3) over equal distance a fast stroke deposits materially less than
+a slow one (22 % vs 50 % measured); (4) **zooming in reveals no soft ramp** —
+that is the test that separates this from a cosmetic tweak.
+
+**Watch for:** at 10-20 % coverage a thresholded regular weave may read as printed
+fabric rather than broken paint. `canvas_weave` already carries a `slub` noise
+term for this in the height field and it is available here; whether it is enough
+is UNVERIFIED and is the first thing to look at once anything is on screen.
+
+**TWO NUMBERING TRAPS, both now noted in card 10:**
+- **This branch's D-numbers are its own** (D2). The `main` canvas contract has its
+  own D1-D12 meaning different things — its D1 is "8 pigment slots per cell",
+  ours is the stack. **A bare "D7" is ambiguous. Say which.**
+- **"D13 = the artist builds their own materials" was never real.** It is
+  referenced in a couple of places but appears nowhere in card 10. Those
+  references are corrected; the studio idea is UNRATIFIED and needs recording or
+  dropping on its own merits.

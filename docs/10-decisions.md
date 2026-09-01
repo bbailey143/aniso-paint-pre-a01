@@ -5,6 +5,8 @@ is explicitly reopened — and if one changes, everything downstream changes too
 are the second half of the fence: a number may enter an engine because a card cites
 it, or because a decision here justifies it.
 
+`[TRAP]` **These numbers are this branch's own** (D2). The `main` canvas contract has its OWN D1-D12 meaning entirely different things — its D1 is "8 pigment slots per cell", ours is the stack. A bare "D7" is ambiguous across the two; say which.
+
 | # | Decision | Reason |
 |---|---|---|
 | **D1** | **TypeScript + WebGPU**, bundled with Vite. No Rust/WASM on this branch. WebGPU **core** only in engine code. | Browser-first; Bartford reads JS/HTML; instant iteration; WGSL shaders port unchanged from the `main` bench. Native iPad deferred and re-scoped later. |
@@ -19,6 +21,7 @@ it, or because a decision here justifies it.
 | **D10** | **Brush solver in CPU TypeScript**, every frame; **two spines maximum**; stroke path **resampled** to ≤1 cell/step. | ~16 numbers of state — a pocket calculator. Two spines cover round + flat (VL); resampling stops strokes beading into dots. |
 | **D11** | **Pen input via Pointer Events**: pressure, tiltX/tiltY, twist where available; velocity derived; `getCoalescedEvents()` for high-frequency sampling. | Web-native full-tilt/pressure/velocity; coalesced events feed the resampler. No plugin, works on the Huion and on iPad. |
 | **D12** | **First build scope:** round + flat sable, watercolour + full water fluid cycle + KM mixing, graphite pencil, ballpoint, and 3 papers (hot/cold press, rough). Everything else is a documented row for later. | A vertical slice that exercises every engine once, so the rest is adding rows. |
+| **D13** | **Coverage is a fraction of threads, not a film alpha.** A cell stores what share of its canvas threads carry paint; the compositor decides *which* threads at draw time by thresholding the weave field at screen resolution. A thread is painted or bare — no partial alpha at thread scale; paint renders at full KM strength and the ground shows through only where threads are uncovered. | **Measured, and reproduced.** Real paint crosses bare-to-covered in 0.4–0.8 mm — one canvas thread — identically for tearing, running out, fast, slow, and the loaded head *and* dying tail of one stroke; confirmed at 4× magnification as 0.75 mm = 29 px, so not blur. Yet the same stroke's envelope fades over 29.9 mm. **No single alpha can be hard at 0.7 mm and soft over 30 mm** — two quantities were being asked of one number. A grid fine enough to resolve threads is 4× the cells; the fraction costs one number and is [`00-invariants.md`](00-invariants.md) §4 ("coarse sim under fine display") applied, not excepted. Ratified 2026-08-31. Evidence, open questions and acceptance tests: [`20-oil-from-zero.md`](20-oil-from-zero.md) §12. |
 
 ## Open items (not blocking)
 

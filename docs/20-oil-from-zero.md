@@ -462,7 +462,10 @@ measured data we do not currently hold.
 **Meanwhile, nothing has to wait.** Both pigments can exist *today* as **named
 recipes mixed from the measured twelve** — not invented spectra, mixtures of
 measured ones, which is exactly what the engine already does every frame and
-exactly what D13 says the artist should be able to do for themselves. Cadmium
+exactly what the studio idea says the artist should be able to do for themselves
+(`[UNRATIFIED]` — "the artist builds their own materials" is referred to as a
+decision in places but appears nowhere in card 10; it needs recording or
+dropping, and it is NOT D13, which is coverage per thread). Cadmium
 Red Light ≈ Cadmium Orange PO20 + Pyrrole Red (PO20 and PR108 are the same
 cadmium sulfoselenide chemistry, differing in selenium content). Yellow Ochre ≈
 Diarylide Yellow + Bone Black + a little Pyrrole Red, tuned against the artist's
@@ -784,3 +787,113 @@ where this mechanism lives.**
   is *inside* the mark — filaments with bare canvas between — which is the same
   binary-per-thread behaviour as everything else on the board, not a separate
   effect.
+
+---
+
+## 12. D13 — Coverage is a fraction of threads, not a film alpha
+
+**Ratified by the artist 2026-08-31.** Recorded as **D13** in
+[`10-decisions.md`](10-decisions.md); this section is its evidence and its shape.
+It is the standing ground for §4's Step 1.
+
+### 12a. The decision
+
+> **A cell stores what FRACTION of its canvas threads carry paint. It does not
+> store how transparent the paint is.**
+>
+> Deposition raises that fraction toward 1. Running out, tearing and lifting
+> lower it. **At draw time the compositor decides WHICH threads**, by threshold
+> against the weave field it already evaluates at screen resolution — so the edge
+> it draws is hard at thread scale at any magnification, while the fade across a
+> mark is the change in the fraction.
+>
+> **A thread is painted or it is bare. There is no partial alpha at thread
+> scale.** Paint on a covered thread renders at full Kubelka-Munk strength; the
+> ground shows through only on threads that are bare.
+
+### 12b. Why — the measurements, and they are reproduced
+
+**The edge.** Across every mark on the test panel (§11e) — tearing, running out,
+fast, slow, the loaded head of a stroke and the dying tail of the *same* stroke —
+paint crosses from bare canvas to full cover in **0.4 to 0.8 mm**. The canvas
+thread is 0.86 mm. **Reproduced on a second photograph at four times the
+magnification: 0.75 mm, which is 29 pixels**, so it is a physical distance and not
+the camera's blur. Two sessions, two brushes (#2 flat and #12 filbert), two
+boards, one answer.
+
+**The fade.** The same Run Out stroke falls from 60 % coverage to 25 % over
+**29.9 mm — about three brush widths** — by two independent methods that agree
+(29.9 and 30.25). So the envelope is soft over tens of millimetres while every
+edge inside it stays hard.
+
+**Both halves are in one mark.** That is what forces the model: no single film
+alpha can be simultaneously hard at 0.7 mm and soft over 30 mm. Two quantities
+were being asked of one number.
+
+### 12c. Why not simply a finer grid
+
+Resolving threads directly needs a thread across 3–4 cells. At the
+brush-anchored scale (§10e) a thread is **2.0 sim cells**, so that is a 2× grid in
+each axis — **4× the cells**, against a D7 budget and a bench that already stands
+at 3.78 ms.
+
+**The fraction buys the same look for one number per cell.** And it is not a
+workaround: [`00-invariants.md`](00-invariants.md) **§4, "coarse sim under fine
+display"**, already says the physics grid may be coarser than the display grid
+and that the visual layer is the one that wants resolution. This decision is that
+invariant applied, not an exception to it.
+
+It also settles the thing §10d found had been one number and should not be: **the
+weave you SEE** (drawn at screen resolution, free of the sim grid, and able to be
+physically correct today) is now separate from **the tooth the paint FEELS**
+(bound to the sim grid, and free to stay a coarser statistical stand-in, because
+the coverage fraction is doing the thread-scale work instead).
+
+### 12d. What this decision does NOT settle
+
+Named so nobody treats them as decided:
+
+1. **Millimetres per cell.** Still open. §10e's 0.432 mm per sim cell is
+   `[UNVERIFIED]` — reasoned from one measured brush over a 23-cell blade, not
+   ratified. **Step 1 opens by settling it**, because the coverage fraction is
+   meaningless until a cell has a size.
+2. **How the fraction evolves.** The rate deposition raises it, and lifting,
+   drying and tearing lower it. That is Step 1's build work and it is where the
+   §3 behaviours will reconnect.
+3. **Where it lives in the cell.** A new field or derived from what is there —
+   a schema question, and the canvas engine's to answer under D8 (RGBA16F).
+4. **Wet-on-wet.** Whether two wet coverages merge, and how.
+
+**INVARIANT 2 BINDS THIS.** The rate at which coverage changes must be a
+**fraction per unit of distance travelled, or per unit of time** — never per
+frame, never per cell stepped. That is not a general caution: a per-frame
+coverage rate would reproduce the fish-scale banding of `19` exactly, in a new
+place, and the whole of `19` E13 and E17 is the record of how long that takes to
+find.
+
+### 12e. Acceptance tests
+
+A build of Step 1 is right when all four hold. Written now, before the code, so
+they cannot be fitted to it afterwards.
+
+1. **The edge stays hard everywhere.** A cross-section anywhere along a stroke —
+   including its dying tail — crosses bare to covered in **≤ 1 mm** at the
+   ratified scale. Not just at the loaded head.
+2. **The fade is 30 mm.** A brush running out falls from 60 % to 25 % coverage
+   over **30 mm ± 10**. Not 2 mm, not 100 mm.
+3. **Speed still costs paint.** Over equal distance a fast stroke deposits
+   materially less than a slow one — measured at **22 % against 50 %** coverage
+   (§11c). The direction and rough size must survive; the exact ratio is one
+   panel and is not the test.
+4. **Zooming reveals no ramp.** The edge is drawn at screen resolution, so
+   magnifying the canvas must not turn it into a soft gradient. This is the test
+   that separates the decision from a cosmetic tweak.
+
+### 12f. The risk worth watching
+
+`[UNVERIFIED]` At low coverage, thresholding a regular weave field could read as
+**printed fabric rather than broken paint** — a tidy dot pattern instead of a
+mark. `canvas_weave` already carries a `slub` noise term for exactly this reason
+in the height field, and the same term is available here. Whether it is enough at
+10–20 % coverage is unknown, and it is the first thing to look at once anything
+is on screen.
