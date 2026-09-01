@@ -803,6 +803,12 @@ step 0 does not wait on it.
 
 ## NEXT ACTION
 
+**SUPERSEDED 2026-08-31 — see "THE BUILD ORDER HAS ITS FIRST RATIFIED STEP" at
+the end of this file.** The order is no longer waiting on him in full: he has
+ratified COVERAGE PER THREAD into it as Step 1, ahead of looking at bare oil, and
+it blocks on the scale decision. What follows is the older framing, kept because
+steps 0 and 2 are unchanged.
+
 **1. The artist ratifies the build order in docs/20 section 4.** Then step 0:
 one flag per behaviour so oil can be built up one at a time and each addition
 judged. Then look at BARE oil - nobody has ever seen it, because each behaviour
@@ -2174,3 +2180,37 @@ less" is solid; "fast skips 48 mm" is not. Ask for one more fast pass held flat.
 cannot be compared with the rest until that is known. They also show no
 full-width breaks at all — whatever tearing is in them is filaments inside the
 mark, which is the same binary-per-thread behaviour, not a separate effect.
+
+---
+
+## THE BUILD ORDER HAS ITS FIRST RATIFIED STEP — 2026-08-31
+
+**The artist ratified COVERAGE PER THREAD into the rebuild, and it is Step 1** —
+after step 0 (make the behaviours switchable) and **before** "look at bare oil".
+Written into `docs/20-oil-from-zero.md` §4.
+
+**Why ahead of the bare-oil look, and this is the reasoning to keep:** it is not
+a §3 behaviour sitting on top of the paint, it is how paint meets cloth at all,
+which §4 already counts as ground zero when it calls the paint opaque. Real
+opacity is per-thread. And every judgement in the steps after it is made BY EYE
+ON A MARK — so a mark that fades by the wrong mechanism poisons every later
+verdict. `19` already lost a week to exactly that, smoothing a quantity that in
+real paint has no smooth values. Nothing is lost by the order, either: step 0's
+flags keep the old behaviour a switch away, so the "before" picture is available
+on demand instead of being spent once.
+
+**IT BLOCKS ON THE SCALE DECISION AND MUST NOT START BEFORE IT.** A mechanism
+that lives at one thread needs the thread to exist, and at the brush-anchored
+0.432 mm per sim cell a thread is 2.0 cells — Nyquist. So the step opens by
+settling §10d and §10e: millimetres per cell, and the split between the weave
+that is SEEN (re-derived at screen resolution, not bound by the sim grid) and the
+tooth that is FELT (bound by it). Both cross-engine, both his.
+
+**The tear brush is identified.** A **#12 filbert**, not the #2 flat that made
+the other three strokes — measured 14.8-19.6 mm, right for a 12 filbert, and its
+rounded end is why those four have no square shoulders. Their widths must not be
+compared against the flat's. What does carry across is the edge, which is a
+property of the paint rather than the brush, and it matches.
+
+**Still unasked-for and still open:** one more fast pass held flat on the board,
+to separate skipping from a lifted brush (§11c).

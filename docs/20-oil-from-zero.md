@@ -104,11 +104,44 @@ addition judged on its own. This is the rebuild's instrument, not more
 accumulation: without it "add one thing back" is a code edit and a rebuild per
 judgement.
 
-**Step 1 — look at bare oil.** Paint with everything in §3 off. Expect it to
+**Step 1 — COVERAGE PER THREAD.** *Added to the build order by the artist,
+2026-08-31, on the evidence of §11e.*
+
+Paint does not fade. Measured across every mark on the test panel — tearing,
+running out, fast, slow, the loaded head of a stroke and the dying tail of the
+same stroke — it crosses from bare canvas to full cover in **0.4 to 0.8 mm, about
+one canvas thread**, reproduced at four times the magnification as 0.75 mm and
+29 pixels. **A thread is painted or it is bare.** What fades is the *proportion*
+of threads covered, over tens of millimetres — 29.9 mm for a brush running out.
+
+The engine fades film thickness and runs alpha to zero, which is an optical fade
+and the wrong mechanism.
+
+**Why it is here and not in the add-back list.** It is not a §3 behaviour sitting
+on top of the paint; it is how the paint meets the cloth at all, which §4 already
+counts as ground zero when it says the paint is *opaque*. Real opacity is
+per-thread. And every judgement in the steps that follow is made **by eye, on a
+mark** — so if the mark fades by the wrong mechanism, every later judgement
+inherits the error. That is not hypothetical: `19` spent a week chasing a ripple
+by smoothing a quantity that in real paint has no smooth values.
+
+**Nothing is lost by doing it first.** Step 0's flags keep the old behaviour a
+switch away, so the bare-oil "before" picture is still available on demand rather
+than being spent as a one-off.
+
+**IT BLOCKS ON THE SCALE DECISION, AND MUST NOT START BEFORE IT.** A mechanism
+that lives at one thread needs the thread to exist. At the brush-anchored
+0.432 mm per sim cell a canvas thread is **2.0 cells** (§10e) — Nyquist, which
+cannot carry it. So this step opens by settling §10d and §10e: millimetres per
+cell, and the split between the weave that is *seen* (re-derived at screen
+resolution, unbounded by the sim grid) and the tooth that is *felt* (bound by it).
+**Both are cross-engine and the artist's to ratify.**
+
+**Step 2 — look at bare oil.** Paint with everything in §3 off. Expect it to
 look wrong; the point is to find out *how* wrong, and which complaint returns
 first. That complaint names the behaviour that has earned its place.
 
-**Steps 2..n — add back in the order the paint asks for**, one at a time,
+**Steps 3..n — add back in the order the paint asks for**, one at a time,
 judged, and each one either promoted to a recorded decision with its reason or
 left out. Anything nobody misses does not go back in.
 
@@ -659,9 +692,13 @@ all four short strokes.
 **The Slow stroke measures 10.0 mm wide against §10's 9.94 mm for the same #2
 flat.** Another agreement across sessions.
 
-`[ASK]` **The four Tear strokes are 15–19.6 mm wide — half again to twice the #2
-flat.** Either a different brush or a much harder press. It matters, because
-width sets everything the tear number would be compared against.
+**The four Tear strokes were made with a #12 filbert**, confirmed by the artist
+2026-08-31 — not the #2 flat that made the other three. Measured 14.8–19.6 mm
+wide, which is right for a 12 filbert, and its rounded end is why those four have
+no square shoulders where the others do. **So the tear strokes are a different
+tool and their widths must not be compared against the flat's**; what carries
+across is the edge, which is a property of the paint and not of the brush, and it
+matches (§11e).
 
 ### 11c. SLOW versus FAST, and it is not subtle
 
