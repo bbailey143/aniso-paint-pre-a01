@@ -352,6 +352,29 @@ body:not(.studio-ready) #gauges {
 .loading-row span { color: var(--ink-dim); }
 .loading-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 
+/* Step 0 of the oil rebuild (docs/20 §14). It lives at the foot of Paint
+   Properties, appears only for oil, and is an instrument for looking at bare
+   oil rather than a painting control — so it reads quieter than the dials
+   above it. */
+.oil-steps { border-top: 1px solid var(--panel-border); margin-top: 10px; padding-top: 8px; }
+.oil-title { color: var(--accent); text-transform: uppercase; letter-spacing: 0.07em; font-size: 10px; }
+.oil-hint { color: var(--ink-dim); font-size: 10px; line-height: 1.4; margin: 5px 0; }
+.oil-row { display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: 0; padding: 3px 2px; color: var(--ink-dim); font: inherit;
+  font-size: 11px; cursor: pointer; text-align: left; }
+.oil-row:hover { color: var(--ink); }
+.oil-row.on { color: var(--ink); }
+.oil-dot { width: 22px; height: 12px; border-radius: 6px; flex: none;
+  background: rgba(255, 255, 255, 0.10); border: 1px solid var(--panel-border);
+  position: relative; transition: background 120ms ease; }
+.oil-dot::after { content: ''; position: absolute; top: 1px; left: 1px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim);
+  transition: transform 120ms ease, background 120ms ease; }
+.oil-row.on .oil-dot { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+.oil-row.on .oil-dot::after { transform: translateX(10px); background: var(--accent); }
+.oil-btns { display: flex; gap: 6px; margin-top: 7px; }
+.oil-btns .pal-btn { flex: 1; font-size: 10px; }
+
 /* Temporary board-tilt instrument. The blue puck is the only bright moving
    element: it reads as direction, not a second busy panel. */
 .tilt-control { border-top: 1px solid var(--panel-border); padding-top: 6px; }

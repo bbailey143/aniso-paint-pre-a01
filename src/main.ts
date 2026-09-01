@@ -108,6 +108,7 @@ async function main() {
     onTiltChange(gravityX, gravityY, cosAlpha) { boardTilt = { gx: gravityX, gy: gravityY, cosAlpha }; applyBoardTilt(); },
     onClear() { strokeCount = 0; engine.clear(); stroke.clearDryMarks(); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); requestFrame(); },
     onWaterView(on) { engine.waterView = on; requestFrame(); },
+    onOilBehaviours(flags) { engine.setOilBehaviours(flags); requestFrame(); },
     onBrushChange(def, size) { setConteSelected(false); stroke.setBrush(def, size); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); updatePenCursorContact(); },
     onDryMedium(medium, size) { stroke.setDryMedium(medium, size); engine.setDryMix(new Map(medium.pigments)); setConteSelected(medium.form === 'stick'); updatePenCursorContact(); },
     onRinse() { stroke.rinse(1); }, onRinseLoad() { stroke.rinse(1); engine.setMix(palette.recipe); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge); },
