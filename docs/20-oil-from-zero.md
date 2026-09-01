@@ -619,3 +619,131 @@ provisional** until a second crossing is shot.
   this batch is at one speed.
 - **A loaded brush running out.** How the mark changes from full to empty, in one
   continuous pass, is what `18` E18's stranded paint is really about.
+
+---
+
+## 11. Tear, slow, fast, run out — the three missing strokes, measured
+
+**Artist's test panel, 2026-08-31, `IMG_20260831_181404`.** Seven strokes on one
+board with a 25 cm rule in frame, labelled *Tear* / *Slow* / *Fast* / *Run Out*.
+Sent as two files: a contrast-stretched greyscale carrying the labels, and the
+untouched colour frame. **Only the colour frame is used for anything tonal** —
+the greyscale one has had its levels pulled and its tone is no longer the paint's.
+
+### 11a. Scale, and a third confirmation of the weave
+
+**10.00 px per mm**, and this frame confirms itself: the millimetre graticule
+reads 10.006 / 10.018 / 9.995 / 10.027 px (snr up to 23) and the **centimetre**
+graticule reads 99.72 / 99.78 / 99.86 / 99.74 px — **9.98 px/mm**. Two separate
+combs on the same rule, 0.2 % apart.
+
+**The canvas weave here measures 0.860 mm against §10's 0.864 mm** — a different
+board, a different session, and a quarter of the magnification. Third independent
+agreement. The measurement chain is sound.
+
+### 11b. What each stroke is
+
+Labels sit 45–75 px above the row they name (the gap to the row above is always
+105–135 px), which fixes the mapping. `[UNVERIFIED]` The top pair carries no
+label of its own and behaves like the second pair, so *Tear* is read as naming
+all four short strokes.
+
+| | width | length | coverage | holes ≥0.8 mm |
+|---|---:|---:|---:|---|
+| Tear, 1st pair | 19.6 / 19.1 mm | 69 / 73 mm | 71 % / 56 % | none |
+| Tear, 2nd pair | 14.8 / 15.0 mm | 71 / 65 mm | 73 % / 40 % | none |
+| **Slow** | **10.0 mm** | 190 mm | 50 % | 7, **8 mm** total |
+| **Fast** | 11.9 mm | 192 mm | **22 %** | 9, **131 mm** total, longest 48.6 mm |
+| **Run Out** | 13.0 mm | 228 mm | 52 % | 9, 16 mm total |
+
+**The Slow stroke measures 10.0 mm wide against §10's 9.94 mm for the same #2
+flat.** Another agreement across sessions.
+
+`[ASK]` **The four Tear strokes are 15–19.6 mm wide — half again to twice the #2
+flat.** Either a different brush or a much harder press. It matters, because
+width sets everything the tear number would be compared against.
+
+### 11c. SLOW versus FAST, and it is not subtle
+
+Same brush, same paint, same board, 190 mm each:
+
+| | coverage | length of stroke with no paint on it |
+|---|---:|---:|
+| Slow | **50 %** | **8 mm of 190** |
+| Fast | **22 %** | **131 mm of 192** |
+
+**A fast stroke lays under half the paint and spends two thirds of its length off
+the canvas.** The engine's fast strokes stay in contact and keep depositing;
+this one skips 48 mm in a single void.
+
+`[CAUTION]` That longest void is nearly five brush widths, which is more like the
+brush leaving the surface than skipping across the tooth, and the last fifth
+recovers to 59 % coverage — consistent with pressure coming back at the end. So
+**"fast strokes deposit less" is solid; "fast strokes skip 48 mm" may be a lifted
+brush rather than a property of speed.** Worth one more fast pass, held flat.
+
+### 11d. RUN OUT — the number `18` E18 has been waiting for
+
+Coverage along the stroke, in fifths: **78 % → 68 % → 61 % → 31 % → 21 %.**
+
+**From 60 % coverage down to 25 % takes 29.9 mm — about three brush widths.**
+Two different methods on the same stroke give 29.9 and 30.25 mm.
+
+That is what a brush running out looks like: not a cliff, and not a gentle
+gradient either, but a slow statistical thinning over roughly three widths of the
+tool.
+
+### 11e. THE FINDING — paint does not fade, it stops. Within one thread.
+
+Measured on transects **across** each mark: how far it takes to cross from bare
+canvas to full paint.
+
+| | median | quartiles |
+|---|---:|---|
+| Tear, 1st pair | 1.35 / 0.70 mm | 0.4–2.6 |
+| Tear, 2nd pair | 0.40 / 0.70 mm | 0.3–1.5 |
+| Slow | **0.40 mm** | 0.3–0.8 |
+| Fast | 0.60 mm | 0.4–1.1 |
+| Run Out, head | 1.00 mm | 0.5–1.9 |
+| Run Out, **tail** | **0.70 mm** | 0.4–1.2 |
+
+**Every mark on the board has the same edge, and it is about one canvas thread
+(0.86 mm).** Tearing, running out, fast, slow, the loaded head of a stroke and
+the dying tail of the same stroke — all the same.
+
+**Reproduced at four times the magnification.** On §10's frame (38.91 px/mm) the
+same measurement gives **0.75 mm, which is 29 pixels** — a blur-limited edge would
+be 2–3 px, so this is a real distance and not the camera's resolution.
+
+**This reframes §7 item 3 and it is implementable.** "Paint tears" was written up
+as hard-edged gaps versus a smooth fade, as though tearing and fading were two
+different behaviours. They are not:
+
+> **There is no partial coverage at the scale of a canvas thread. A thread is
+> either painted or bare. What fades is the PROPORTION of threads covered, and it
+> fades over tens of millimetres — 30 mm for a brush running out.**
+
+The Run Out stroke proves both halves at once: its envelope decays over 29.9 mm
+while every individual edge inside it stays hard at 0.70 mm.
+
+**The engine does the opposite.** It fades film thickness continuously and lets
+alpha go to zero, which is an optical fade. Real paint is **binary per thread and
+statistical over the stroke.** That is very likely also why the fish-scale hunt in
+`19` was so hard to end: it was smoothing a quantity that in real paint has no
+smooth values to find.
+
+`[UNVERIFIED — reasoning]` It also puts a floor under §10d's grid problem. A
+mechanism that is binary at one thread needs the thread resolved, and at 0.432 mm
+per sim cell a thread is 2.0 cells. **The thread scale is not decoration; it is
+where this mechanism lives.**
+
+### 11f. Still open
+
+- **A tear at a known brush width** — the four tear strokes were made with
+  something wider than the #2 flat, so they cannot be compared against the rest.
+- **One more fast pass, kept flat on the board**, to separate skipping from
+  lifting.
+- The Tear strokes show no full-width breaks at all. Whatever tearing is in them
+  is *inside* the mark — filaments with bare canvas between — which is the same
+  binary-per-thread behaviour as everything else on the board, not a separate
+  effect.

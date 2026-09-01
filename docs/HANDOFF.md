@@ -2125,3 +2125,52 @@ shot.
 himself); the same stroke fast and slow, since speed is the axis the engine is
 known to get wrong; and one loaded brush run all the way to empty in a single
 pass, which is what E18's stranded paint is really about.
+
+---
+
+## PAINT DOES NOT FADE, IT STOPS — 2026-08-31 evening. The one to act on.
+
+Test panel with a 25 cm rule: Tear / Slow / Fast / Run Out, seven strokes.
+`docs/20-oil-from-zero.md` §11; panel in the repo at
+`docs/reference/test-panel-tear-slow-fast-runout.jpg`. **He sent two files — a
+contrast-stretched greyscale carrying the labels and the untouched colour frame.
+USE ONLY THE COLOUR ONE for tone; the greyscale has had its levels pulled.**
+
+**Scale 10.00 px/mm, self-confirming** (mm graticule 10.00, cm graticule 9.98).
+Weave reads **0.860 mm** against §10's 0.864 at four times the magnification, and
+the Slow stroke is **10.0 mm** wide against §10's 9.94 for the same #2 flat. Three
+cross-session agreements; the measurement chain is sound.
+
+**THE FINDING.** Across every mark on the board — tearing, running out, fast,
+slow, the loaded head of a stroke and the dying tail of the same stroke — paint
+crosses from bare canvas to full cover in **0.4 to 0.8 mm, about ONE CANVAS
+THREAD.** Reproduced on §10's frame at 38.91 px/mm as **0.75 mm = 29 pixels**, so
+it is a real distance and not the camera's blur.
+
+> **There is no partial coverage at the scale of a thread. A thread is painted or
+> it is bare. What fades is the PROPORTION of threads covered, over tens of
+> millimetres — 29.9 mm for a brush running out, about three brush widths.**
+
+The Run Out stroke shows both halves at once: envelope decaying over 29.9 mm
+(78/68/61/31/21 % in fifths, two methods agreeing at 29.9 and 30.25 mm) while
+every edge inside it stays hard at 0.70 mm.
+
+**The engine does the opposite** — it fades film thickness and lets alpha run to
+zero, an optical fade. Real paint is **binary per thread, statistical over the
+stroke.** UNVERIFIED but worth saying: this is probably why `19`'s fish-scale hunt
+would not end. It was smoothing a quantity that in real paint has no smooth
+values. It also puts a floor under §10d — a mechanism that lives at one thread
+needs the thread resolved, and at 0.432 mm per sim cell a thread is 2.0 cells.
+
+**SLOW vs FAST, same brush, same board, 190 mm each:** slow 50 % coverage with
+8 mm of bare stroke; fast **22 %** coverage with **131 mm** bare. A fast stroke
+lays under half the paint and spends two thirds of its length off the canvas.
+CAUTION: its longest void is 48 mm, nearly five brush widths, and the last fifth
+recovers to 59 % — that reads like a lifted brush, not skipping. "Fast deposits
+less" is solid; "fast skips 48 mm" is not. Ask for one more fast pass held flat.
+
+**ASK HIM:** the four Tear strokes are **15–19.6 mm wide** against the #2 flat's
+10 mm, so they were made with a different brush or a much harder press, and they
+cannot be compared with the rest until that is known. They also show no
+full-width breaks at all — whatever tearing is in them is filaments inside the
+mark, which is the same binary-per-thread behaviour, not a separate effect.
