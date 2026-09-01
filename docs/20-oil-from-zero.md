@@ -1761,3 +1761,73 @@ of **a tilted board**. Those are the only way `yieldStress`, `viscosity` and
 3. **Fit `upRate` / `downRate` / `teflonMin`** to the crossing and the run-out, on
    the bench, one at a time.
 4. **Ask for the two missing photographs** before touching the rheology.
+
+---
+
+## 21. OIL IS GONE — 2026-09-01
+
+**Artist**, shown a "stripped" oil that painted identically to the old one:
+
+> *"THIS IS THE SAME DAMN THING! BACK IT OUT! GO BACKWARDS! REMOVE OIL! MAKE IT
+> GO AWAY! WE START WITH MY PICTURES AS IF OIL DOES NOT EXIST!"*
+
+**He was right, and §20 was not a strip.** Turning the six §3 behaviours off
+changed nothing anyone could see, because the character never came from the six.
+It came from the **row** — seeded 2026-08-17, every value reasoned from a spec,
+never measured, and never questioned by the §4 reset because that reset took the
+seed as its own ground.
+
+### 21a. What was removed
+
+| | |
+|---|---|
+| **The `OIL` row** | deleted from `library.ts`; `WET_MEDIA` is `[WATERCOLOR]` |
+| **The six switches** | the `BareOil` panel, `oilFlags` in the store and the event — controls for a medium that no longer exists |
+| **E21** | the local-yield no-op, backed out with the oil it was built for |
+| **The smudge swap** | `auto-reload.ts`, the `smudging` contact gate, the mode badge, the slider — oil-only, and rejected |
+
+**Verified: the word "oil" does not appear anywhere in the running app**, the
+only wet medium is Watercolour, and **watercolour still paints** (1192 cells,
+film 372.4).
+
+### 21b. What was deliberately NOT removed
+
+- **The `19` frame-invariance work**, including E19's per-solve-step carry. §5
+  says it and it still holds: that is invariant-2 work, it applies to watercolour
+  identically, and reverting it restores measured faults in both media.
+- **The paste machinery itself** — `yieldStress > 0` branches in `deposit.wgsl`,
+  `flux_compute.wgsl` and `level_fresh.wgsl`. D3: a medium is a data row over
+  *shared equations*. Those are the equations. **They are now unreachable** — no
+  row has a yield stress — and they are where the six behaviours still live in
+  code. `[OPEN]` Cutting them is the next strip if the artist wants it; they
+  cannot execute as things stand.
+- **The documents.** §1–§20 are the record of what was tried and what it
+  measured, including E21's negative result. History is not accretion.
+
+### 21c. What oil has to earn, and the only way back
+
+**Nothing may be added because a spec says so.** Each behaviour returns only
+when a photograph asks for it and the bench shows it hitting a measured number:
+
+| the behaviour | the number it must hit | from |
+|---|---|---|
+| paint stops rather than fades | edge ≤ 1 mm anywhere, dying tail included | §11e |
+| a brush runs out | 60 % → 25 % coverage over 30 mm ± 10 | §11d |
+| a stroke crosses a wet one | ~55 % carried, flat 8 mm, zero by 16 | §10f |
+| fast against slow | 22 % against 50 % coverage over 190 mm | §11c |
+| along-stroke ripple | 0.045 at ±1 mm, 0.085 at ±4 | §10c |
+| the canvas underneath | 0.86 mm thread, 11.6 across one stroke | §10b |
+
+**And two photographs are still missing**, without which the rheology cannot be
+anything but a guess: **a pile of oil slumping, or refusing to, at a known
+scale**, and **a tilted board over time** (§20e).
+
+### 21d. The lesson, written down so it is not repeated
+
+**A "reset" that only removes what was added last is not a reset.** §4's rebuild
+was designed to strip six behaviours and it never asked whether the thing
+underneath them had ever been measured. It had not. Eight days of work went into
+tuning on top of a seed nobody had checked.
+
+**Before stripping anything again: find what the thing rests on, and ask when
+that was last measured.**

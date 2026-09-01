@@ -441,69 +441,13 @@ function PaintProperties({ store }: { store: StudioStore }) {
           ))}</div>
         </section>
       )}
-      <BareOil store={store} />
     </div>
   );
 }
 
-/**
- * Step 0 of the oil rebuild (docs/20 §4, §14) — the six behaviours that were
- * added to oil, each with its own switch.
- *
- * Every label says what should come BACK when you switch it off, because each
- * one was added to cure exactly that complaint. So the tooltip is the test, not
- * a description of the code.
- *
- * Oil only, and it only appears for oil: a wash paints identically whatever
- * these say (verified, docs/20 §14d), so showing them for watercolour would be
- * offering a control that does nothing.
- */
-const OIL_STEPS: Array<{ bit: number; name: string; off: string }> = [
-  { bit: 1, name: 'bridging',
-    off: 'Off: the canvas weave never disappears. Lay paint as thick as you like and the texture still prints through every layer.' },
-  { bit: 2, name: 'contact ramp',
-    off: 'Off: a light touch goes back to a thin even veil instead of breaking into opaque flecks on the high points with bare canvas between. No scumbling.' },
-  { bit: 4, name: 'comb settling',
-    off: 'Off: every stroke keeps the full ridged comb of the bristles, unsettled.' },
-  { bit: 8, name: 'trading',
-    off: 'Off: cross a wet colour and the brush picks none of it up. Only shows when two DIFFERENT colours meet, and does nothing at all unless release is on too.' },
-  { bit: 16, name: 'smearing',
-    off: 'Off: paint already on the canvas stops moving. Drag through a wet stroke and it just sits there.' },
-  { bit: 32, name: 'release',
-    off: 'Off: a dark outline appears under every crossing. The heaviest of the six — it decides how much paint comes back off the canvas onto the brush.' },
-];
-
-function BareOil({ store }: { store: StudioStore }) {
-  if (store.activeDry || store.wetMedium.slug !== 'oil') return null;
-  return (
-    <section className="pp-group oil-steps">
-      <div className="pp-head"><span className="oil-title">bare oil</span></div>
-      <p className="oil-hint">
-        Six things were added to oil, each to cure something you reported. Turn
-        one off and its complaint should come back.
-      </p>
-      {OIL_STEPS.map((s) => (
-        <Toggle key={s.bit} className="oil-row" title={s.off}
-          aria-label={s.name}
-          isSelected={(store.oilFlags & s.bit) !== 0}
-          onChange={(v) => store.setOilBehaviour(s.bit, v)}>
-          <span>{s.name}</span>
-          <span className="oil-dot" aria-hidden="true" />
-        </Toggle>
-      ))}
-      <div className="oil-btns">
-        <Btn className="pal-btn" title="Every behaviour off. Nobody has ever seen this."
-          onPress={() => store.setOilBehaviours(0)}>bare oil</Btn>
-        <Btn className="pal-btn" title="Every behaviour on — the paint as it ships."
-          onPress={() => store.setOilBehaviours(63)}>as it ships</Btn>
-      </div>
-      <p className="oil-hint">
-        Trading only shows when two <em>different</em> colours meet, and needs
-        release on as well. Cross a blue with a yellow to see it.
-      </p>
-    </section>
-  );
-}
+/* The six bare-oil switches stood here. Removed 2026-09-01 with the oil row —
+   they switched behaviours belonging to a medium that no longer exists, and a
+   control for nothing is the clutter this strip is against. docs/20 §21. */
 
 function TiltPad({ store }: { store: StudioStore }) {
   const [pos, setPos] = useState({ x: 0, y: 0 });

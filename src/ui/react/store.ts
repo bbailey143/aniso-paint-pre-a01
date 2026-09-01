@@ -12,7 +12,6 @@
 
 import type { BrushDef } from '../../brush/types';
 import type { Recipe } from '../../color/km';
-import { OIL_NONE } from '../../engine/fluid';
 import { WATERCOLOR } from '../../media/library';
 import type { DryMedium, WetMedium } from '../../media/types';
 import { PAPERS } from '../../substrate/papers';
@@ -56,9 +55,6 @@ export interface StudioEvents {
    *  solver — viscosity, yield stress, drying, the lot. */
   onWetMedium?(medium: WetMedium): void;
   onReadouts?(on: boolean): void;
-  /** Step 0 of the oil rebuild: which of the six behaviours are switched on.
-   *  Oil only — a wash paints the same whatever this says. docs/20 §14. */
-  onOilBehaviours?(flags: number): void;
 }
 
 export type SheetName = 'medium' | 'brush' | 'colour' | 'paper' | 'drying' | null;
@@ -80,15 +76,6 @@ export class StudioStore {
   tiltOpen = false;
   /** The Paint Properties drawer. */
   surfaceOpen = false;
-  /**
-   * Step 0's six switches, as a bitmask (docs/20 §4, §14).
-   *
-   * Starts at every behaviour OFF — bare oil. 2026-09-01: the artist asked for
-   * every unmeasured decision stripped and the rebuild driven by the
-   * photographs, so the six accumulated behaviours are no longer the default.
-   * Switching one on is now an experiment, not the status quo.
-   */
-  oilFlags = OIL_NONE;
   /**
    * How far each paint property is allowed to travel, low to high.
    *
@@ -202,20 +189,6 @@ export class StudioStore {
 
   setTiltOpen(on: boolean) { this.tiltOpen = on; this.changed(); }
   setSurfaceOpen(on: boolean) { this.surfaceOpen = on; this.changed(); }
-
-  /** Flip one behaviour. */
-  setOilBehaviour(bit: number, on: boolean) {
-    this.oilFlags = on ? (this.oilFlags | bit) : (this.oilFlags & ~bit);
-    this.events.onOilBehaviours?.(this.oilFlags);
-    this.changed();
-  }
-
-  /** All of them at once — `OIL_ALL` or `OIL_NONE`. */
-  setOilBehaviours(flags: number) {
-    this.oilFlags = flags;
-    this.events.onOilBehaviours?.(this.oilFlags);
-    this.changed();
-  }
 
   /** A property's allowed travel. Defaults to the whole of its own scale. */
   range(id: string): [number, number] {
