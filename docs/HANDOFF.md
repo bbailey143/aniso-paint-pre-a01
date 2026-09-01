@@ -2306,17 +2306,25 @@ resolution; water movement does not").
 25; the #12 filbert (~17 mm) 34; a fine rigger (~1 mm) 2 cells — a mark, not a
 tuft.
 
-**UNRESOLVED, AND IT BLOCKS THE CELL SIZE.** He gave the smallest brush as "a #8
-which is 1/2 mm wide per my measure". That cannot be right and the two readings
-decide everything. **Half an INCH (12.7 mm)** is standard US flat sizing and is
-25 cells, comfortable — but then it is LARGER than the #2 flat already measured
-at 9.94 mm, so it is not the smallest and the question stands. **Half a
-MILLIMETRE** is finer than a rigger and not a flat; giving it 8 cells needs
-0.06 mm/cell, which over 16x20 is **66 MILLION cells** — not possible.
-**One measurement with the rule already on his bench settles it.** UNVERIFIED
-guess: "smallest" meant the smallest brush that must be SIMULATED, with the
-riggers he mentioned in the same breath being marks to be DRAWN — the D14 split
-again, which would make 0.5 mm/cell right.
+**RESOLVED - and it did not move the cell size.** He confirmed the #8 really is
+half a millimetre. Simulating it as a tuft would need 0.06 mm/cell, 66 MILLION
+cells over 16x20, impossible - **but there is nothing there to simulate.** Half a
+millimetre of chisel is four or five filaments: it does not splay, carry a belly,
+or lead with one side, in the engine OR in reality. Modelling it as a tuft invents
+structure the tool does not have. **It is a line-maker, so it is DRAWN** - the
+same route the pencil and ballpoint already take through `INK = SIM * 4`.
+
+**THE LINE:** ~4 mm and up (8+ cells) is a simulated tuft; below that is a drawn
+mark at ink resolution with paint behaviour simplified. **0.5 mm/cell stands.**
+
+Good sign: **the brush library was already built to this scale before anyone
+named it** - `library.ts` has round-sable length 26, flat-sable 24, flat-hog 22,
+which at 0.5 mm/cell is 11-13 mm, against his #2 flat measured at 9.94 mm.
+
+NOT BLOCKING, confirm when convenient: a flat is a chisel, and 0.5 mm is a very
+ordinary THICKNESS for one. If the rule went across the thin edge, the face is
+several mm and that brush is simulatable after all. Changes which side of the
+line one brush sits on; does not change the cell size.
 
 **"CHANGEABLE" FORCES ITS OWN DECISION, UNRATIFIED:** (a) fixed grid, cell size
 follows the canvas — memory constant, but the same brush goes coarser on a bigger

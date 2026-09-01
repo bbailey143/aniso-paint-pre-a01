@@ -971,24 +971,39 @@ At 0.5 mm per cell:
 | the #12 filbert, measured §11b | ~17 mm | **34** ✓ |
 | a fine rigger | ~1 mm | **2** — a mark, not a tuft |
 
-**`[UNRESOLVED]` The #8 at "1/2 mm" cannot be right, and the two readings differ
-by a factor that decides everything.**
+**`[RESOLVED 2026-08-31]` The #8 really is half a millimetre**, confirmed by the
+artist against the question. **And it does not move the cell size**, which is
+worth understanding, because the first reading of it said the opposite.
 
-- **If ½ inch (12.7 mm)** — standard US flat sizing, and the ruler in these
-  photographs is an Alvin & Co: it is **25 cells and entirely comfortable.** But
-  then it is *larger* than the #2 flat already measured at 9.94 mm, so it is not
-  the smallest brush and the question is still open.
-- **If genuinely ½ mm** — that is finer than a rigger and not a flat at all. To
-  give it 8 cells needs 0.06 mm per cell, which over a 16 × 20 board is
-  **66 million cells.** Not a stretch; not possible.
+Simulating it as a tuft would need 8 cells across it — 0.06 mm per cell, which
+over a 16 × 20 board is **66 million cells.** Not possible.
 
-**It needs one measurement with the rule that is already on the bench.** Nothing
-downstream can be fixed until it lands.
+**But there is nothing there to simulate.** Half a millimetre of chisel is four
+or five filaments. It does not splay, it does not carry a belly of paint, it
+cannot lead with one side — not in the engine and *not in reality either*. A tuft
+model would be inventing structure the tool does not have. **It is a line-maker,
+so it is DRAWN, not simulated** — the same route `canvas.ts` already gives the
+pencil and the ballpoint through `INK = SIM * 4`.
 
-`[UNVERIFIED]` The likely resolution is that "smallest" meant *the smallest
-brush whose behaviour must be SIMULATED*, and the riggers he set aside in the
-same breath are marks to be DRAWN — which is the D14 split again, and would mean
-0.5 mm per cell is right.
+**So the line falls here:**
+
+| | |
+|---|---|
+| **~4 mm and up** (8+ cells) | a simulated tuft: splay, belly, reservoir, footprint |
+| **below ~4 mm** | a drawn mark at ink resolution; paint behaviour simplified |
+
+`[NOTE, and it is a good sign]` **The brush library was already built to this
+scale without anyone naming it.** `library.ts` gives round-sable `length` 26,
+flat-sable 24, flat-hog 22 — at 0.5 mm per cell that is 11–13 mm, and the
+artist's #2 flat measured 9.94 mm. The proportions were right before the scale
+existed.
+
+`[ONE THING TO CONFIRM WHEN CONVENIENT, NOT BLOCKING]` A flat is a chisel: wide
+across the face, thin across the edge, and 0.5 mm is a very ordinary *thickness*
+for one. If the rule was laid across the thin edge, the face is likely several
+millimetres and the brush is simulatable after all. **It changes which side of
+the line that one brush sits on. It does not change the cell size**, which is why
+it is not blocking.
 
 ### 13d. "Changeable and customizable" forces its own decision
 
@@ -1007,9 +1022,9 @@ the same on every canvas. Hold 0.5 mm per cell up to about 16 × 20 (0.83 M cell
 rather than surprised. **A bigger canvas must not blunt the brush** — that is the
 sentence to keep when the details are forgotten.
 
-`[STILL OPEN]` The 0.5 mm figure itself is not ratified with it. It waits on the
-#8 (13c), and it is the *cap*, not the principle, that would move if the #8 turns
-out to be small.
+`[SETTLED]` **0.5 mm per cell stands**, and 13c is why: the #8 turning out to be
+genuinely tiny does not pull the cell size down after it, because that brush is
+drawn rather than simulated.
 
 **And it makes the grid non-square, which is real work.** `SIM` is one constant
 used as `[SIM, SIM]`; 16 × 20 is 4:5. Every pass that assumes a square grid has to
