@@ -159,7 +159,15 @@
   width: 34px;
   height: 148px;
   border-radius: 17px;
-  background: rgba(255, 255, 255, .09);
+  /* Hazy glass, not a hole. At 9 % white on the rail's near-black glass the
+     track was indistinguishable from the screen behind it, so a slider read as
+     a floating knob with nothing to slide along. The rim is an inset shadow
+     rather than a border so the track keeps its 34px and nothing reflows. */
+  background: rgba(255, 255, 255, .24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42),
+              inset 0 1px 3px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
   overflow: hidden;
   touch-action: none;
   cursor: ns-resize;
@@ -168,7 +176,9 @@
 .st-fill {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,.18));
+  /* Lifted with the track: at .34/.18 against a .15 track the filled part was
+     the same tone as the empty part and the value could not be read. */
+  background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.5));
   pointer-events: none;
 }
 
