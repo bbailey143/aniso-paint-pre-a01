@@ -140,6 +140,15 @@
   box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
 }
 
+/* A hairline between the rail's sliders, and none after the last one — the rule
+   carries that, not the markup, so adding or removing a dial cannot leave a
+   line hanging under the bottom of the rail. `controlsFor` already changes how
+   many there are with the tool in hand. */
+.st-rail > .st-slider:not(:last-child) {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--st-edge);
+}
+
 .st-slider { width: 44px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 
 .st-track {
