@@ -146,7 +146,10 @@
    many there are with the tool in hand. */
 .st-rail > .st-slider:not(:last-child) {
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--st-edge);
+  /* `--st-edge` is white at 12 % and the rail's glass is nearly black, so a 1px
+     line in it cannot be seen at all. This is the same white the labels use, so
+     if the caption above the slider is readable the line under it is too. */
+  border-bottom: 1px solid var(--st-ink);
 }
 
 .st-slider { width: 44px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
