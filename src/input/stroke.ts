@@ -405,6 +405,10 @@ export class StrokeEngine {
    * water brush. Because the mix on the brush is cleared too, the next stroke
    * lays clear water rather than quietly re-charging with the old colour.
    */
+  /** EXPERIMENTAL, oil only: an empty tuft still reports contact, so it can
+   *  push paint about instead of being invisible to the canvas. */
+  setSmudging(on: boolean) { this.brush.smudging = on; }
+
   rinse(waterFrac = 1) {
     this.mix.fill(0);
     this.brush.reservoir.rinse(waterFrac);

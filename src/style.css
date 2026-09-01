@@ -352,6 +352,15 @@ body:not(.studio-ready) #gauges {
 .loading-row span { color: var(--ink-dim); }
 .loading-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 
+/* Which mode the brush is in, top right. Experimental, oil only, and it hides
+   itself when the swap is off — a badge that is always there stops being read. */
+.mode-badge { position: fixed; top: 12px; right: 14px; z-index: 60; pointer-events: none;
+  padding: 3px 10px; border-radius: 4px; font-size: 12px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink);
+  background: rgba(20, 20, 23, 0.82); border: 1px solid var(--panel-border); }
+.mode-badge.smudge { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.mode-badge[hidden] { display: none; }
+
 /* Step 0 of the oil rebuild (docs/20 §14). It lives at the foot of Paint
    Properties, appears only for oil, and is an instrument for looking at bare
    oil rather than a painting control — so it reads quieter than the dials

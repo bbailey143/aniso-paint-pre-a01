@@ -1174,6 +1174,14 @@ Ordered by what it costs to reopen, cheapest first.
 | E9 | **Behaviour 4 cannot be judged alone.** `rExchange` is zero without behaviour 6, and zero when a colour meets itself. | §14c | **Carry this into Step 2.** The bare-oil look must cross two different colours with release on, or ratified work gets dropped for the wrong reason. |
 | E10 | **Two pigments are recipes, not measurements** — if the Zorn palette is built before BE16 is found. Yellow Ochre and Cadmium Red Light mixed from the measured twelve. | §9 | They are replaced the day real spectra land. Label them as recipes so nobody later reads them as measured. |
 
+**Added 2026-08-31 with §16:**
+
+| # | earmarked | where | to reopen |
+|---|---|---|---|
+| E16 | **A brush that runs dry mid-stroke stops interacting with the canvas entirely.** `brush.ts` emits a contact only `if (w > 0 \|\| pig > 0)`, so an empty tuft is invisible to the sheet: it cannot push, pick up or scrub. A dry brush is exactly what you scrub *with*. | §16b | Widening the gate touches **every medium and every brush that runs dry**, so it needs its own measurement, not a side effect of an oil experiment. Bears on E18's stranded paint and §11d's run-out. Currently opened for smudge mode alone. |
+| E17 | **Turning `OIL_RELEASE` off audibly slowed the artist's GPU fans.** Real signal, mechanism unknown, no story offered. | §16d | One frame-time measurement with the flag on and off. |
+| E18 | **The six §14 behaviours are near-invisible to the eye** even though five of six move the numbers. The artist could pick out only comb settling, and prefers it off. | §16d | Says the §14b ladder measures something finer than the eye reads. Revisit when the rebuild reaches behaviour 3. |
+
 ### 15c. Expensive — reopening moves things downstream
 
 | # | earmarked | where | to reopen |
@@ -1192,3 +1200,102 @@ the `rubbed` ceiling, the trimmed tone metric. §5 already says it: every one is
 invariant 2 work, applies to watercolour identically, and reverting any of it
 restores measured faults in both media and blinds the bench that would judge the
 rebuild. **It is the floor, not part of the pile.**
+
+---
+
+## 16. Smudge swap — an experiment, and the gap it uncovered
+
+**Artist's brief, 2026-08-31. EXPERIMENTAL, oil only, for now — not a decision,
+not on a card.** It is here to be tried and thrown away if it does not feel
+right.
+
+> One dial, 0 to 5 seconds. Hold the pen **off** the canvas for that long and the
+> mode flips. Paint becomes Smudge: the brush is empty, lays nothing, and only
+> pushes the oil about. Lift again for the same period and the load comes back,
+> same colour and loading as before. Text top right says which mode you are in.
+
+**The lift is the only trigger, both ways.** Nothing about painting duration
+enters into it: a stroke may run as long as it likes, and the brush only changes
+state while it is off the sheet. **One flip per lift** — holding the pen up for
+three times the delay flips once, not twice, or a long pause would feel like
+nothing had happened.
+
+`[DECIDED, and say so]` **0 means off**, and is the default. A zero-second unload
+would be a brush that is never loaded, which is not a mode anybody wants.
+
+### 16a. What a smudge is, mechanically
+
+No shader change. `deposit.wgsl` already documents `brushTake / brushGrab` as the
+**room** the tuft has, and `1 -` that as how laden it is — *"the share of its grab
+that cannot be drunk and is shoved instead."*
+
+So smudging is **`brushTake = 0` with `brushGrab` untouched**: no room, therefore
+fully laden, therefore the whole grab goes down the shove route. That is the
+engine's own description of a brush too full to take any more, which is exactly
+what pushing paint about is. An empty brush left to itself would do the
+*opposite* — all room, all drink — and hoover the picture up.
+
+### 16b. Two faults, both found by measuring rather than by looking
+
+**1. The brush re-dips at the start of every stroke.** `stroke.begin()` calls
+`reservoir.charge(this.mix, this.loading, this.waterCharge)` — a fresh dip per
+stroke is deliberate and correct. But it meant emptying the tuft lasted exactly
+until the next stroke started. `rinse(0)` clears the mix, so no *colour* came
+back — and the brush refilled with **clear medium** and laid **248 of film with
+no pigment in it.** The loading has to go to zero too, because that is what
+`begin()` re-dips *with*. Fixed by charging an empty mix at zero loading.
+
+**2. AND THE ONE THAT MATTERS — an empty brush is invisible to the canvas.**
+`brush.ts` emits a contact segment only `if (w > 0 || pig > 0)`: a hair reports
+itself only when it had something to give. So the empty tuft emitted **zero
+segments**, the engine never learned it was touching, and the smudge moved
+**0.04 of 360 film — nothing at all**, reproduced twice.
+
+> **`[FINDING — and it is wider than this experiment]` A brush that runs dry
+> mid-stroke stops interacting with the canvas entirely.** It cannot push, it
+> cannot pick up, it cannot scrub. It simply ceases to exist as far as the sheet
+> is concerned. That is physically wrong — a dry brush is exactly what you scrub
+> *with* — and it bears directly on E18's stranded paint and on §11d's run-out.
+
+**It was NOT widened here.** Opening that gate for everything would change every
+medium and every brush that runs dry, which is not what an experiment marked
+"oil only, for now" may do. A `smudging` flag opens it for exactly one case: the
+load is zero so nothing is laid, and the contact exists so the shove can see it.
+**The general fix is earmarked (E16), not taken.**
+
+### 16c. What it measures
+
+Blue bar laid, pen lifted into Smudge, then a stroke dragged across it:
+
+| | |
+|---|---:|
+| segments emitted by the empty brush | **15 070** (was 0) |
+| film laid | **−0.04** — nothing |
+| brush load afterwards | **0** — it drank nothing |
+| film displaced | **5.1 / 3.8** across two runs |
+
+So it lays nothing, drinks nothing, and moves paint — which is the shape asked
+for. **The amount is gentle**: about 1.4 % of the whole bar per crossing stroke,
+and the crossing only touches a fraction of it. `smearStrength` is at its default
+1.0 and `teflonMin` is 0.18, so nothing is throttling it — it is simply the
+engine's existing shove.
+
+`[FOR THE ARTIST, NOT THE BENCH]` Whether that is *enough* smudge is a feel
+question of exactly the same class as §10f's carry, and `smearStrength` is
+already the named dial for it (`19` E-notes: "the dial to turn if the amount is
+wrong; the mechanism is the claim"). **Do not tune it from a number.**
+
+### 16d. Two observations from the artist, recorded not chased
+
+1. **"I can't see what any of those knobs do, really. Perhaps I see comb
+   settling — and I think I like it turned off."** Taken at face value: the six
+   §14 behaviours are individually near-invisible to the eye even though five of
+   six move the numbers. That is itself worth knowing, and it says the ladder in
+   §14b measures something finer than the eye is reading. **Comb settling off is
+   a preference to revisit when the rebuild reaches behaviour 3.**
+2. **"When I turned off Release, my GPU fans slowed."** Real signal, mechanism
+   **unknown**. `OIL_RELEASE` gates `workableBody`, which appears in both the
+   exchange rate and the smear's `loose` term — but the arithmetic there moves
+   `loose` only from `w0.y` to `0.82 · w0.y`, which is not a fan-audible amount.
+   **No story is offered.** It wants a frame-time measurement with the flag on
+   and off, not a guess.

@@ -2433,3 +2433,52 @@ pickup exponent, the readback settle, the lift seeing its own frame's paint, the
 applies to watercolour identically, and reverting any of it restores measured
 faults in both media and blinds the bench that would judge the rebuild. It is the
 floor, not part of the pile.
+
+---
+
+## SMUDGE SWAP — experimental, and it uncovered a real gap. 2026-08-31
+
+`docs/20-oil-from-zero.md` §16. **Experimental, oil only, for now.** Artist's
+brief: one dial 0-5 s; hold the pen OFF the canvas that long and the mode flips.
+Paint becomes Smudge - empty brush, lays nothing, only pushes the oil about. Lift
+again and the load returns, same colour and loading. Badge top right says which.
+**The lift is the only trigger, both ways. One flip per lift.** 0 = off = default.
+
+**How a smudge works, and there is NO shader change.** `deposit.wgsl` already
+documents `brushTake / brushGrab` as the tuft's ROOM, and `1 -` that as how laden
+it is - "the share of its grab that cannot be drunk and is shoved instead". So
+smudging is `brushTake = 0` with `brushGrab` untouched: no room, fully laden, the
+whole grab goes down the shove route. An empty brush left alone does the OPPOSITE
+- all room, all drink - and hoovers the picture up.
+
+**TWO FAULTS, both found by measuring.**
+1. `stroke.begin()` re-dips every stroke, so emptying the tuft lasted until the
+   next stroke. `rinse(0)` clears the mix so no colour returned - but it refilled
+   with CLEAR MEDIUM and laid **248 of film with no pigment in it**. The loading
+   must go to zero too, because that is what `begin()` re-dips WITH.
+2. **THE ONE THAT MATTERS.** `brush.ts` emits a contact only
+   `if (w > 0 || pig > 0)` - a hair reports itself only when it had something to
+   give. The empty tuft emitted **ZERO segments**, so the engine never learned it
+   was touching, and the smudge moved 0.04 of 360 film - nothing - twice.
+
+**E16, EARMARKED AND NOT TAKEN: a brush that runs dry mid-stroke stops
+interacting with the canvas entirely.** It cannot push, pick up or scrub; it
+ceases to exist as far as the sheet is concerned. A dry brush is exactly what you
+scrub WITH. Bears on E18's stranded paint and §11d's run-out. **Widening that
+gate touches every medium and every brush that runs dry**, which is not what an
+oil experiment may do - so a `smudging` flag opens it for one case only.
+
+**MEASURED after the fixes:** 15 070 segments where there were 0; film laid
+-0.04 (nothing); brush load 0 (drank nothing); film displaced 5.1 and 3.8 over
+two runs. Lays nothing, drinks nothing, moves paint. **The amount is gentle** -
+about 1.4 % of the bar per crossing - and nothing is throttling it
+(`smearStrength` 1.0, `teflonMin` 0.18). Whether it is ENOUGH is a feel question
+of the same class as §10f's carry. `smearStrength` is the named dial. **Do not
+tune it from a number.**
+
+**TWO ARTIST OBSERVATIONS, recorded not chased.** (E18) He cannot see what the
+six §14 behaviours do - only maybe comb settling, which he thinks he likes OFF;
+so the §14b ladder measures something finer than the eye reads. (E17) **Turning
+Release off audibly slowed his GPU fans.** Real signal, mechanism UNKNOWN, no
+story offered - the arithmetic only moves `loose` from `w0.y` to `0.82 w0.y`,
+which is not fan-audible. It wants a frame-time measurement, not a guess.
