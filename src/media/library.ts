@@ -59,6 +59,19 @@ export const WATERCOLOR: WetMedium = {
  * binder catches a highlight along its crest.
  *
  * [UNVERIFIED] Every value below is reasoned from the spec, not measured.
+ *
+ * [THE STRIP, 2026-09-01 — docs/20 §20] The artist: "strip out every dumb
+ * decision that has been made to this point. We start with the photographs."
+ * Oil was seeded on 2026-08-17 as a "starting point" and has accreted since;
+ * the §4 reset only ever questioned the six behaviours added AFTER it, so this
+ * row has never been examined by anything.
+ *
+ * Sorted, and each is now marked below:
+ *   [ARTIST]     his own verdict at the easel, dated and quoted. Stays.
+ *   [HARVESTED]  traceable to the material row or a property of oil. Stays.
+ *   [OWES A FIT] reasoned, but a photograph CAN settle it. §20d names which.
+ *   [OWES A PHOTO] reasoned, and nothing we have measures it. Say so; do not
+ *                  quietly keep tuning it by eye.
  */
 export const OIL: WetMedium = {
   name: 'Oil Paint', slug: 'oil', collection: 'Oil', family: 'wet', pigments: [],
@@ -119,6 +132,9 @@ export const OIL: WetMedium = {
   // looks more like paint". See docs/HANDOFF.md E11. Re-judging it against the
   // old flat shading would give the wrong answer.
   hidesGround: 2,
+  /* [OWES A FIT] `upRate` against §10f's crossing (~55 % carried, flat for 8 mm,
+     gone by 16); `downRate` against §11d's run-out (60 % to 25 % coverage over
+     29.9 mm); `teflonMin` with them, since it sets the tail of both. */
   downRate: 0.55, upRate: 0.42, teflonMin: 0.18,
   // 48 hours, straight off the harvested material row. Watercolour is 90
   // seconds. That ratio is the whole difference in how the two are worked.
@@ -130,9 +146,12 @@ export const OIL: WetMedium = {
   solvent: 'oil',
   // Thick and draggy. This is the ordinary resistance; yieldStress below is the
   // separate question of whether it moves at all.
+  /* [OWES A PHOTO] Nothing in the reference measures either. They want a pile
+     of oil photographed slumping, or refusing to. */
   viscosity: 0.85, drag: 0.55,
   // It feels gravity, but rarely enough to clear its own yield stress. Piling
   // it up is what makes it slump, not tilting the board a little.
+  /* [OWES A PHOTO] A tilted board, photographed over time. */
   gravityResponse: 0.22, wetLayerDrag: 0.15,
   // No ring, ever. Watercolour rings because water leaves the film at its
   // pinned edge and carries pigment out there; oil does not lose solvent to the
@@ -156,6 +175,14 @@ export const OIL: WetMedium = {
   // the two numbers are not the same quantity. But both are normalised 0..1
   // gates on whether the paint moves at all, the tuned one is six times the
   // guess, and the guess was visibly too fluid. Start where the artist landed.
+  /* [ARTIST-TUNED, NEVER MEASURED] Not a guess — see above: transplanted from a
+     tuned solver row after artist sessions, from the build he described as
+     having "the feel of actual oil". So it carries HIS verdict but no
+     measurement, which is its own category. It decides when paint holds its
+     shape and when it gives way, so it sits behind both standing complaints,
+     the piling and the rippling. A pile of oil photographed slumping — or
+     refusing to — at a known scale is what would turn a feel into a figure.
+     docs/20 §20d. */
   yieldStress: 0.34,
 };
 

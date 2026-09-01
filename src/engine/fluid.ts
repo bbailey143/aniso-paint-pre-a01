@@ -237,9 +237,13 @@ export const DEFAULT_FLUID: FluidParams = {
   // Off by default. A blank engine picks nothing up until a medium says it may.
   upRate: 0.0,
   handoffEnabled: true,
-  // All six on, so the default is exactly the paint that shipped. Step 0 is an
-  // instrument: it changes nothing until somebody clears a bit.
-  oilFlags: OIL_ALL,
+  /* ALL SIX OFF — bare oil, 2026-09-01, at the artist's word: "strip out every
+     dumb decision that has been made to this point. We start with the
+     photographs and we build from there as though nothing exists."
+     This is Step 2 of the rebuild (docs/20 §4) made the default rather than a
+     thing to switch on. Each behaviour comes back only when a photograph asks
+     for it and the bench shows it hitting the measured number. */
+  oilFlags: OIL_NONE,
   // docs/20 §13. 0.5 mm/cell, 16x20, cell size fixed whatever the canvas.
   cellMM: 0.5,
   threadMM: 0.864,   // MEASURED, docs/20 §10b

@@ -12,7 +12,7 @@
 
 import type { BrushDef } from '../../brush/types';
 import type { Recipe } from '../../color/km';
-import { OIL_ALL } from '../../engine/fluid';
+import { OIL_NONE } from '../../engine/fluid';
 import { WATERCOLOR } from '../../media/library';
 import type { DryMedium, WetMedium } from '../../media/types';
 import { PAPERS } from '../../substrate/papers';
@@ -86,11 +86,12 @@ export class StudioStore {
   /**
    * Step 0's six switches, as a bitmask (docs/20 §4, §14).
    *
-   * Starts at every behaviour on, which is the paint as it ships. Clearing them
-   * all is bare oil — which nobody has ever seen, because each behaviour was
-   * added on top of the last.
+   * Starts at every behaviour OFF — bare oil. 2026-09-01: the artist asked for
+   * every unmeasured decision stripped and the rebuild driven by the
+   * photographs, so the six accumulated behaviours are no longer the default.
+   * Switching one on is now an experiment, not the status quo.
    */
-  oilFlags = OIL_ALL;
+  oilFlags = OIL_NONE;
   /**
    * EXPERIMENTAL — seconds the pen must be held off the canvas to swap between
    * painting and smudging. 0 is off, and is the default: this is something to

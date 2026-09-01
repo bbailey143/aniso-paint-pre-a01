@@ -1647,3 +1647,117 @@ why every oil figure here repeats exactly.
 **A watercolour A/B must use the deterministic harness** — the one with no settle
 loop, which returns 12.54 every time. The first pass at this test read a 2.6 %
 watercolour difference across E21 and it was pure noise.
+
+---
+
+## 20. THE STRIP — every oil number, where it came from, and what can settle it
+
+**Artist, 2026-09-01:** *"First strip out every dumb decision that has been made
+to this point. We start with the photographs — and we build from there as though
+nothing exists."*
+
+**Oil began on 2026-08-17**, on `ui/frontend-0alpha`, in a commit called *"Fix
+the grid artifact, and add starting points for gouache, acrylic and oil"*,
+alongside *"Yield stress behind a switch"*. It reached this lineage on 08-24 as
+part of a "Baseline" commit. **It was never designed. It was seeded**, and it has
+accreted ever since.
+
+`library.ts` says so itself, above the row:
+
+> `[UNVERIFIED]` **Every value below is reasoned from the spec, not measured.**
+
+**And §4's reset never touched that.** The rebuild made the six behaviours of §3
+— everything added *after* the seed — switchable. Its "ground zero" *is* the
+archived spec, so the seed itself was taken as given. **The piling and the
+rippling live in the part the reset explicitly did not question.**
+
+### 20a. Done today: bare oil is now the default
+
+`DEFAULT_FLUID.oilFlags` and the studio's copy are **`OIL_NONE`**. All six
+accumulated behaviours are off unless somebody switches one on. Step 2 of the
+order is no longer something to opt into; it is what the app opens with.
+
+**Nothing else was deleted**, and deliberately. A number cannot be removed from a
+running engine — it can only be replaced by another number. What follows is the
+list of which ones are owed a measurement.
+
+### 20b. STAYS — the artist's own verdicts, dated and quoted
+
+These are recorded decisions under the fence, not drift. §3 already says so.
+
+| | | |
+|---|---|---|
+| `kInstrument` | 0 | ARTIST 2026-08-28 — Gloss set to "wet", asked for it as the default |
+| `relief` | 10 | ARTIST 2026-08-28 — *"I want this to be exactly the default setting."* |
+| `hidesGround` | 2 | ARTIST 2026-08-26 — *"leave cover at 2, that seems to be good."* |
+
+### 20c. STAYS — traceable to a source
+
+| | | |
+|---|---|---|
+| `openTime` | 172800 s | straight off the harvested material row; 48 h against watercolour's 90 s |
+| `valueShift` | 0 | oil neither deepens wet nor lifts dry — a property, not a tuning |
+| `rimMigration`, `edgeEvaporation`, `edgeEta` | 0 | oil loses no solvent to air, so it cannot ring. The passes are skipped, not run small. |
+| `hasCurrent` | false | a load of oil has no velocity field; it slumps and is pushed |
+
+### 20d. THE STRIP LIST — reasoned, never measured, and what can settle each
+
+**These are the numbers the artist is angry about.** Every one is currently a
+guess from an archived document. The right-hand column is the honest part.
+
+| number | now | what a photograph can settle it against |
+|---|---:|---|
+| `upRate` | 0.42 | **§10f — the crossing.** Real thinned oil carries ~55 % of what it crosses, flat for 8 mm, gone by 16. Fit `upRate` until the bench reproduces that. |
+| `downRate` | 0.55 | **§11d — the run-out.** 60 % → 25 % coverage over 29.9 mm. Fit until the bench's brush dies over the same distance. |
+| `teflonMin` | 0.18 | **§10f + §11d.** It sets what will not come off at all, which is the tail of both curves. Fit with `upRate`, not alone. |
+| brush `capacity` rows | shipped | **§11d.** How far one load goes before the fade begins. |
+| speed response | — | **§11c.** A fast stroke lays 22 % coverage against a slow one's 50 % over the same 190 mm. Nothing in the engine is fitted to this yet. |
+| `yieldStress` | 0.34 | `[CORRECTION]` **Not a guess, and this write-up first said it was.** Transplanted from a tuned solver row after artist sessions — the build he called *"the feel of actual oil"*. It carries HIS verdict and no measurement, which is its own category. Still wants a pile photographed slumping. |
+| `viscosity` | 0.85 | **NOTHING WE HAVE.** |
+| `drag` | 0.55 | **NOTHING WE HAVE.** |
+| `gravityResponse` | 0.22 | **NOTHING WE HAVE** — would need a tilted board photographed over time. |
+| `wetLayerDrag` | 0.15 | **NOTHING WE HAVE.** |
+| `filmGloss` | 0.15 | Marked `[UNVERIFIED]` in place, and **currently unread** — `kInstrument` 0 makes it inert. |
+| `bodyShrink` | 0.85 | Declared and **unread**. Becomes live only if cure-shrinkage is built. |
+| `physics{}` block | 9 values | Feeds the studio's dials, not the solver. Unmeasured throughout. |
+
+`[AND ONE MORE CORRECTION]` The blanket "every value is reasoned from the spec"
+is the row's own header and it is slightly harder on itself than the truth.
+`yieldStress` came from a tuned row the artist had already approved by feel.
+**Unmeasured is not the same as arbitrary, and the difference matters when
+deciding what to strip.**
+
+**Say the uncomfortable half out loud: the photographs constrain the BRUSH, not
+the RHEOLOGY.** They measure what a brush leaves behind — carry, run-out, edge,
+speed. They cannot measure how stiff the paint is, because nobody photographed a
+pile slumping. **Five of the strip list have nothing to fit against**, and
+pretending otherwise would be exactly the sin being stripped out.
+
+### 20e. What "build from the photographs" actually means
+
+Not "fit every constant". **Fit the ones a photograph constrains, and mark the
+rest as owing a photograph.** For each measured behaviour there is one number
+that controls it and one bench figure it must hit:
+
+| the behaviour, measured | the target | the knob |
+|---|---|---|
+| paint stops within one thread | edge ≤ 1 mm anywhere, including the dying tail | **D14 coverage — Step 1, still unbuilt** |
+| a brush runs out | 60 % → 25 % over 30 mm ± 10 | `downRate`, capacity |
+| a stroke crosses a wet one | ~55 % carried, flat 8 mm, zero by 16 | `upRate`, `teflonMin` |
+| fast against slow | 22 % against 50 % coverage | speed response — nothing fitted yet |
+| along-stroke ripple | 0.045 at ±1 mm, climbing to 0.085 at ±4 | the structure must be the brush's, not the frame's |
+
+**And what is still needed from the artist**, because these cannot be fitted
+without it: a photograph of **a pile of oil slumping** (or refusing to), and one
+of **a tilted board**. Those are the only way `yieldStress`, `viscosity` and
+`gravityResponse` stop being guesses.
+
+### 20f. The order from here
+
+1. **Look at bare oil** — it is now the default. What is wrong with it names what
+   comes back first, and the six switches are there to put each one back.
+2. **Build Step 1 (D14)** — coverage per thread. It is ratified, measured, and the
+   only item on the list with a photograph behind it that nothing else can serve.
+3. **Fit `upRate` / `downRate` / `teflonMin`** to the crossing and the run-out, on
+   the bench, one at a time.
+4. **Ask for the two missing photographs** before touching the rheology.

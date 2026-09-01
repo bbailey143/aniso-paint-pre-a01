@@ -2698,3 +2698,57 @@ saturated.
 §12 D14, §13 the scale, §14 Step 0, §15 **the earmark table (E1-E21)**, §16-19 the
 smudge work. `docs/10-decisions.md` carries D14. **`docs/20` §15 is the index to
 everything unfinished — read it before starting anything.**
+
+---
+
+# THE STRIP — 2026-09-01. This supersedes the handoff above it.
+
+**Artist:** *"First strip out every dumb decision that has been made to this
+point. We start with the photographs - and we build from there as though nothing
+exists."* Full inventory: `docs/20-oil-from-zero.md` §20.
+
+**WHEN OIL STARTED: 2026-08-17**, on `ui/frontend-0alpha`, in "Fix the grid
+artifact, and add starting points for gouache, acrylic and oil", alongside "Yield
+stress behind a switch". It reached this lineage 08-24 in a "Baseline" commit.
+**It was never designed. It was seeded**, and `library.ts` says so above the row:
+"Every value below is reasoned from the spec, not measured."
+
+**AND THE §4 RESET NEVER TOUCHED THAT.** The rebuild made the six behaviours
+added AFTER the seed switchable. Its "ground zero" IS the archived spec, so the
+seed was taken as given - which is why the piling and the rippling survived a
+reset that was supposed to remove them.
+
+**DONE: bare oil is the default.** `DEFAULT_FLUID.oilFlags` and the studio are
+`OIL_NONE`. All six behaviours off unless switched on. Nothing else was deleted,
+deliberately: a number cannot be removed from a running engine, only replaced.
+
+**THE ROW IS NOW MARKED IN PLACE**, four categories: `[ARTIST]` his own dated
+verdicts (kInstrument 0, relief 10, hidesGround 2 - these STAY), `[HARVESTED]`
+traceable (openTime, valueShift, the rim rows, hasCurrent - STAY),
+`[OWES A FIT]` reasoned but a photograph can settle it, `[OWES A PHOTO]`
+reasoned and nothing we have measures it.
+
+**WHAT THE PHOTOGRAPHS CAN FIT:** `upRate` against §10f's crossing (~55 % carried,
+flat 8 mm, gone by 16); `downRate` against §11d's run-out (60 % to 25 % over
+29.9 mm); `teflonMin` with them; brush capacity against the same run-out; and a
+speed response against §11c (22 % vs 50 % coverage over 190 mm) which nothing is
+fitted to at all.
+
+**WHAT THEY CANNOT, AND SAY SO:** `viscosity`, `drag`, `gravityResponse`,
+`wetLayerDrag`. **The photographs constrain the BRUSH, not the RHEOLOGY** - they
+measure what a brush leaves behind, not how stiff the paint is. **Two photographs
+are needed and only the artist can take them: a pile of oil slumping (or refusing
+to) at a known scale, and a tilted board over time.**
+
+**ONE CORRECTION worth carrying:** `yieldStress` 0.34 is NOT a guess, though the
+row header and the first draft of §20 both implied it. It was transplanted from a
+tuned solver row after artist sessions - the build he called "the feel of actual
+oil". It carries HIS verdict and no measurement. **Unmeasured is not the same as
+arbitrary**, and the difference decides what may be stripped.
+
+**THE ORDER FROM HERE (§20f):** 1. look at bare oil, it is the default now, and
+what is wrong with it names what comes back first. 2. **Build Step 1 (D14),
+coverage per thread** - ratified, measured, still unbuilt, and the only strip-list
+item with a photograph behind it that nothing else can serve. 3. Fit upRate /
+downRate / teflonMin on the bench, one at a time. 4. Ask for the two missing
+photographs before touching the rheology.
