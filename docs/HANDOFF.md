@@ -2339,3 +2339,56 @@ never the principle.
 **AND IT MAKES THE GRID NON-SQUARE.** `SIM` is one constant used as `[SIM, SIM]`
 and 16x20 is 4:5. Every pass assuming a square grid has to stop. Build item, not
 a decision.
+
+---
+
+## STEP 0 IS BUILT AND PROVEN — 2026-08-31. Read 14c before Step 2.
+
+`docs/20-oil-from-zero.md` §14. One bit per §3 behaviour in `P.oilFlags`, a new
+seventh row of the fluid Params struct carrying the engine's first physical scale
+with it (`cellMM` 0.5, `threadMM` 0.864, `coverRate` reserved for Step 1). Host
+side: `engine.setOilBehaviours(flags)`. `OIL_ALL` = 63 = the paint that shipped
+and the default; `OIL_NONE` = 0 = bare oil.
+
+Bits: 1 Bridge, 2 Gate, 4 Level, 8 Exchange, 16 Smear, 32 Release.
+
+**`level_fresh` is gated INSIDE the shader, at the same early return watercolour
+already takes** — NOT by skipping the dispatch. The dispatch site warns that
+skipping it there leaves a smear flux written and never applied, discarded later
+by `flux_compute` without a trace.
+
+**The ladder from bare oil** (flat hog, ultramarine, one stroke): bare 416.971
+film / brush holds 72.73 %; +Bridge 422.350; +Gate 421.275; +Level 418.733;
++Exchange **no change at all**; +Smear 415.141; +Release 404.185 / 76.21 % (the
+heaviest single behaviour); all six 413.953 / 76.78 %.
+
+**THE TRAP, AND CARRY IT INTO STEP 2. Behaviour 4 is invisible twice over.**
+`rExchange = upRate x cover x loose x workableBody x unlike`, so:
+- **`unlike` is zero when a colour meets itself** — the ladder paints blue on
+  blue, so no trade can happen. On a crossing it appears immediately: bare
+  715.918 film, Release-only 694.780, Release+Exchange 680.859 with the brush
+  going 69.72 % to 75.54 %.
+- **`workableBody` is what Release gates**, so Exchange does NOTHING without
+  Release. Confirmed twice on a crossing: bare and Exchange-alone are identical
+  to the decimal.
+
+**So the bare-oil look MUST include a crossing in two different colours, and
+behaviour 4 must be judged with behaviour 6 already on.** Judged the obvious way
+- one colour, one behaviour at a time - it reads as inert and gets dropped. It is
+ratified plan work (`18-oil-body.md` §5 step 2); a correct-looking procedure would
+have thrown it away.
+
+**Watercolour is untouched** - flags 63 and flags 0 give 3151 cells / 277.536
+film / 61.75 % identically. **It was not on the first cut:** five sites already
+sit inside a `yieldStress > 0` branch, but the smear block does not, and gating
+it on the flag alone took the wash's smear away with the paint's. Caught by
+testing water as well as oil, before commit.
+
+**METHOD.** Every figure reproduced on a second identical run before being
+written. The first attempt reported ZERO film and ZERO cells - the exact
+signature of the broken deposit pipeline that cost two sessions in `19`. It was
+not: the harness's stylus sample was malformed (`down` missing) and the resampler
+emitted no segments. **`count: 0` at the drain tells the two apart in one line.
+Check it first, every time.**
+
+Dev hook added: `window.__MEDIA` alongside `__BRUSHES`.

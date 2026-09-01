@@ -14,7 +14,7 @@ import { CommandPalette } from './ui/command-palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
-import { WATERCOLOR, DRY_TOOLS } from './media/library';
+import { WATERCOLOR, DRY_TOOLS, WET_MEDIA } from './media/library';
 import { PIGMENTS } from './color/pigment-palette';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
@@ -392,7 +392,7 @@ async function main() {
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
   stroke.onBrushReset = () => engine.discardPickup();
-  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__dryOut = dryOut; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
+  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__dryOut = dryOut; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; (window as unknown as Record<string, unknown>).__MEDIA = WET_MEDIA; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
 }
 function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
   const query = new URLSearchParams(location.search);

@@ -351,7 +351,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // why the canvas never disappeared under the paint. Water media keep
         // the old gate untouched.
         var bridged = 0.0;
-        if (P.yieldStress > 0.0) {
+        if (P.yieldStress > 0.0 && (P.oilFlags & OIL_BRIDGE) != 0u) {
           /* A paste bridges the valleys before its raw height equals the full
              paper-tooth range: viscosity is precisely its resistance to
              sagging into those valleys. The old denominator was toothAmp alone,
@@ -373,7 +373,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
            only distributes the amount already withdrawn from the hair.
            [UNVERIFIED — artist scumble mapping, 2026-08-25.] */
         var gateHalfWidth = 0.18;
-        if (P.yieldStress > 0.0) {
+        if (P.yieldStress > 0.0 && (P.oilFlags & OIL_GATE) != 0u) {
           gateHalfWidth = 0.18 * max(1.0 - clamp(P.viscosity, 0.0, 1.0), 0.15);
         }
         let base = smoothstep(need - gateHalfWidth, need + gateHalfWidth, ride);
@@ -464,7 +464,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
        wetness continuum release that floor while it is workable; watercolour
        retains the exact old route. [Codex, 2026-08-25 — kept: it addresses a
        real artefact, and it is not what was emptying the sheet.] */
-    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0), P.yieldStress > 0.0);
+    let releaseOn = (P.oilFlags & OIL_RELEASE) != 0u;
+    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0),
+                              P.yieldStress > 0.0 && releaseOn);
     let loose = clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
     /* `brushTake` is the tuft's own grabbiness times the room it has left, and
        it is the term that stops a brush filling past its capacity. It must not
@@ -642,8 +644,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       unlike = clamp(0.5 * (dLo.x + dLo.y + dLo.z + dLo.w
                           + dHi.x + dHi.y + dHi.z + dHi.w), 0.0, 1.0);
     }
-    let rExchange = clamp(C.upRate * clamp(cover, 0.0, 1.0) * loose * workableBody * unlike,
-                          0.0, 0.9);
+    let rExchange = select(
+      0.0,
+      clamp(C.upRate * clamp(cover, 0.0, 1.0) * loose * workableBody * unlike, 0.0, 0.9),
+      (P.oilFlags & OIL_EXCHANGE) != 0u);
 
     /* THE SWAP CAP — what keeps a trading brush from filling.
      *
@@ -795,10 +799,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // ever lifted. As a share it means the same thing at any scale: teflonMin
     // 0.18 leaves 18 % stuck down, teflonMin 1 (every dry medium) leaves all
     // of it.
-    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0), P.yieldStress > 0.0);
+    let workableBody = select(0.0, clamp(w5.y, 0.0, 1.0),
+                              P.yieldStress > 0.0 && (P.oilFlags & OIL_RELEASE) != 0u);
     let loose = w0.y
               * clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
-    if (speed > 1.0e-4 && loose > 0.0) {
+    /* Step 0's switch is OIL-ONLY, like the other five. Watercolour smears too,
+       and gating it on the flag alone would have taken the wash's smear away
+       with the paint's — the flags are for looking at bare OIL, not for
+       disabling the engine. */
+    let smearOn = P.yieldStress <= 0.0 || (P.oilFlags & OIL_SMEAR) != 0u;
+    if (speed > 1.0e-4 && loose > 0.0 && smearOn) {
       /* THE GRAB THAT CANNOT BE DRUNK.
        *
        * The pickup above is `upRate * brushTake * …`, and `brushTake` is the

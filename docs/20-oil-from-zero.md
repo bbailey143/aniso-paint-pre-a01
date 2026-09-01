@@ -1029,3 +1029,115 @@ drawn rather than simulated.
 **And it makes the grid non-square, which is real work.** `SIM` is one constant
 used as `[SIM, SIM]`; 16 × 20 is 4:5. Every pass that assumes a square grid has to
 stop assuming it. That is a build item, not a decision.
+
+---
+
+## 14. Step 0 is built — one switch per behaviour, and it works
+
+**2026-08-31.** §4's Step 0: one flag per §3 behaviour so oil can be built back
+up one at a time. All six switch, each was verified independently, and every
+figure below was reproduced on a second identical run before it was written down.
+
+### 14a. What was built
+
+`P.oilFlags`, one bit per behaviour, in a new seventh row of the fluid `Params`
+struct alongside the engine's first physical scale (`cellMM` 0.5, `threadMM`
+0.864, and `coverRate` reserved for Step 1).
+
+| bit | | behaviour | gated at |
+|---:|---|---|---|
+| 1 | `OIL_BRIDGE` | tooth gate fills as paint builds | `deposit.wgsl` |
+| 2 | `OIL_GATE` | contact ramp narrowed by viscosity | `deposit.wgsl` |
+| 4 | `OIL_LEVEL` | `level_fresh` — settling the hair comb | `level_fresh.wgsl` |
+| 8 | `OIL_EXCHANGE` | `rExchange` + the TVD "unlike" metric | `deposit.wgsl` |
+| 16 | `OIL_SMEAR` | the brush pushing paint already down | `deposit.wgsl` |
+| 32 | `OIL_RELEASE` | workable body releasing the teflon floor | `deposit.wgsl` ×2 |
+
+`OIL_ALL` (63) is the default and is exactly the paint that shipped. `OIL_NONE`
+is bare oil. Host side: `engine.setOilBehaviours(flags)`.
+
+**`level_fresh` is gated inside the shader, not by skipping the dispatch.** The
+dispatch site carries a warning that gating it there leaves a smear flux written
+and never applied, silently discarded by `flux_compute` later in the frame. The
+flag sits at the same early return watercolour has always taken, which is a
+proven path.
+
+### 14b. The ladder — one behaviour at a time, from bare
+
+Flat hog, oil, ultramarine, 96 inputs, one straight stroke.
+
+| | wet cells | film | brush holds |
+|---|---:|---:|---:|
+| **bare oil** | 6629 | 416.971 | 72.73 % |
+| + Bridge | 6629 | 422.350 | 72.92 % |
+| + Gate | 6627 | 421.275 | 73.04 % |
+| + Level | 6660 | 418.733 | 72.26 % |
+| + Exchange | 6629 | **416.971** | **72.73 %** — *no change at all* |
+| + Smear | 6635 | 415.141 | 73.22 % |
+| + Release | 6629 | 404.185 | 76.21 % |
+| **all six (shipped)** | 6663 | 413.953 | 76.78 % |
+
+**Release is the heaviest single behaviour on this stroke** — 12.8 of film that
+stays on the brush instead of the canvas.
+
+### 14c. THE TRAP THIS ALREADY CAUGHT — behaviour 4 is invisible twice over
+
+`+ Exchange` changed nothing. It is not miswired. It is doubly hidden, and both
+halves fall straight out of its own formula:
+
+```
+rExchange = upRate × cover × loose × workableBody × unlike
+```
+
+1. **`unlike` is zero when a colour meets itself.** The ladder paints ultramarine
+   onto ultramarine, so the TVD metric is 0 and no trade can happen. **On a
+   crossing in two colours it appears at once:**
+
+   | blue stroke, then yellow across it | film | brush holds |
+   |---|---:|---:|
+   | bare | 715.918 | 69.72 % |
+   | Release only | 694.780 | 71.39 % |
+   | **Release + Exchange** | **680.859** | **75.54 %** |
+
+2. **`workableBody` is what `OIL_RELEASE` gates**, so behaviour 4 does nothing
+   whatsoever without behaviour 6 — confirmed, on a crossing, twice:
+
+   | | film | brush holds |
+   |---|---:|---:|
+   | bare (0) | 715.918 | 69.72 % |
+   | Exchange alone (8) | **715.918** | **69.72 %** — identical |
+
+**`[CARRY THIS INTO STEP 2]` The bare-oil look must include a crossing in two
+different colours, and behaviour 4 must be judged with behaviour 6 already on.**
+Judged the obvious way — one colour, one behaviour at a time — behaviour 4 reads
+as doing nothing and would be dropped for entirely the wrong reason. It is
+ratified plan work (`18-oil-body.md` §5 step 2); it would have been thrown away
+by a correct-looking procedure.
+
+### 14d. Watercolour is untouched, and one leak was caught getting there
+
+Same stroke in watercolour, flags all on and all off:
+
+| | wet cells | film | brush holds |
+|---|---:|---:|---:|
+| flags 63 | 3151 | 277.536 | 61.75 % |
+| flags 0 | **3151** | **277.536** | **61.75 %** |
+
+Identical, as it must be: the flags are for looking at bare *oil*, not for
+disabling the engine.
+
+**It was not identical on the first cut.** Five of the six sites already sit
+inside a `yieldStress > 0` branch, so they were oil-only for free — but the smear
+block does not, and gating it on the flag alone took watercolour's smear away
+with the paint's. Caught by testing water as well as oil, before commit. The gate
+is now `P.yieldStress <= 0.0 || flag`.
+
+### 14e. Method note
+
+Every row here was run twice on an identical command and matched to the last
+decimal before being written down. The first attempt at this test reported
+**zero film and zero cells**, which is the exact signature of the broken deposit
+pipeline that cost two sessions in `19`. It was not: the stylus sample in the
+harness was malformed (`down` missing), so the resampler emitted no segments at
+all. **`count: 0` at the drain distinguishes the two in one line, and is worth
+checking first every time.**

@@ -277,6 +277,11 @@ export class CanvasEngine {
   set pauseReadback(v: boolean) { this.fluid.pauseReadback = v; }
   /** For measuring only — see `FluidEngine.settlePickup`. */
   settlePickup(): Promise<void> { return this.fluid.settlePickup(); }
+
+  /** Step 0 of the oil rebuild: which of the six §3 behaviours are switched on.
+   *  `OIL_ALL` is the paint that shipped, `OIL_NONE` is bare oil. */
+  setOilBehaviours(flags: number) { this.fluid.setOilBehaviours(flags); }
+  get oilBehaviours(): number { return this.fluid.oilBehaviours; }
   set capillaryAlarmEnabled(v: boolean) { this.fluid.capillaryAlarmEnabled = v; }
   set inkBandTrafficEnabled(v: boolean) { this.fluid.inkBandTrafficEnabled = v; }
   readCapillaryAlarm(): Promise<number> { return this.fluid.readCapillaryAlarm(); }

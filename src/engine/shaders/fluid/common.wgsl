@@ -45,11 +45,45 @@ struct Params {
    * scrubs. `Medium.teflonMin` — "minimum left behind by advection/pickup". */
   teflonMin: f32,
 
+  /** STEP 0 OF THE OIL REBUILD (docs/20 §4). One bit per behaviour in §3, so
+   * oil can be built back up one at a time and each addition judged on its own.
+   * A set bit means the behaviour is ON. Every bit is set in normal use, so the
+   * default is exactly the paint that shipped; clearing them is `bare oil`. */
+  oilFlags: u32,
+  /** How big a cell is, in millimetres. THE FIRST PHYSICAL SCALE THIS ENGINE
+   * HAS EVER HAD — docs/20 §13, ratified 2026-08-31 with the canvas fixed at
+   * 16x20 and the cell held at a constant size whatever the canvas. Before this
+   * every length in here was in cells, and a cell had no size. */
+  cellMM: f32,
+  /** Canvas thread pitch in millimetres. MEASURED: 0.864 mm warp / 0.772 weft,
+   * confirmed three times across two sessions (docs/20 §10b, §11a). This is the
+   * length D14's coverage is a fraction OF. */
+  threadMM: f32,
+  /** D14 coverage rate, as a fraction per millimetre TRAVELLED — never per
+   * frame, never per cell stepped (invariant 2). Step 1 fills this; it is 0
+   * until then. */
+  coverRate: f32,
+
   // Pigment library for the 8 active slots: (rho density, omega staining,
   // gamma granulation, pad) — Card 3. Cells store amounts; library stores
   // behaviour. Filled per-frame to match the active slot->pigment map.
   pig: array<vec4<f32>, 8>,
 };
+
+/* The six §3 behaviours, as bits in `P.oilFlags`. Each is oil-only, each was
+ * added to cure something the artist reported, and none of them was ever
+ * switchable until now — which is what "we keep adding fixes" meant.
+ *
+ * These are NOT suspects. OIL_EXCHANGE in particular is ratified plan work
+ * (`18-oil-body.md` §5 step 2). The flags exist so bare oil can be LOOKED at,
+ * not because any one of them is presumed wrong. */
+const OIL_BRIDGE:   u32 = 1u;   // 1: the tooth gate fills as paint builds
+const OIL_GATE:     u32 = 2u;   // 2: contact ramp narrowed by viscosity
+const OIL_LEVEL:    u32 = 4u;   // 3: level_fresh — settling the hair comb
+const OIL_EXCHANGE: u32 = 8u;   // 4: rExchange + the TVD "unlike" metric
+const OIL_SMEAR:    u32 = 16u;  // 5: smearStrength — the brush pushing paint
+const OIL_RELEASE:  u32 = 32u;  // 6: workable body releasing the teflon floor
+const OIL_ALL:      u32 = 63u;  // every behaviour on = the paint that shipped
 
 const WET_EPS: f32 = 1.0e-5;
 

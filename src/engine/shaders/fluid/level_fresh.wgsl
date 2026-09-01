@@ -94,6 +94,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   // Water media level through the fluid passes instead; running this for them
   // as well would be levelling the same paint twice.
   if (P.yieldStress <= 0.0) { return; }
+  /* Step 0 (docs/20 §4): behaviour 3 switched off. Returning HERE rather than
+     skipping the dispatch on the host is deliberate — the dispatch site warns
+     that gating it there leaves a smear flux written and never applied, and
+     silently discarded by `flux_compute` later in the frame. This is the same
+     early return watercolour has always taken, so it is a proven path. */
+  if ((P.oilFlags & OIL_LEVEL) == 0u) { return; }
 
   let f = fresh[idx];
   let laid = f.x;

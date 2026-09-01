@@ -153,7 +153,60 @@ export interface FluidParams {
    * visually, but nothing can be glazed over dry paint and nothing re-wets.
    */
   handoffEnabled: boolean;
+  /**
+   * STEP 0 OF THE OIL REBUILD — one bit per behaviour, `OilBehaviour` below.
+   *
+   * Every one of the six is oil-only, every one was added to cure something the
+   * artist reported, and none was switchable until now. `OIL_ALL` is the paint
+   * that shipped; `OIL_NONE` is bare oil, which nobody has ever seen, because
+   * each behaviour was added on top of the last (docs/20 §3, §4).
+   */
+  oilFlags: number;
+  /**
+   * How big one sim cell is, in millimetres.
+   *
+   * THE FIRST PHYSICAL SCALE THIS ENGINE HAS EVER HAD. Ratified 2026-08-31
+   * (docs/20 §13): the cell holds its size whatever the canvas, so a bigger
+   * board never blunts the brush. 0.5 mm puts a 16x20 in at 1016 x 813 cells,
+   * under the 1024² the bench already ran at 3.78 ms/frame.
+   */
+  cellMM: number;
+  /** Canvas thread pitch in mm. MEASURED 0.864 warp / 0.772 weft, confirmed
+   *  three times across two sessions (docs/20 §10b, §11a). D14's coverage is a
+   *  fraction OF this. */
+  threadMM: number;
+  /** D14 coverage rate — fraction per MILLIMETRE TRAVELLED. Never per frame and
+   *  never per cell stepped: invariant 2, and a per-frame version rebuilds
+   *  docs/19's fish-scale banding somewhere new. Step 1 fills this. */
+  coverRate: number;
 }
+
+/** The six behaviours of docs/20 §3, as bits. A set bit is ON. */
+export const OilBehaviour = {
+  /** 1: the tooth gate fills as paint builds, so the weave stops being stamped
+   *  into every layer however thick. */
+  Bridge: 1,
+  /** 2: contact ramp narrowed by viscosity — light contact as opaque fragments
+   *  on the peaks rather than a translucent average. */
+  Gate: 2,
+  /** 3: `level_fresh`, the pass that settles the comb of hair ridges a paste
+   *  cannot settle for itself. */
+  Level: 4,
+  /** 4: `rExchange` and the TVD "unlike" metric, which stop the pile
+   *  saturating. RATIFIED PLAN WORK (18-oil-body §5 step 2) — switchable so
+   *  bare oil can be looked at, not because it is suspect. */
+  Exchange: 8,
+  /** 5: `smearStrength` — the brush pushing paint that is already down. */
+  Smear: 16,
+  /** 6: a workable body releasing the teflon floor, which removed the dark
+   *  outline under every crossing. */
+  Release: 32,
+} as const;
+
+/** Every behaviour on: the paint that shipped, and the default. */
+export const OIL_ALL = 63;
+/** Every behaviour off: bare oil, which nobody has ever seen. */
+export const OIL_NONE = 0;
 
 export const DEFAULT_FLUID: FluidParams = {
   dt: 1.0,
@@ -183,6 +236,13 @@ export const DEFAULT_FLUID: FluidParams = {
   // Off by default. A blank engine picks nothing up until a medium says it may.
   upRate: 0.0,
   handoffEnabled: true,
+  // All six on, so the default is exactly the paint that shipped. Step 0 is an
+  // instrument: it changes nothing until somebody clears a bit.
+  oilFlags: OIL_ALL,
+  // docs/20 §13. 0.5 mm/cell, 16x20, cell size fixed whatever the canvas.
+  cellMM: 0.5,
+  threadMM: 0.864,   // MEASURED, docs/20 §10b
+  coverRate: 0.0,    // Step 1 fills this
 };
 
 export interface Gauges {
@@ -425,10 +485,12 @@ export class FluidEngine {
     this.ink0 = new PingPong(device, INK_RES, 'ink0', INK_FORMAT);
     this.ink1 = new PingPong(device, INK_RES, 'ink1', INK_FORMAT);
 
-    // Params: 24 scalars (6 vec4 worth) + 8 vec4 pigment rows = 224 bytes.
+    // Params: 28 scalars (7 vec4 worth) + 8 vec4 pigment rows = 240 bytes.
     // MUST match the ArrayBuffer in writeParams and the struct in common.wgsl.
+    // The seventh row is Step 0's behaviour flags and the engine's first
+    // physical scale (docs/20 §13).
     this.paramsBuf = device.createBuffer({
-      size: 24 * 4 + 8 * 16,
+      size: 28 * 4 + 8 * 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'fluid-params',
     });
     this.fluxBuf = device.createBuffer({
@@ -596,6 +658,22 @@ export class FluidEngine {
     this.writeParams();
   }
 
+  /**
+   * Step 0's switch. Pass `OIL_ALL` for the paint that shipped, `OIL_NONE` for
+   * bare oil, or an OR of `OilBehaviour` members to add one back at a time.
+   *
+   * Water media are unaffected whatever this says: every one of the six sites
+   * is already inside a `yieldStress > 0` branch, so a wash takes the same path
+   * it always did.
+   */
+  setOilBehaviours(flags: number) {
+    this.params.oilFlags = flags >>> 0;
+    this.writeParams();
+  }
+
+  /** What is switched on right now. */
+  get oilBehaviours(): number { return this.params.oilFlags; }
+
   /** Which library pigment sits in each of the 8 slots (drives transport params). */
   setSlots(ids: number[]) {
     this.slotIds = ids.slice(0, 8);
@@ -603,10 +681,10 @@ export class FluidEngine {
   }
 
   private writeParams() {
-    // 24 scalars (six 16-byte groups) then the 8-slot pigment array. The count
-    // here, the struct in common.wgsl, and the `96 +` offset below must all
+    // 28 scalars (seven 16-byte groups) then the 8-slot pigment array. The count
+    // here, the struct in common.wgsl, and the `112 +` offset below must all
     // agree; a mismatch reads scrambled rows rather than failing.
-    const buf = new ArrayBuffer(24 * 4 + 8 * 16);
+    const buf = new ArrayBuffer(28 * 4 + 8 * 16);
     const dv = new DataView(buf);
     const p = this.params;
     dv.setUint32(0, this.n, true);
@@ -633,11 +711,16 @@ export class FluidEngine {
     dv.setFloat32(84, p.edgeEvaporation, true);
     dv.setFloat32(88, p.yieldStress, true);
     dv.setFloat32(92, p.teflonMin, true);
+    // Step 0's behaviour flags, and the scale the engine now knows it works at.
+    dv.setUint32(96, p.oilFlags >>> 0, true);
+    dv.setFloat32(100, p.cellMM, true);
+    dv.setFloat32(104, p.threadMM, true);
+    dv.setFloat32(108, p.coverRate, true);
     // Pigment transport rows for the active slots (Card 3: rho, omega, gamma).
     for (let i = 0; i < 8; i++) {
       const id = this.slotIds[i];
       const pig = id !== undefined && id >= 0 ? PIGMENTS[id] : undefined;
-      const o = 96 + i * 16;
+      const o = 112 + i * 16;
       dv.setFloat32(o + 0, pig ? pig.rho : 0.2, true);
       dv.setFloat32(o + 4, pig ? pig.omega : 3.0, true);
       dv.setFloat32(o + 8, pig ? pig.gamma : 0.3, true);
