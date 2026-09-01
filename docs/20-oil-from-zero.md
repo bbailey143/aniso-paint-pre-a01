@@ -462,10 +462,8 @@ measured data we do not currently hold.
 **Meanwhile, nothing has to wait.** Both pigments can exist *today* as **named
 recipes mixed from the measured twelve** — not invented spectra, mixtures of
 measured ones, which is exactly what the engine already does every frame and
-exactly what the studio idea says the artist should be able to do for themselves
-(`[UNRATIFIED]` — "the artist builds their own materials" is referred to as a
-decision in places but appears nowhere in card 10; it needs recording or
-dropping, and it is NOT D13, which is coverage per thread). Cadmium
+exactly what **D13** says the artist should be able to do for themselves —
+ratified on `origin/3D-brush`, and not yet carried onto this branch. Cadmium
 Red Light ≈ Cadmium Orange PO20 + Pyrrole Red (PO20 and PR108 are the same
 cadmium sulfoselenide chemistry, differing in selenium content). Yellow Ochre ≈
 Diarylide Yellow + Bone Black + a little Pyrrole Red, tuned against the artist's
@@ -790,10 +788,10 @@ where this mechanism lives.**
 
 ---
 
-## 12. D13 — Coverage is a fraction of threads, not a film alpha
+## 12. D14 — Coverage is a fraction of threads, not a film alpha
 
-**Ratified by the artist 2026-08-31.** Recorded as **D13** in
-[`10-decisions.md`](10-decisions.md); this section is its evidence and its shape.
+**Ratified by the artist 2026-08-31.** Recorded as **D14** in
+[`10-decisions.md`](10-decisions.md) (D13 was already taken — see 12g); this section is its evidence and its shape.
 It is the standing ground for §4's Step 1.
 
 ### 12a. The decision
@@ -897,3 +895,17 @@ mark. `canvas_weave` already carries a `slub` noise term for exactly this reason
 in the height field, and the same term is available here. Whether it is enough at
 10–20 % coverage is unknown, and it is the first thing to look at once anything
 is on screen.
+
+### 12g. It is D14, not D13 — a correction
+
+This decision was first written up as D13, because this branch's card 10 runs
+D1–D12 and 13 looked free. **It is not.** `origin/3D-brush` ratified **D13 —
+studios** on 2026-07-31 ("every material is authored in a studio; studios are a
+product surface for the artist, not a developer tool"), and that row was never
+carried onto `tuft-fill`. Two sibling branches holding different D13s is exactly
+the kind of collision that costs somebody a day, so **coverage per thread is
+D14.**
+
+The gap is now an open item in card 10: D13 either gets carried across or its
+absence gets recorded on purpose. D2 permits this branch to diverge; it does not
+permit diverging silently.

@@ -783,8 +783,8 @@ by request. **NEEDS THE ARTIST'S OK before downloading anything.**
 
 **Nothing waits on it.** Both pigments can exist today as **named recipes mixed
 from the measured twelve** - not invented spectra, mixtures of measured ones,
-which is what the engine does every frame and what the (UNRATIFIED, not in card
-10, and NOT D13 - D13 is coverage per thread) studio idea wants anyway. Cad Red
+which is what the engine does every frame and what D13 (studios, ratified on
+`origin/3D-brush` and not yet carried here) wants anyway. Cad Red
 Light ~ Cadmium Orange PO20 + Pyrrole Red (PO20/PR108 are the same cadmium
 sulfoselenide chemistry). Yellow Ochre ~ Diarylide Yellow + Bone Black + a little
 Pyrrole Red, tuned against the artist's own Zorn chart. Labelled recipe, not
@@ -2218,9 +2218,10 @@ to separate skipping from a lifted brush (§11c).
 
 ---
 
-## D13 IS RATIFIED — coverage is a fraction of threads, not a film alpha
+## D14 IS RATIFIED — coverage is a fraction of threads, not a film alpha
 
-**2026-08-31, by the artist.** Row in `docs/10-decisions.md`; evidence, open
+**2026-08-31, by the artist. It is D14, NOT D13** — see the numbering trap at the
+end of this block. Row in `docs/10-decisions.md`; evidence, open
 questions and acceptance tests in `docs/20-oil-from-zero.md` §12. It is the
 standing ground for §4's Step 1.
 
@@ -2240,7 +2241,7 @@ of one number.
 cells against a 3.78 ms bench. The fraction costs one number, and it is
 `00-invariants.md` §4 ("coarse sim under fine display") APPLIED, not excepted.
 
-**WHAT D13 DOES NOT SETTLE — do not treat any of these as decided:**
+**WHAT D14 DOES NOT SETTLE — do not treat any of these as decided:**
 1. **Millimetres per cell.** Open. §10e's 0.432 mm/sim cell is UNVERIFIED,
    reasoned from one brush over a 23-cell blade. **Step 1 opens by settling it**;
    the fraction is meaningless until a cell has a size.
@@ -2269,7 +2270,10 @@ is UNVERIFIED and is the first thing to look at once anything is on screen.
 - **This branch's D-numbers are its own** (D2). The `main` canvas contract has its
   own D1-D12 meaning different things — its D1 is "8 pigment slots per cell",
   ours is the stack. **A bare "D7" is ambiguous. Say which.**
-- **"D13 = the artist builds their own materials" was never real.** It is
-  referenced in a couple of places but appears nowhere in card 10. Those
-  references are corrected; the studio idea is UNRATIFIED and needs recording or
-  dropping on its own merits.
+- **D13 IS TAKEN, and this was very nearly got wrong.** `origin/3D-brush`
+  ratified **D13 - studios** on 2026-07-31 ("every material is authored in a
+  studio; studios are a product surface for the artist, not a developer tool")
+  and that row was never carried onto `tuft-fill`, so card 10 here runs D1-D12
+  and 13 LOOKS free. It is not. Coverage per thread is **D14**. The missing D13
+  is now an open item in card 10: carry it across, or record the divergence on
+  purpose - D2 permits diverging, not diverging silently.
