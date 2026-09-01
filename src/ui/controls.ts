@@ -332,7 +332,16 @@ export const RAIL_CONTROLS: RailControl[] = [
     initial: 0,
     initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
     format: (v) => (v <= 0.02 ? 'matte' : v >= 0.98 ? 'wet' : v.toFixed(2)),
-    appliesTo: () => true,
+    /* A GLOSS DIAL ON A MATTE MATERIAL IS RULE 1 BROKEN. Watercolour is written
+       `kInstrument: 1`, fully matte, and there is nothing above matte for the
+       dial to reach — so it looked like it worked and did nothing. [ARTIST
+       2026-09-01: "get rid of the stupid glossiness option for watercolor.
+       That was a dumb error to add there too."]
+
+       Asked by property, per rule 2, never by name: a material answers this
+       when it can be anything OTHER than fully matte. Watercolour and vine
+       charcoal (both 1) drop out; conté (0.84) keeps it and should. */
+    appliesTo: (t) => (t.wet?.kInstrument ?? t.medium?.kInstrument ?? 1) < 1,
     // PARKED with the other one - see the note above.
     drives: 'Nothing yet - parked while the parts underneath are tuned by hand.',
   },
@@ -358,8 +367,16 @@ export const RAIL_CONTROLS: RailControl[] = [
     // painter would say it, so it is turned over here rather than in the head.
     initialFor: (t) => 1 - (t.wet?.kInstrument ?? 1),
     format: (v) => (v <= 0.02 ? 'matte' : v >= 0.98 ? 'wet' : v.toFixed(2)),
-    // Every material has a surface, so every material answers this.
-    appliesTo: () => true,
+    /* A GLOSS DIAL ON A MATTE MATERIAL IS RULE 1 BROKEN. Watercolour is written
+       `kInstrument: 1`, fully matte, and there is nothing above matte for the
+       dial to reach — so it looked like it worked and did nothing. [ARTIST
+       2026-09-01: "get rid of the stupid glossiness option for watercolor.
+       That was a dumb error to add there too."]
+
+       Asked by property, per rule 2, never by name: a material answers this
+       when it can be anything OTHER than fully matte. Watercolour and vine
+       charcoal (both 1) drop out; conté (0.84) keeps it and should. */
+    appliesTo: (t) => (t.wet?.kInstrument ?? t.medium?.kInstrument ?? 1) < 1,
     drives: 'CanvasEngine.setGloss -> Comp.kInstrument, the Saunderson gloss term.',
   },
   {
