@@ -1182,6 +1182,7 @@ Ordered by what it costs to reopen, cheapest first.
 | E17 | **Turning `OIL_RELEASE` off audibly slowed the artist's GPU fans.** Real signal, mechanism unknown, no story offered. | §16d | One frame-time measurement with the flag on and off. |
 | ~~E19~~ | **DONE 2026-08-31 — §17.** The smear now carries once per brush solve step. Watercolour measured identical either side; the smudge carries 4.2x its original distance. ~~The smear's carry distance is per FRAME, not per distance travelled.~~ Its fraction compounds over travel correctly, but the flux it writes reaches one cell and is applied once a frame — so paint moves two or three cells however fast the brush goes and however high the dial. Invariant 2's exact shape, in a place the invariant was never read as reaching. | §16g | The shove must carry a distance proportional to travel: sub-step the smear within a frame, or give the flux reach. **Shared with normal oil painting**, so it needs its own measurement and its own decision — not a side effect of the smudge experiment. |
 | E20 | **Paint leaks forward; it is not carried.** After E19 the shove is per-distance, but the transport is diffusive — each step leaks a share one cell on — so paint lags the brush and, with the share a cell may give capped at 0.9, the centre of mass cannot travel more than about 2.3 cells however many sweeps run. | §17d | Carrying further means carrying paint ON the tuft, picking up at A and laying down at B. §16f measured the naive version: it hoovered 6.5 % of the sheet into the brush in one pass. A real piece of work, not a dial. |
+| E21 | **SOLVENT DOES NOT THIN PAINT.** `P.yieldStress` and `P.viscosity` are global uniforms and nothing modulates them per cell, so a cell that is nine-tenths solvent is exactly as stiff as neat paint from the tube. Adding solvent raises the film and dilutes the colour and changes nothing about how the paint moves. | §18c | Scale the local yield by the cell's pigment concentration — pigment sum over film, both already in scope at the smear. Bites in three places (`shoveStep`'s gate and its `pressureShare`, and `flux_compute`'s slump), so measure before believing. **Shared with all oil painting**, so the artist's to ratify. May matter more than E20: it is a whole axis of oil the engine does not have. |
 | E18 | **The six §14 behaviours are near-invisible to the eye** even though five of six move the numbers. The artist could pick out only comb settling, and prefers it off. | §16d | Says the §14b ladder measures something finer than the eye reads. Revisit when the rebuild reaches behaviour 3. |
 
 ### 15c. Expensive — reopening moves things downstream
@@ -1450,3 +1451,85 @@ A and laying down at B — rather than leaking it forward. §16f already measure
 naive version of that and it hoovered 6.5 % of the sheet into the brush on one
 pass. **It is a real direction and a real piece of work, not a dial.** Recorded as
 **E20**.
+
+---
+
+## 18. Solvent on the smudge brush — the artist is right and the engine cannot say so
+
+**Artist, 2026-08-31, after trying E19:** *"No likey. What if you just load the
+brush with moderate amount of thinner/solvent?"*
+
+**That is what a painter actually does** — you blend with a brush damped in
+solvent, not a bone-dry one. The engine already has the control: `Solvent` is
+`Reservoir.charge()`'s `waterCharge`, *"clean solvent with no pigment in it"*, so
+a solvent-damped smudge brush is `charge(emptyMix, 0, solvent)` and nothing new
+was needed to try it.
+
+### 18a. The first measurement said it was a huge win. It was measuring the wrong thing.
+
+| | film centre of mass moved |
+|---|---:|
+| empty brush | 2.26 cells |
+| **solvent 0.5** | **13.35 cells** |
+
+Six times better — and **false**. The solvent brush *lays solvent*, and the film
+it adds lands along the smudge path, which drags the film's centre of mass all by
+itself. **The metric was measuring deposition, not carry.**
+
+### 18b. Measured on the COLOUR, which solvent does not add
+
+Solvent puts vehicle down and no pigment, so where the pigment goes is carry and
+nothing else:
+
+| solvent | colour moved | colour spread | band rows | film added | colour kept |
+|---|---:|---:|---:|---:|---:|
+| 0 (empty brush) | **2.25** | 3.05 → 3.52 | 13 → 16 | 0 % | 100 % |
+| 0.15 | 2.26 | — | — | +24 % | 99.7 % |
+| 0.30 | **2.30** | 3.05 → 3.75 | 13 → 15 | +43 % | 99.3 % |
+| 0.60 | **2.30** | 3.05 → 3.75 | 13 → 15 | +53 % | 99.3 % |
+
+**Solvent moves the colour no further — 2.25 against 2.30 — and blends it no
+more.** What it does is put 24 to 53 % more wet on the sheet.
+
+`[ALSO REFUTED]` Letting the damped brush drink as well as shove (its natural
+`brushTake` rather than 0) **took 69 % of the colour off the canvas in one pass**
+— colour kept 30.6 %. Shove-only stays right.
+
+`[WORTH KEEPING]` A solvent-damped brush **emits contacts on its own** — 12 053
+segments without the `smudging` flag against 12 062 with it. It has something to
+give, so the gate in `brush.ts` opens naturally. **If a damped brush ever becomes
+the smudge tool, the E16 contact hack can be deleted.**
+
+### 18c. WHY it does nothing, and this is the finding
+
+> **`P.yieldStress` and `P.viscosity` are global uniforms. Nothing anywhere
+> modulates them per cell. So a cell that is nine-tenths solvent is exactly as
+> stiff as a cell of neat paint out of the tube.**
+
+Checked across every fluid shader: `yieldStress` appears only as `P.yieldStress`,
+`viscosity` only as `P.viscosity`. Adding solvent raises the film and dilutes the
+colour, and **changes nothing about how the paint moves.**
+
+That is precisely the mechanism the artist's instinct assumes. Thinning paint is
+supposed to make it softer, and here it only makes it wetter. **His idea is right
+about paint and the engine has no way to express it.**
+
+### 18d. What it would take — E21
+
+`[UNVERIFIED — reasoning, not measured]` The handle already exists in the shader:
+a cell's **pigment concentration** is its pigment sum over its film, and both are
+in scope at the smear. So the local yield could be the row's yield scaled down as
+concentration falls — a cell of thinned paint shoving at a fraction of neat
+paint's resistance.
+
+It would bite in three places at once, which is why it should be measured before
+it is believed: `shoveStep`'s gate (`reach <= P.yieldStress` currently rejects a
+hair outright), its `pressureShare`, and `flux_compute`'s slump.
+
+**It is shared with all normal oil painting**, like E19, so it is the artist's to
+ratify and not a side effect of a smudge experiment. **Recorded as E21.**
+
+`[AND IT MAY BE THE MORE IMPORTANT FIX]` E20 — carrying paint on the tuft — makes
+the smudge stronger. **E21 would make solvent mean something**, which is a whole
+axis of oil painting the engine currently does not have: thin it and it stays
+exactly as stiff.

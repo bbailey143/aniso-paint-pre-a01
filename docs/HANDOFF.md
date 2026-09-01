@@ -2579,3 +2579,48 @@ many sweeps run, so **more sweeps will not help**. Going further means carrying
 paint ON THE TUFT - pick up at A, lay down at B. §16f measured the naive version
 of that: it hoovered 6.5 % of the sheet into the brush in one pass. Real work,
 not a dial.
+
+---
+
+## SOLVENT ON THE SMUDGE BRUSH — he is right, the engine cannot say so. 2026-08-31
+
+`docs/20-oil-from-zero.md` §18. He said "no likey" to E19 and asked: what if you
+load the brush with a moderate amount of thinner? **That is what a painter
+actually does**, and the control already exists - `Solvent` is `charge()`'s
+`waterCharge`, clean solvent with no pigment - so trying it needed no new code.
+
+**FIRST MEASUREMENT SAID SIX TIMES BETTER AND WAS MEASURING THE WRONG THING.**
+Film centre of mass moved 2.26 cells empty vs **13.35** damped - but the damped
+brush LAYS SOLVENT along the smudge path, which drags the film's centre of mass
+by itself. It was measuring deposition, not carry.
+
+**MEASURED ON THE COLOUR** (solvent adds vehicle, never pigment, so pigment
+movement is carry and nothing else):
+
+| solvent | colour moved | spread | film added | colour kept |
+|---|---|---|---|---|
+| 0 (empty) | **2.25** | 3.05 -> 3.52 | 0 % | 100 % |
+| 0.30 | **2.30** | 3.05 -> 3.75 | +43 % | 99.3 % |
+| 0.60 | **2.30** | 3.05 -> 3.75 | +53 % | 99.3 % |
+
+**Solvent moves the colour no further and blends it no more.** It puts 24-53 %
+more wet on the sheet and that is all. ALSO REFUTED: letting the damped brush
+drink as well as shove took **69 % of the colour off the canvas in one pass**.
+Shove-only stays right.
+
+**WORTH KEEPING:** a damped brush emits contacts on its own (12 053 segments
+without the `smudging` flag vs 12 062 with). If a damped brush ever becomes the
+smudge tool, **the E16 contact hack can be deleted.**
+
+**E21 - WHY, AND IT IS THE FINDING.** `P.yieldStress` and `P.viscosity` are
+GLOBAL UNIFORMS and nothing anywhere modulates them per cell. Checked across every
+fluid shader. **So a cell that is nine-tenths solvent is exactly as stiff as neat
+paint from the tube.** His instinct is right about paint; the engine has no way to
+express it. Thinning makes it wetter, never softer.
+
+**The fix, UNVERIFIED:** a cell's pigment concentration is its pigment sum over
+its film and both are already in scope at the smear, so the local yield could
+scale down as concentration falls. Bites in `shoveStep`'s gate, its
+`pressureShare`, and `flux_compute`'s slump - measure before believing. **Shared
+with all oil painting, so his to ratify.** Possibly more important than E20: it is
+a whole axis of oil the engine does not currently have.
