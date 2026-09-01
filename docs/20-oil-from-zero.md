@@ -1001,9 +1001,15 @@ Two ways to honour it, and they feel completely different to paint on:
   any size, which is what an artist expects. Memory scales with area, so it needs
   a ceiling.
 
-**`[UNRATIFIED — recommendation]` (b), with a cap.** Hold 0.5 mm per cell up to
-about 16 × 20 (0.83 M cells, 89 MB); past that the cell grows rather than the
-budget. A bigger canvas should not blunt the brush.
+**`[RATIFIED 2026-08-31 — the artist chose (b)]` Fixed cell size.** Paint behaves
+the same on every canvas. Hold 0.5 mm per cell up to about 16 × 20 (0.83 M cells,
+89 MB); past that the cell grows rather than the budget, and the artist is told
+rather than surprised. **A bigger canvas must not blunt the brush** — that is the
+sentence to keep when the details are forgotten.
+
+`[STILL OPEN]` The 0.5 mm figure itself is not ratified with it. It waits on the
+#8 (13c), and it is the *cap*, not the principle, that would move if the #8 turns
+out to be small.
 
 **And it makes the grid non-square, which is real work.** `SIM` is one constant
 used as `[SIM, SIM]`; 16 × 20 is 4:5. Every pass that assumes a square grid has to

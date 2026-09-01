@@ -2321,9 +2321,12 @@ again, which would make 0.5 mm/cell right.
 **"CHANGEABLE" FORCES ITS OWN DECISION, UNRATIFIED:** (a) fixed grid, cell size
 follows the canvas — memory constant, but the same brush goes coarser on a bigger
 board; or (b) fixed cell size, grid follows the canvas — paint feels identical at
-any size, memory scales, needs a ceiling. **Recommend (b) with a cap**: hold
-0.5 mm/cell to about 16x20, past that the cell grows rather than the budget. A
-bigger canvas should not blunt the brush.
+any size, memory scales, needs a ceiling. **RATIFIED 2026-08-31: (b), fixed cell size.** Paint
+behaves the same on every canvas; hold 0.5 mm/cell to about 16x20, past that the
+cell grows rather than the budget and the artist is TOLD rather than surprised.
+**A bigger canvas must not blunt the brush.** The 0.5 mm figure itself is NOT
+ratified with it - that still waits on the #8, and it is the cap that would move,
+never the principle.
 
 **AND IT MAKES THE GRID NON-SQUARE.** `SIM` is one constant used as `[SIM, SIM]`
 and 16x20 is 4:5. Every pass assuming a square grid has to stop. Build item, not
