@@ -39,155 +39,32 @@ export const WATERCOLOR: WetMedium = {
   yieldStress: 0,
 };
 
-/**
- * Oil paint.
+/* OIL WAS HERE, AND IT IS GONE — 2026-09-01.
  *
- * Sourced from the archived oil engine spec and the oil material row carried
- * over in the harvest, not invented here. What the spec says oil IS, in the
- * order it matters:
+ * The artist, after being shown a "stripped" oil that painted exactly the same:
+ * "BACK IT OUT! GO BACKWARDS! REMOVE OIL! MAKE IT GO AWAY! WE START WITH MY
+ * PICTURES AS IF OIL DOES NOT EXIST!"
  *
- *   It holds its shape until pushed.       -> yieldStress
- *   Its pigment never spreads on its own.  -> rimMigration 0, edgeDarkening 0
- *   It never wets the sheet.               -> absorptionCoupling 0
- *   It cures by oxidation over days.       -> openTime 48 h, evapRate near nil
- *   It is opaque and glossy.               -> kInstrument low, specular high
- *   It picks up what it is dragged through.-> upRate high [WIRED 2026-08-25]
+ * He was right and the previous attempt was not a strip. Turning the six §3
+ * behaviours off changed nothing anyone could see, because the character came
+ * from the ROW — seeded 2026-08-17 as "starting points for gouache, acrylic and
+ * oil", every value reasoned from a spec and never measured, and never
+ * questioned by the §4 reset because that reset took the seed as its ground.
  *
- * It stands up off the sheet as of 2026-08-24: `relief` is read by the
- * composite, which takes the slope of the film the same way it takes the
- * slope of the paper's tooth, so a bristle ridge throws a shadow and a wet
- * binder catches a highlight along its crest.
+ * D3: a medium IS a data row over shared equations. So oil is deleted at the
+ * only granularity that means anything — the row. The equations stay; they are
+ * the engine, not the paint.
  *
- * [UNVERIFIED] Every value below is reasoned from the spec, not measured.
+ * The old row is in git (`git show bed0352:src/media/library.ts`) and every
+ * number in it is inventoried in docs/20 §20 with its provenance. Nothing is
+ * lost; it is out of the app.
  *
- * [THE STRIP, 2026-09-01 — docs/20 §20] The artist: "strip out every dumb
- * decision that has been made to this point. We start with the photographs."
- * Oil was seeded on 2026-08-17 as a "starting point" and has accreted since;
- * the §4 reset only ever questioned the six behaviours added AFTER it, so this
- * row has never been examined by anything.
- *
- * Sorted, and each is now marked below:
- *   [ARTIST]     his own verdict at the easel, dated and quoted. Stays.
- *   [HARVESTED]  traceable to the material row or a property of oil. Stays.
- *   [OWES A FIT] reasoned, but a photograph CAN settle it. §20d names which.
- *   [OWES A PHOTO] reasoned, and nothing we have measures it. Say so; do not
- *                  quietly keep tuning it by eye.
+ * WHAT COMES BACK, AND ONLY THIS WAY: one behaviour at a time, each with a
+ * photograph behind it and a bench figure it has to hit (docs/20 §20e). Until a
+ * measurement asks for a number, that number does not get to exist.
  */
-export const OIL: WetMedium = {
-  name: 'Oil Paint', slug: 'oil', collection: 'Oil', family: 'wet', pigments: [],
-  physics: {
-    // Ground coarser than watercolour and suspended in a thick binder, which is
-    // most of why it holds a mark instead of levelling.
-    pigmentParticleSize: 0.30, binderViscosity: 0.82, mediumHardness: 0,
-    shearRate: 0.55, adhesionStrength: 0.88, compressiveYield: 1,
-    specularPotential: 0.86, microReflectance: 0.42, refractiveIndex: 0.72,
-  },
-  k1: 0.03, k2: 0.65,
-  /* No currents. A load of oil has none: it sits where it is put and moves by
-     slumping and by the brush. Which is what the flux pass already assumed for
-     a yielding material — but it worked that out from `yieldStress > 0`, so
-     turning Body down to zero handed oil to the water solver. Now the material
-     says what it is and the dial cannot overrule it. */
-  hasCurrent: false,
-  // Wet oil is glossy. Watercolour sits at 1, fully matte; this is the other end.
-  /* [ARTIST 2026-08-28] 0.25 -> 0. He set the Gloss dial to "wet" and asked for
-     that page to be the default. 0 is the bottom of the Saunderson gloss term,
-     so this is the glossiest oil the model can express; the dial cannot be
-     centred because there is nothing above it. See controls.ts `gloss`. */
-  kInstrument: 0,
-  /* An oil film never leaves within a session, and it IS the paint rather than
-     a layer of solvent lying on it, so it should not be read as a wet puddle.
-     Low but not zero: fresh oil is genuinely wetter-looking than cured oil.
 
-     [MEASURED 2026-08-24] Worth recording what this did NOT do. It was built on
-     the guess that the wet-film override was pinning oil at full gloss. It was
-     not: a real oil stroke carries about 0.018 of film per wet cell, so the
-     override was only ever pulling about a tenth of the way, and turning this
-     row from 1 to 0.15 moved the painted result by one unit of blue in 255.
-     The jelly was the sheen. Right in principle, idle in practice.
-     [UNVERIFIED] */
-  filmGloss: 0.15,
-  // NOTE: with kInstrument now 0 this row can no longer do anything — the mix
-  // in composite.wgsl:486 lerps kInstrument toward 0 and it is already there.
-  // Left in place rather than deleted; it becomes live again the moment the
-  // artist brings Gloss back down off "wet".
-  // Truthfully declared and currently unread — see the note above. bodyShrink is
-  // the spec's shrinkage on cure: a ridge sinks a little as the oil oxidises.
-  /* [ARTIST 2026-08-28] 26 -> 10, set at the easel and then made the default:
-     "I want this to be exactly the default setting." The Relief dial's max
-     moved to 20 with it so this sits at the centre of its own travel. */
-  relief: 10, bodyShrink: 0.85,
-  // Oil covers. Two loaded strokes and the canvas is gone - which is what an
-  // opaque paint is FOR, and what the artist reported missing on 2026-08-24:
-  // "it should only take one, maybe two thick strokes to cover the canvas."
-  // Set deliberately strong at 3 on 2026-08-24, on the principle that erring
-  // quiet had already wasted two rounds. Brought down to 2 by the artist at the
-  // easel on 2026-08-26: "leave cover at 2, that seems to be good."
-  //
-  // The order matters. That judgement was made AFTER the paint got a shadow of
-  // its own (the shade floor in composite.wgsl). Until then a covered passage
-  // had no surface left to look at, because coverage multiplies the weave out
-  // of the lighting as well as the ground's colour — so Cover was carrying the
-  // blame for a missing surface, which is also why turning it off "suddenly
-  // looks more like paint". See docs/HANDOFF.md E11. Re-judging it against the
-  // old flat shading would give the wrong answer.
-  hidesGround: 2,
-  /* [OWES A FIT] `upRate` against §10f's crossing (~55 % carried, flat for 8 mm,
-     gone by 16); `downRate` against §11d's run-out (60 % to 25 % coverage over
-     29.9 mm); `teflonMin` with them, since it sets the tail of both. */
-  downRate: 0.55, upRate: 0.42, teflonMin: 0.18,
-  // 48 hours, straight off the harvested material row. Watercolour is 90
-  // seconds. That ratio is the whole difference in how the two are worked.
-  openTime: 172800,
-  // Zero, and deliberately: watercolour deepens while wet and lifts as it
-  // dries, acrylic is milky wet and cures darker, oil does neither.
-  valueShift: 0,
-  reactivatable: false, oneWayDoor: true,
-  solvent: 'oil',
-  // Thick and draggy. This is the ordinary resistance; yieldStress below is the
-  // separate question of whether it moves at all.
-  /* [OWES A PHOTO] Nothing in the reference measures either. They want a pile
-     of oil photographed slumping, or refusing to. */
-  viscosity: 0.85, drag: 0.55,
-  // It feels gravity, but rarely enough to clear its own yield stress. Piling
-  // it up is what makes it slump, not tilting the board a little.
-  /* [OWES A PHOTO] A tilted board, photographed over time. */
-  gravityResponse: 0.22, wetLayerDrag: 0.15,
-  // No ring, ever. Watercolour rings because water leaves the film at its
-  // pinned edge and carries pigment out there; oil does not lose solvent to the
-  // air at all, and famously leaves no ring. All three rim rows are off, which
-  // also means the rim passes are skipped rather than run with small numbers.
-  edgeDarkening: 0, rimMigration: 0, rimReach: 2.0, edgeEvaporation: 0,
-  // It cures rather than evaporating, so this is not "how fast the water goes"
-  // but how fast it stops being workable. 48 hours against watercolour's 90
-  // seconds is the same 1920x, applied to watercolour's rate.
-  evapRate: 0.0015 / 1920,
-  // Never wets the sheet: OL-05 on the lab board, and the reason oil belongs on
-  // a primed ground rather than on paper.
-  absorptionCoupling: 0,
-  pigmentBoost: 1,
-  // The number that makes oil oil. Below this a face does not move at all.
-  //
-  // 0.34 is the value the sarasara lab arrived at for `RHEO-002` on its own oil
-  // row, after artist sessions — the build the artist described as having "the
-  // feel of actual oil". Not transplanted blindly: that solver gates a height
-  // DIFFERENCE between neighbouring cells and this one gates a face drive, so
-  // the two numbers are not the same quantity. But both are normalised 0..1
-  // gates on whether the paint moves at all, the tuned one is six times the
-  // guess, and the guess was visibly too fluid. Start where the artist landed.
-  /* [ARTIST-TUNED, NEVER MEASURED] Not a guess — see above: transplanted from a
-     tuned solver row after artist sessions, from the build he described as
-     having "the feel of actual oil". So it carries HIS verdict but no
-     measurement, which is its own category. It decides when paint holds its
-     shape and when it gives way, so it sits behind both standing complaints,
-     the piling and the rippling. A pile of oil photographed slumping — or
-     refusing to — at a known scale is what would turn a feel into a figure.
-     docs/20 §20d. */
-  yieldStress: 0.34,
-};
-
-/** Every wet material, in the order the picker offers them. */
-export const WET_MEDIA: WetMedium[] = [WATERCOLOR, OIL];
+export const WET_MEDIA: WetMedium[] = [WATERCOLOR];
 
 
 function physics(

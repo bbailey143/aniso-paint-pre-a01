@@ -9,7 +9,7 @@
 
 import { BRUSHES } from '../brush/library';
 import { esc, ok, warn, headline, makePanel } from './panel';
-import { OIL } from '../media/library';
+// OIL was removed 2026-09-01 — see the throw below.
 import { CANVASES } from '../substrate/papers';
 
 type AnyRec = Record<string, any>;
@@ -38,8 +38,11 @@ function setUp(engine: AnyRec, stroke: AnyRec) {
   const paper = CANVASES.find((p) => p.slug === 'canvas-duck');
   if (!brush || !paper) throw new Error('banding bench setup row missing');
   engine.setPaper(paper);
-  engine.setWetMedium(OIL);
-  stroke.setWetMedium(OIL);
+  throw new Error(
+    "oil was REMOVED from the app on 2026-09-01 (docs/20 §21) and this bench "
+    + "measured oil. Its method is worth keeping — the trimmed tone metric, the "
+    + "MessageChannel yield, the paired runs — so it is left standing rather than "
+    + "deleted. Point it at the rebuilt row when a photograph has earned one.");
   stroke.setBrush(brush, 1);
 }
 

@@ -24,7 +24,7 @@ import { BRUSHES } from '../brush/library';
 // PAPERS would silently run on watercolour paper, which is one of the setup
 // slips this file exists to make impossible.
 import { PAPERS, CANVASES } from '../substrate/papers';
-import { OIL, WATERCOLOR } from '../media/library';
+import { WATERCOLOR } from '../media/library';
 import { SEG_FLOATS } from '../engine/fluid';
 
 /** Everything the standard crossing holds fixed. Change these and old numbers
@@ -56,7 +56,12 @@ type AnyRec = Record<string, unknown>;
  * solver runs oil.
  */
 export function assertSetup(engine: AnyRec, stroke: AnyRec): AnyRec {
-  const oil = OIL as unknown as AnyRec;
+  throw new Error(
+    "oil was REMOVED from the app on 2026-09-01 (docs/20 §21) and this bench "
+    + "measured oil. Its method is worth keeping — the trimmed tone metric, the "
+    + "MessageChannel yield, the paired runs — so it is left standing rather than "
+    + "deleted. Point it at the rebuilt row when a photograph has earned one.");
+  const oil = WATERCOLOR as unknown as AnyRec;
   const hog = BRUSHES.find((b) => b.slug === SETUP.brush);
   const duck = [...CANVASES, ...PAPERS].find((p) => p.slug === SETUP.paper);
   if (!hog) throw new Error(`pickup-bench: no brush '${SETUP.brush}'`);

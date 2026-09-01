@@ -26,7 +26,7 @@
 
 import { BRUSHES } from '../brush/library';
 import { SEG_FLOATS } from '../engine/fluid';
-import { WATERCOLOR, OIL } from '../media/library';
+import { WATERCOLOR } from '../media/library';
 import { FLAT_WHITE, PAPERS, CANVASES } from '../substrate/papers';
 import { esc, ok, warn, bad, headline, makePanel } from './panel';
 
@@ -67,7 +67,12 @@ type Route = 'water' | 'paste';
 function resolveConfig() {
   const q = new URLSearchParams(location.search);
   const wantOil = (q.get('medium') || '').toLowerCase().startsWith('oil');
-  const medium = wantOil ? OIL : WATERCOLOR;
+  if (wantOil) throw new Error(
+    "oil was REMOVED from the app on 2026-09-01 (docs/20 §21) and this bench "
+    + "measured oil. Its method is worth keeping — the trimmed tone metric, the "
+    + "MessageChannel yield, the paired runs — so it is left standing rather than "
+    + "deleted. Point it at the rebuilt row when a photograph has earned one.");
+  const medium = WATERCOLOR;
   // The route is READ BACK from the medium's own numbers, using the same test
   // fluid.ts uses. It is never assumed from the name.
   const route: Route = (medium.hasCurrent === false || (medium.yieldStress ?? 0) > 0)
