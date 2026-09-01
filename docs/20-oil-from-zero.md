@@ -1180,6 +1180,7 @@ Ordered by what it costs to reopen, cheapest first.
 |---|---|---|---|
 | E16 | **A brush that runs dry mid-stroke stops interacting with the canvas entirely.** `brush.ts` emits a contact only `if (w > 0 \|\| pig > 0)`, so an empty tuft is invisible to the sheet: it cannot push, pick up or scrub. A dry brush is exactly what you scrub *with*. | §16b | Widening the gate touches **every medium and every brush that runs dry**, so it needs its own measurement, not a side effect of an oil experiment. Bears on E18's stranded paint and §11d's run-out. Currently opened for smudge mode alone. |
 | E17 | **Turning `OIL_RELEASE` off audibly slowed the artist's GPU fans.** Real signal, mechanism unknown, no story offered. | §16d | One frame-time measurement with the flag on and off. |
+| E19 | **The smear's carry distance is per FRAME, not per distance travelled.** Its fraction compounds over travel correctly, but the flux it writes reaches one cell and is applied once a frame — so paint moves two or three cells however fast the brush goes and however high the dial. Invariant 2's exact shape, in a place the invariant was never read as reaching. | §16g | The shove must carry a distance proportional to travel: sub-step the smear within a frame, or give the flux reach. **Shared with normal oil painting**, so it needs its own measurement and its own decision — not a side effect of the smudge experiment. |
 | E18 | **The six §14 behaviours are near-invisible to the eye** even though five of six move the numbers. The artist could pick out only comb settling, and prefers it off. | §16d | Says the §14b ladder measures something finer than the eye reads. Revisit when the rebuild reaches behaviour 3. |
 
 ### 15c. Expensive — reopening moves things downstream
@@ -1299,3 +1300,66 @@ wrong; the mechanism is the claim"). **Do not tune it from a number.**
    `loose` only from `w0.y` to `0.82 · w0.y`, which is not a fan-audible amount.
    **No story is offered.** It wants a frame-time measurement with the flag on
    and off, not a guess.
+
+### 16e. Making it stronger — what moved, what did not, and the wall
+
+**Artist, 2026-08-31:** *"Make the smudge stronger. I want it to 'paint' because
+that bit of smudging and smoothing is half the battle when it comes to oils."*
+
+**Done as far as the mechanism goes: `smearStrength` 16 while smudging**, the
+medium's own value restored on the way back, so a loaded brush paints exactly as
+before. That is **twice** the carry — and it is the ceiling, not a choice.
+
+| | drag per pass | note |
+|---|---:|---|
+| `smearStrength` 1 (as shipped) | **0.53 cells** | |
+| `smearStrength` 4 | 0.78 | |
+| **`smearStrength` 16 (now, while smudging)** | **0.99 cells** | |
+| `smearStrength` 64 | 0.99 | **no better — `fraction` is pinned at its 0.9 clamp** |
+
+Churn inside the crossed region over the same change: **10.5 % → 24.3 %.** Mass
+conserved at 100 % throughout; nothing is created or lost.
+
+**One pass of the smudge brush drags paint about one cell — half a millimetre.**
+
+### 16f. Two hypotheses tested and killed
+
+Neither of these is the limiter, and both looked right on paper:
+
+1. **"Oil's yield stress gates most hairs out."** `shoveStep` returns zero
+   whenever `reach <= P.yieldStress`, and oil's is 0.34, so at moderate pressure
+   many hairs should contribute nothing. **Refuted:** dropping the yield to 0.02
+   changes the drag not at all — 0.53 → 0.53 at smear 1, 0.99 → 0.99 at 16.
+2. **"Let the brush pick paint up and put it down, which is what smudging really
+   is."** **Refuted, and it is worse on both counts:** drag falls to 0.12 cells
+   *and* the sheet loses 6.5 % on one pass, 8.2 % over four — the tuft hoovers
+   paint off the canvas instead of carrying it. Shove-only was right.
+
+### 16g. THE WALL, and it is a familiar shape
+
+> **The shove's FRACTION scales with how far the brush travelled. The DISTANCE it
+> carries paint does not — it is always one cell, once per frame.**
+
+`shoveStep` compounds its fraction over travel — `grabPart = 1 - pow(1 - grabShare,
+min(speed, 4))` — so a fast stroke correctly gives up more of each cell's film.
+But the smear flux it writes is a `vec4` of the **four immediate faces**, so
+whatever is given up lands **one cell away**, and it is applied **once per
+frame**. A brush crossing a bar is over any given cell for two or three frames,
+so the paint moves two or three cells at most, whatever the dial says.
+
+**That is a per-frame quantity where a per-distance one belongs — the exact shape
+`00-invariants.md` §2 forbids, and the exact shape that made the fish-scale hunt
+in `19` last a week.** It has simply never bitten before, because until now
+nobody asked the smear to carry paint anywhere.
+
+`[EARMARKED E19, NOT TAKEN]` Fixing it means the shove must move paint a distance
+proportional to the brush's travel rather than one cell per frame — sub-stepping
+the smear within a frame, or giving the flux a reach. **It is shared with normal
+oil painting**, so it is not something an experiment marked "oil only, for now"
+may change underneath everything else. It wants its own measurement and its own
+decision.
+
+`[WHAT THIS MEANS FOR THE ARTIST]` Smudging is now twice what it was and it is
+still gentle, because gentle is all this mechanism can be. If it still does not
+feel like painting, **the answer is not a bigger number** — every number is
+already at its stop. It is E19.

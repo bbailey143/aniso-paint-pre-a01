@@ -14,6 +14,7 @@ import { CommandPalette } from './ui/command-palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
+import { DEFAULT_FLUID } from './engine/fluid';
 import { AutoReload } from './input/auto-reload';
 import { WATERCOLOR, DRY_TOOLS, WET_MEDIA } from './media/library';
 import { PIGMENTS } from './color/pigment-palette';
@@ -88,6 +89,9 @@ async function main() {
   };
   let waterCharge = 0; let framePending = false; let renderRequested = true;
   const requestFrame = () => { renderRequested = true; if (!framePending) { framePending = true; requestAnimationFrame(frame); } };
+  /* The artist's own Smear dial, remembered so smudge mode can borrow the
+     setting and hand it back rather than overwriting it. */
+  let paintingSmear = DEFAULT_FLUID.smearStrength;
   const palette = new Palette(document.body, {
     onMixChange(_hex, recipe, loading) { engine.setMix(recipe); stroke.charge(engine.mixWeights, loading, waterCharge); },
     onPaperChange(paper) { engine.setPaper(paper); requestFrame(); }, onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
@@ -96,7 +100,7 @@ async function main() {
     onWetMedium(medium) { engine.setWetMedium(medium); stroke.setWetMedium(medium); autoReload.setEnabled(medium.slug === 'oil'); requestFrame(); },
     onAutoReload(seconds) { autoReload.setSeconds(seconds); showMode(); },
     onYieldChange(yieldStress) { engine.setFluid({ yieldStress }); },
-    onSmearChange(smearStrength) { engine.setFluid({ smearStrength }); },
+    onSmearChange(smearStrength) { paintingSmear = smearStrength; if (autoReload.mode !== 'smudge') engine.setFluid({ smearStrength }); },
     onCoverChange(cover) { engine.setCover(cover); requestFrame(); },
     onReliefChange(relief) { engine.setRelief(relief); requestFrame(); },
     // The dial reads 0 matte .. 1 wet; the material rows are written the other
@@ -132,7 +136,19 @@ async function main() {
     modeBadge.textContent = autoReload.mode === 'smudge' ? 'Smudge' : 'Paint';
     modeBadge.classList.toggle('smudge', autoReload.mode === 'smudge');
   };
+  /* MEASURED, docs/20 §16e. The shove saturates: smearStrength 1 drags paint
+     0.53 cells per pass, 16 drags 0.99, and 64 is no better than 16 because
+     `fraction` is pinned at its 0.9 ceiling. So 16 IS the mechanism's ceiling
+     and there is no point going higher. Applied only while smudging, and the
+     medium's own row is restored on the way back, so a loaded brush paints
+     exactly as it did. */
+  const SMUDGE_SMEAR = 16;
   autoReload.onFlip = (mode) => {
+    if (mode === 'smudge') {
+      engine.setFluid({ smearStrength: SMUDGE_SMEAR });
+    } else {
+      engine.setFluid({ smearStrength: paintingSmear });
+    }
     /* `rinse(0)` empties the tuft but is NOT enough on its own: `stroke.begin()`
        re-dips at the start of every stroke, so the very next stroke refilled the
        brush with clear medium and laid 248 of film with no colour in it. The

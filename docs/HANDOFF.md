@@ -2482,3 +2482,45 @@ so the §14b ladder measures something finer than the eye reads. (E17) **Turning
 Release off audibly slowed his GPU fans.** Real signal, mechanism UNKNOWN, no
 story offered - the arithmetic only moves `loose` from `w0.y` to `0.82 w0.y`,
 which is not fan-audible. It wants a frame-time measurement, not a guess.
+
+---
+
+## "MAKE THE SMUDGE STRONGER" — done to the ceiling, and the ceiling is E19
+
+`docs/20-oil-from-zero.md` §16e-g. **Delivered: `smearStrength` 16 while smudging**
+(the artist's own Smear dial is remembered and handed back on the way out, so a
+loaded brush paints exactly as before). That is **2x the carry, and it is the
+mechanism's ceiling, not a choice**: 1 drags 0.53 cells per pass, 4 drags 0.78,
+16 drags 0.99, and **64 is no better than 16** because `fraction` is pinned at its
+0.9 clamp. Churn in the crossed region 10.5 % to 24.3 %. Mass conserved at 100 %.
+
+**One pass of the smudge brush drags paint about one cell. Half a millimetre.**
+
+**TWO HYPOTHESES TESTED AND KILLED, both plausible on paper:**
+1. "Oil's yield stress gates most hairs out" (`shoveStep` returns 0 when
+   `reach <= yieldStress`, and oil's is 0.34). **Refuted:** dropping the yield to
+   0.02 changes the drag not at all, at either dial setting.
+2. "Let the brush pick up and put down, which is what smudging really is."
+   **Refuted and worse on both counts:** drag falls to 0.12 cells AND the sheet
+   loses 6.5 % on one pass, 8.2 % over four — the tuft hoovers instead of
+   carrying. Shove-only was right.
+
+**E19 — THE WALL, AND IT IS A FAMILIAR SHAPE.** The shove's FRACTION scales with
+travel (`grabPart = 1 - pow(1 - grabShare, min(speed,4))`), but the DISTANCE does
+not: the flux it writes is a vec4 of the four immediate faces, applied once a
+frame, so paint lands ONE CELL away no matter how fast the brush moved or how
+high the dial goes. A brush is over a given cell for two or three frames, so
+paint moves two or three cells, full stop.
+
+**That is a per-frame quantity where a per-distance one belongs — invariant 2's
+exact shape, and the exact shape that made `19`'s fish-scale hunt last a week.**
+It has never bitten before because nobody had asked the smear to carry paint
+anywhere.
+
+**NOT TAKEN.** The fix is to carry a distance proportional to travel — sub-step
+the smear within a frame, or give the flux reach. **Shared with normal oil
+painting**, so it is not something an experiment marked "oil only, for now" may
+change underneath everything else.
+
+**IF HE SAYS IT IS STILL NOT ENOUGH, THE ANSWER IS NOT A BIGGER NUMBER.** Every
+number is already at its stop. It is E19.
