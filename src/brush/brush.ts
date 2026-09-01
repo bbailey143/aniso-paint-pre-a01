@@ -412,10 +412,6 @@ export class Brush {
    *
    * Returns the number of segments written.
    */
-  /** EXPERIMENTAL, oil only — see the note at the contact gate in
-   *  `emitFootprint`. An empty tuft reports contact so it can push paint. */
-  smudging = false;
-
   emitFootprint(buf: Float32Array, at: number, maxSegs: number): number {
     // First step of a stroke: there is no previous position, so every hair
     // emits a point where it landed. That is a true touch-down, and it is what
@@ -472,17 +468,7 @@ export class Brush {
             this.laidAccum[k] += this.draw[k];
           }
 
-          /* A hair normally reports contact only when it had something to
-             give. That means an EMPTY tuft emits nothing at all and the engine
-             never learns it is touching — so it cannot push paint, and a brush
-             that runs dry mid-stroke stops interacting with the canvas
-             entirely rather than becoming the scrubbing tool a dry brush
-             actually is. That is a real gap and it is earmarked (docs/20 §16);
-             widening it here would change every medium and every brush that
-             runs dry, which is not what an oil experiment may do.
-             `smudging` opens it for exactly one case: the load is zero, so
-             nothing is laid, and the contact exists so the shove can see it. */
-          if (w > 0 || pig > 0 || this.smudging) {
+          if (w > 0 || pig > 0) {
             /* THE HAIR'S TRACK, NOT THE HAIR.
              *
              * This used to run from one joint of the tuft to the next — the

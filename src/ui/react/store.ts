@@ -59,9 +59,6 @@ export interface StudioEvents {
   /** Step 0 of the oil rebuild: which of the six behaviours are switched on.
    *  Oil only — a wash paints the same whatever this says. docs/20 §14. */
   onOilBehaviours?(flags: number): void;
-  /** EXPERIMENTAL, oil only: seconds the pen must be held OFF the canvas to
-   *  swap between painting and smudging. 0 turns it off. */
-  onAutoReload?(seconds: number): void;
 }
 
 export type SheetName = 'medium' | 'brush' | 'colour' | 'paper' | 'drying' | null;
@@ -92,12 +89,6 @@ export class StudioStore {
    * Switching one on is now an experiment, not the status quo.
    */
   oilFlags = OIL_NONE;
-  /**
-   * EXPERIMENTAL — seconds the pen must be held off the canvas to swap between
-   * painting and smudging. 0 is off, and is the default: this is something to
-   * try, not something the paint depends on.
-   */
-  autoReload = 0;
   /**
    * How far each paint property is allowed to travel, low to high.
    *
@@ -216,12 +207,6 @@ export class StudioStore {
   setOilBehaviour(bit: number, on: boolean) {
     this.oilFlags = on ? (this.oilFlags | bit) : (this.oilFlags & ~bit);
     this.events.onOilBehaviours?.(this.oilFlags);
-    this.changed();
-  }
-
-  setAutoReload(seconds: number) {
-    this.autoReload = seconds;
-    this.events.onAutoReload?.(seconds);
     this.changed();
   }
 

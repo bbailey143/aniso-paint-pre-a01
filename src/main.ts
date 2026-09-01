@@ -14,8 +14,6 @@ import { CommandPalette } from './ui/command-palette';
 import { CanvasEngine } from './engine/canvas';
 import { PAPERS } from './substrate/papers';
 import { BRUSHES } from './brush/library';
-import { DEFAULT_FLUID } from './engine/fluid';
-import { AutoReload } from './input/auto-reload';
 import { WATERCOLOR, DRY_TOOLS, WET_MEDIA } from './media/library';
 import { PIGMENTS } from './color/pigment-palette';
 
@@ -89,18 +87,14 @@ async function main() {
   };
   let waterCharge = 0; let framePending = false; let renderRequested = true;
   const requestFrame = () => { renderRequested = true; if (!framePending) { framePending = true; requestAnimationFrame(frame); } };
-  /* The artist's own Smear dial, remembered so smudge mode can borrow the
-     setting and hand it back rather than overwriting it. */
-  let paintingSmear = DEFAULT_FLUID.smearStrength;
   const palette = new Palette(document.body, {
     onMixChange(_hex, recipe, loading) { engine.setMix(recipe); stroke.charge(engine.mixWeights, loading, waterCharge); },
     onPaperChange(paper) { engine.setPaper(paper); requestFrame(); }, onEvapChange(evapRate) { engine.setFluid({ evapRate }); },
     /* One call, the whole row: viscosity, drag, yield stress, drying, the rim
        controls. The engine reads a material; it does not know their names. */
-    onWetMedium(medium) { engine.setWetMedium(medium); stroke.setWetMedium(medium); autoReload.setEnabled(medium.slug === 'oil'); requestFrame(); },
-    onAutoReload(seconds) { autoReload.setSeconds(seconds); showMode(); },
+    onWetMedium(medium) { engine.setWetMedium(medium); stroke.setWetMedium(medium); requestFrame(); },
     onYieldChange(yieldStress) { engine.setFluid({ yieldStress }); },
-    onSmearChange(smearStrength) { paintingSmear = smearStrength; if (autoReload.mode !== 'smudge') engine.setFluid({ smearStrength }); },
+    onSmearChange(smearStrength) { engine.setFluid({ smearStrength }); },
     onCoverChange(cover) { engine.setCover(cover); requestFrame(); },
     onReliefChange(relief) { engine.setRelief(relief); requestFrame(); },
     // The dial reads 0 matte .. 1 wet; the material rows are written the other
@@ -121,46 +115,6 @@ async function main() {
     onReadouts(on) { watchGauges(on); },
   }, WATERCOLOR.evapRate);
   engine.setPaper(PAPERS[1]); engine.setWetMedium(WATERCOLOR); stroke.setWetMedium(WATERCOLOR); engine.setMix(palette.recipe); if (palette.recipe.size === 0) palette.add('ultramarine-blue'); stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
-  /* EXPERIMENTAL, oil only (docs/20 §16). Lift the pen for the set time and the
-     brush empties into a smudging tool; lift again and the load comes back. The
-     brush is emptied with `rinse(0)`, which also clears the mix — so `begin()`'s
-     automatic re-dip at the start of the next stroke re-dips into nothing and
-     the mode survives, rather than being undone by the very next stroke. */
-  const autoReload = new AutoReload();
-  const modeBadge = document.createElement('div');
-  modeBadge.className = 'mode-badge';
-  modeBadge.hidden = true;
-  document.body.appendChild(modeBadge);
-  const showMode = () => {
-    modeBadge.hidden = !autoReload.active;
-    modeBadge.textContent = autoReload.mode === 'smudge' ? 'Smudge' : 'Paint';
-    modeBadge.classList.toggle('smudge', autoReload.mode === 'smudge');
-  };
-  /* MEASURED, docs/20 §16e. The shove saturates: smearStrength 1 drags paint
-     0.53 cells per pass, 16 drags 0.99, and 64 is no better than 16 because
-     `fraction` is pinned at its 0.9 ceiling. So 16 IS the mechanism's ceiling
-     and there is no point going higher. Applied only while smudging, and the
-     medium's own row is restored on the way back, so a loaded brush paints
-     exactly as it did. */
-  const SMUDGE_SMEAR = 16;
-  autoReload.onFlip = (mode) => {
-    if (mode === 'smudge') {
-      engine.setFluid({ smearStrength: SMUDGE_SMEAR });
-    } else {
-      engine.setFluid({ smearStrength: paintingSmear });
-    }
-    /* `rinse(0)` empties the tuft but is NOT enough on its own: `stroke.begin()`
-       re-dips at the start of every stroke, so the very next stroke refilled the
-       brush with clear medium and laid 248 of film with no colour in it. The
-       loading has to go to zero as well, because that is what `begin()` re-dips
-       WITH. Charging an empty mix at zero loading does both. */
-    stroke.setSmudging(mode === 'smudge');
-    if (mode === 'smudge') stroke.charge(new Float32Array(8), 0, 0);
-    else stroke.charge(engine.mixWeights, palette.loading, palette.waterCharge);
-    showMode();
-    requestFrame();
-  };
-
   const cmd = new CommandPalette();
 
   // — Tools —
@@ -403,7 +357,7 @@ async function main() {
        Measured on the brush bench with the dip skipped: 33 units of paint laid
        on the first stroke, 20 on the second, 3.8 on the third, 0.7 on the
        fourth. That is the brush going dead after three or four strokes. */
-    onStrokeStart(s: StylusSample) { painting = true; strokeCount++; setHand(); autoReload.penDown(); const g = toGridRaw(s); stroke.begin(g.gx, g.gy, onPaper(s)); requestFrame(); }, onStrokeEnd() { painting = false; setHand(); stroke.end(); autoReload.penUp(); },
+    onStrokeStart(s: StylusSample) { painting = true; strokeCount++; setHand(); const g = toGridRaw(s); stroke.begin(g.gx, g.gy, onPaper(s)); requestFrame(); }, onStrokeEnd() { painting = false; setHand(); stroke.end(); },
     onSample(s: StylusSample) { smoothV = smoothV * 0.8 + s.velocity * 0.2; setText('s-type', s.pointerType); setText('s-pressure', s.down || s.pointerType !== 'mouse' ? s.pressure.toFixed(3) : '—'); setText('s-tilt', `${s.tiltAngle.toFixed(0)}° @ ${s.tiltAzimuth.toFixed(0)}°`); setText('s-velocity', `${smoothV.toFixed(2)} px/ms`); setText('s-twist', s.twist ? `${s.twist.toFixed(0)}°` : '—'); if (conteSelected) updateConteViewer(s); if (!s.down || pinch.active) return; const g = toGrid(s); if (g) { stroke.add(g.gx, g.gy, onPaper(s)); requestFrame(); } },
   });
 
@@ -434,12 +388,12 @@ async function main() {
   if (document.body.classList.contains('st-readouts')) watchGauges(true);
 
   let gaugeTick = 0;
-  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); /* Smudging: the tuft keeps its whole grab but is given no room, so `deposit.wgsl` sends all of it down the SHOVE route instead of the drink one — which is what an already-full brush does, and what pushing paint about is. An empty brush left to itself would do the opposite and drink the picture up. */ const take = autoReload.mode === 'smudge' ? 0 : stroke.brushTake; engine.step(data, count, dx, dy, stroke.brushMix, take, stroke.brushGrab); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); dryOut.draw(stroke.dryMarks, engine, gpu.canvas.width, gpu.canvas.height); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
+  function frame() { framePending = false; const resized = resizeToDisplay(gpu); const dry = stroke.drainDry(); if (dry.count > 0) engine.depositDry(dry.data, dry.count, dry.edge, dry.profile, dry.surfaceMobility, dry.compactionAmount); const { data, count, dx, dy } = stroke.drain(); engine.step(data, count, dx, dy, stroke.brushMix, stroke.brushTake, stroke.brushGrab); const shouldRender = renderRequested || resized || dry.count > 0 || count > 0 || engine.isFluidActive; renderRequested = false; if (shouldRender) engine.render(); dryOut.draw(stroke.dryMarks, engine, gpu.canvas.width, gpu.canvas.height); if (++gaugeTick % 10 === 0) paintGauges(); if (engine.isFluidActive) requestFrame(); }
   /* What the tuft lifts off the sheet goes back into the tuft. The engine
      subtracts it on the GPU and reports the exact amount here. */
   engine.onPickUp = (water, pigment) => stroke.pickUp(water, pigment);
   stroke.onBrushReset = () => engine.discardPickup();
-  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__dryOut = dryOut; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; (window as unknown as Record<string, unknown>).__MEDIA = WET_MEDIA; (window as unknown as Record<string, unknown>).__autoReload = autoReload; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
+  requestFrame(); window.addEventListener('resize', requestFrame); (window as unknown as Record<string, unknown>).__engine = engine; (window as unknown as Record<string, unknown>).__stroke = stroke; (window as unknown as Record<string, unknown>).__dryOut = dryOut; (window as unknown as Record<string, unknown>).__BRUSHES = BRUSHES; (window as unknown as Record<string, unknown>).__MEDIA = WET_MEDIA; maybeRunSoak(engine, stroke); maybeRunBanding(engine, stroke); maybeRunFishScale(engine, stroke); maybeRunPickupCheck(engine, stroke);
 }
 function maybeRunPickupCheck(engine: CanvasEngine, stroke: StrokeEngine) {
   const query = new URLSearchParams(location.search);

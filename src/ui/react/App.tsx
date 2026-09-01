@@ -476,28 +476,6 @@ const OIL_STEPS: Array<{ bit: number; name: string; off: string }> = [
 function BareOil({ store }: { store: StudioStore }) {
   if (store.activeDry || store.wetMedium.slug !== 'oil') return null;
   return (
-    <>
-    <section className="pp-group oil-steps">
-      <div className="pp-head"><span className="oil-title">smudge swap</span></div>
-      <p className="oil-hint">
-        EXPERIMENTAL. Hold the pen off the canvas this long and the brush empties
-        — good for pushing paint about, lays none of its own. Hold it off again
-        and the load comes back, same colour, same amount. Zero turns it off.
-      </p>
-      <div className="pp-prop">
-        <Slider
-          slim
-          orientation="horizontal"
-          label="lift to swap"
-          value={store.autoReload}
-          min={0}
-          max={5}
-          step={0.25}
-          format={(v: number) => (v === 0 ? 'off' : `${v.toFixed(2)} s`)}
-          onChange={(v) => store.setAutoReload(v)}
-        />
-      </div>
-    </section>
     <section className="pp-group oil-steps">
       <div className="pp-head"><span className="oil-title">bare oil</span></div>
       <p className="oil-hint">
@@ -524,7 +502,6 @@ function BareOil({ store }: { store: StudioStore }) {
         release on as well. Cross a blue with a yellow to see it.
       </p>
     </section>
-    </>
   );
 }
 
