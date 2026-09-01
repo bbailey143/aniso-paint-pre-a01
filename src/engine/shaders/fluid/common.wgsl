@@ -87,36 +87,6 @@ const OIL_ALL:      u32 = 63u;  // every behaviour on = the paint that shipped
 
 const WET_EPS: f32 = 1.0e-5;
 
-/**
- * E21 — how NEAT the paint in a cell is: its pigment as a share of its film.
- * 1 is paint out of the tube, 0 is pure solvent.
- *
- * Until this existed, `P.yieldStress` and `P.viscosity` were global uniforms and
- * nothing modulated them per cell, so a puddle that was nine-tenths turpentine
- * was exactly as stiff as neat paint. Thinning made the sheet wetter and never
- * softer — a whole axis of oil the engine could not express (docs/20 §18c).
- *
- * `[MEASURED, docs/20 §19]` No reference constant had to be invented, because
- * the engine's own units already put neat paint at one: a stroke laid with the
- * Solvent dial at 0 reads **1.0001** whether the brush is loaded at 1.0 or 0.6,
- * half solvent reads **0.625**, and a fully solvent-charged brush **0.143**.
- *
- * `[UNVERIFIED]` That the yield should fall LINEARLY with neatness is reasoning,
- * not a card. A real suspension yields as `(phi - phi_c)^n` about a critical
- * packing. Linear is the simplest form that is right at both ends — neat paint
- * unchanged, pure solvent offering no resistance — and it is what the bench
- * should be pointed at first.
- */
-fn neatness(pigSum: f32, film: f32) -> f32 {
-  /* An EMPTY cell reads as neat, not as infinitely thin. There is no paint in
-     it to yield, so the row's own yield is the conservative answer and it keeps
-     bare canvas behaving exactly as it did. Read as a ratio, 0/0 came out 0,
-     which quietly opened the shove gate on every untouched cell — measured as a
-     0.04 drift in laid film before this guard went in. */
-  if (film <= WET_EPS) { return 1.0; }
-  return clamp(pigSum / film, 0.0, 1.0);
-}
-
 fn oob(c: vec2<i32>, n: i32) -> bool {
   return c.x < 0 || c.y < 0 || c.x >= n || c.y >= n;
 }
