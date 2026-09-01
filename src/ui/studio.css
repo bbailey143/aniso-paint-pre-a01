@@ -133,8 +133,13 @@
   gap: 10px;
   padding: 12px 9px;
   border-radius: 18px;
-  background: var(--st-glass);
-  border: 1px solid var(--st-edge);
+  /* Hazy glass, the same treatment as the tracks inside it. `--st-glass` is a
+     near-black fill, and the page behind the rail is black — so the panel had no
+     edge you could find, and the sliders appeared to float in the dark. Written
+     out rather than taken from the token because the dock and the sheets still
+     use `--st-glass` and are read against the CANVAS, not against the page. */
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .38);
   backdrop-filter: blur(18px) saturate(1.3);
   -webkit-backdrop-filter: blur(18px) saturate(1.3);
   box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
