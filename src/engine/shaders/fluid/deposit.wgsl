@@ -107,7 +107,10 @@ fn lift(v: f32, lane: u32) -> f32 {
 @group(0) @binding(12) var paper: texture_2d<f32>;
 /** Where the smear puts what it lifts. Written for EVERY cell, zero where the
  * brush is not, and moved by the same conservative appliers the fluid uses. */
-@group(0) @binding(13) var<storage, read_write> flux: array<vec4<f32>>;
+/** E19: the shove, as a direction and a share of the film, for
+ *  `smear_sweep.wgsl` to turn into a ledger once per brush solve step. This
+ *  binding used to be the ledger itself, written once a frame. */
+@group(0) @binding(13) var<storage, read_write> drag: array<vec4<f32>>;
 /** What the tuft took up this frame, in fixed point: [vehicle, then 8 slots].
  * Cleared before the frame's first chunk, summed across all of them, and handed
  * back to the reservoir on the CPU. */
@@ -751,7 +754,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
    * Every cell writes, so nothing stale survives a frame. Water media never
    * enter — their yieldStress is 0 — and pay one zero write for the privilege.
    */
-  var smear = vec4<f32>(0.0);
+  /* E19: what the tuft took hold of, as a DIRECTION and a FRACTION of the
+     film — not as a four-face ledger. `smear_sweep.wgsl` turns it into a
+     ledger once per brush solve step instead of once per browser frame, which
+     is what lets the paint travel as far as the brush did. */
+  var dragDir = vec2<f32>(0.0);
+  var dragFrac = 0.0;
   /* Levelling stays with the yielding media, and for a reason rather than by
      habit: it stands in for the flow water gets for free. A wash spreads its
      own comb flat through the fluid passes within a frame or two; a paste has
@@ -844,29 +852,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          with the artist's Smear dial applied to each local contact before the
          contacts are compounded. One ceiling still governs their shared
          conservative ledger. */
-      let carried = min(
-        loose * clamp(1.0 - shoveRemaining, 0.0, 0.9), w0.y * 0.9);
-      let u = shoveDirection / speed;
-      // Split across the two faces the direction points at. The parts sum to
-      // exactly `carried`, so the split cannot invent or lose paint.
-      let w = abs(u.x) + abs(u.y);
-      smear = smear + vec4<f32>(
-        max(u.x, 0.0), max(-u.x, 0.0), max(u.y, 0.0), max(-u.y, 0.0),
-      ) * (carried / max(w, 1.0e-6));
+      /* As a share of the film rather than an amount of it: the sweep pass
+         applies it against whatever is present when IT runs, and by the second
+         sweep that is no longer what was here now. `looseShare` is `loose` with
+         the film divided back out. */
+      let looseShare = clamp(1.0 - P.teflonMin * (1.0 - workableBody), 0.0, 1.0);
+      dragFrac = min(looseShare * clamp(1.0 - shoveRemaining, 0.0, 0.9), 0.9);
+      dragDir = shoveDirection / speed;
     }
   }
-  /* One ceiling over both, because both come out of the same cell. The
-     appliers subtract this from what is there, so more than the cell holds
-     would be paint invented from nothing. */
-  let asked = smear.x + smear.y + smear.z + smear.w;
-  let room = w0.y * 0.9;
-  if (asked > room && asked > 0.0) { smear = smear * (room / asked); }
-  if (c.x >= n - 1) { smear.x = 0.0; }
-  if (c.x <= 0)     { smear.y = 0.0; }
-  if (c.y >= n - 1) { smear.z = 0.0; }
-  if (c.y <= 0)     { smear.w = 0.0; }
+  /* The ceiling and the edge clamps now live in `smear_sweep.wgsl`, because
+     they have to be applied against the film present at each sweep rather than
+     against this one. */
   fresh[idx] = vec2<f32>(max(laidHere, 0.0), press);
-  flux[idx] = smear;
+  drag[idx] = vec4<f32>(dragDir, dragFrac, 0.0);
 
   // Containment. See `sane` in common.wgsl — this is where the 4e37 seed was
   // measured entering, with every fluid pass disabled. It is a guard rail, not

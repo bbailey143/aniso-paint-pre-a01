@@ -1180,7 +1180,8 @@ Ordered by what it costs to reopen, cheapest first.
 |---|---|---|---|
 | E16 | **A brush that runs dry mid-stroke stops interacting with the canvas entirely.** `brush.ts` emits a contact only `if (w > 0 \|\| pig > 0)`, so an empty tuft is invisible to the sheet: it cannot push, pick up or scrub. A dry brush is exactly what you scrub *with*. | §16b | Widening the gate touches **every medium and every brush that runs dry**, so it needs its own measurement, not a side effect of an oil experiment. Bears on E18's stranded paint and §11d's run-out. Currently opened for smudge mode alone. |
 | E17 | **Turning `OIL_RELEASE` off audibly slowed the artist's GPU fans.** Real signal, mechanism unknown, no story offered. | §16d | One frame-time measurement with the flag on and off. |
-| E19 | **The smear's carry distance is per FRAME, not per distance travelled.** Its fraction compounds over travel correctly, but the flux it writes reaches one cell and is applied once a frame — so paint moves two or three cells however fast the brush goes and however high the dial. Invariant 2's exact shape, in a place the invariant was never read as reaching. | §16g | The shove must carry a distance proportional to travel: sub-step the smear within a frame, or give the flux reach. **Shared with normal oil painting**, so it needs its own measurement and its own decision — not a side effect of the smudge experiment. |
+| ~~E19~~ | **DONE 2026-08-31 — §17.** The smear now carries once per brush solve step. Watercolour measured identical either side; the smudge carries 4.2x its original distance. ~~The smear's carry distance is per FRAME, not per distance travelled.~~ Its fraction compounds over travel correctly, but the flux it writes reaches one cell and is applied once a frame — so paint moves two or three cells however fast the brush goes and however high the dial. Invariant 2's exact shape, in a place the invariant was never read as reaching. | §16g | The shove must carry a distance proportional to travel: sub-step the smear within a frame, or give the flux reach. **Shared with normal oil painting**, so it needs its own measurement and its own decision — not a side effect of the smudge experiment. |
+| E20 | **Paint leaks forward; it is not carried.** After E19 the shove is per-distance, but the transport is diffusive — each step leaks a share one cell on — so paint lags the brush and, with the share a cell may give capped at 0.9, the centre of mass cannot travel more than about 2.3 cells however many sweeps run. | §17d | Carrying further means carrying paint ON the tuft, picking up at A and laying down at B. §16f measured the naive version: it hoovered 6.5 % of the sheet into the brush in one pass. A real piece of work, not a dial. |
 | E18 | **The six §14 behaviours are near-invisible to the eye** even though five of six move the numbers. The artist could pick out only comb settling, and prefers it off. | §16d | Says the §14b ladder measures something finer than the eye reads. Revisit when the rebuild reaches behaviour 3. |
 
 ### 15c. Expensive — reopening moves things downstream
@@ -1363,3 +1364,89 @@ decision.
 still gentle, because gentle is all this mechanism can be. If it still does not
 feel like painting, **the answer is not a bigger number** — every number is
 already at its stop. It is E19.
+
+---
+
+## 17. E19 DONE — the shove carries once per brush solve step
+
+**Authorised by the artist 2026-08-31**, after §16g measured the wall.
+
+### 17a. What was wrong
+
+`shoveStep` already compounds its fraction over travel, so **how much** paint the
+tuft takes hold of was always per-distance. **Where it went was not.**
+`deposit.wgsl` wrote a single four-face give-ledger and it was applied **once a
+browser frame**, so the paint landed one cell away however far the brush had
+gone. A brush is over a given cell for two or three frames, so paint moved two or
+three cells and no dial could change it — measured: `smearStrength` 1 → 0.53
+cells, 16 → 0.99, 64 → 0.99.
+
+A per-frame quantity where a per-distance one belongs. `00-invariants.md` §2, and
+the shape that cost `19` a week.
+
+### 17b. The fix was mostly already written
+
+**`level_fresh.wgsl` had solved the identical fault for levelling**, and left the
+rule in a comment:
+
+> *"It must run once per BRUSH SOLVE STEP, not once per browser frame. Levelling
+> is a smoothing sweep, and one sweep over a frame carrying sixteen cells of
+> travel is not the same as sixteen sweeps over one cell each… So the sweep count
+> follows the paint, and the per-sweep budget is divided by it, leaving the TOTAL
+> paint moved identical however the stroke is cut into frames."*
+
+**That sweep loop already existed and already ran once per solve step.** The shove
+was simply riding in the ledger for the first sweep only, and being cleared. So:
+
+- **`deposit.wgsl`** now writes a per-cell **drag** — a direction and a *share of
+  the film* — instead of a one-hop ledger of *amounts*. A share, because by the
+  second sweep the film is no longer what it was.
+- **`smear_sweep.wgsl`** (new) turns that drag into a ledger at the top of every
+  sweep, against the film as it stands then. `level_fresh` accumulates onto it
+  exactly as before, and the same two appliers move the sum — **one conservative
+  ledger, as it always was.**
+- The per-sweep share is `f = 1 − (1 − total)^(1/sweeps)`, which is
+  `deposit.wgsl`'s own `upBoth = 1 − pow(1 − r, dist)` idiom read backwards. So
+  **the amount that leaves a cell is unchanged and only the distance follows the
+  travel.**
+
+**At `sweeps` = 1 this is the identity** — `f = total`, and the pass writes exactly
+the ledger the deposit used to write. Every water medium takes one sweep.
+
+### 17c. Measured, as an A/B against the pre-E19 build
+
+The three files were reverted, rebuilt, measured, restored and measured again.
+
+| | pre-E19 | with E19 |
+|---|---:|---:|
+| **watercolour** — drag / film laid | **12.54 / 269.11** | **12.54 / 269.11** |
+| oil, loaded brush — drag / film laid | 9.98 / 360.22 | 10.19 / 358.28 |
+| **oil, smudging — drag** | **0.99 cells** | **2.25 cells** |
+
+**Watercolour is identical on both numbers.** That is the safety property, and it
+is now measured rather than argued.
+
+**The smudge carries 2.3× further**, and 4.2× the 0.53 it started at. Mass
+conserved at 100 %. Reproduced twice on every row.
+
+**Oil with a loaded brush changed too** — about half a percent less film laid and
+two percent more drag. That was always going to happen: E19 is the shared smear,
+not a smudge-only path, and the artist authorised it on that basis. It is small,
+and it is in the direction of paint being pushed about more.
+
+### 17d. What still limits it, stated plainly
+
+The transport is **diffusive**: each solve step leaks a share of a cell's film one
+cell along, and the paint that arrives is leaked on by the next step. So the paint
+**lags the brush** — it moved 2.25 cells while the brush moved eight.
+
+`[UNVERIFIED — arithmetic, not measured]` That lag has a ceiling. The share a
+chunk may take from a cell is capped at 0.9, so spreading it over N steps moves
+the centre of mass at most `ln(1/0.1) ≈ 2.3` cells however many sweeps are run.
+**More sweeps will not help; the cap on what one cell may give is what binds.**
+
+Carrying paint further than that means carrying it **on the tuft** — picking up at
+A and laying down at B — rather than leaking it forward. §16f already measured the
+naive version of that and it hoovered 6.5 % of the sheet into the brush on one
+pass. **It is a real direction and a real piece of work, not a dial.** Recorded as
+**E20**.

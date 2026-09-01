@@ -2524,3 +2524,58 @@ change underneath everything else.
 
 **IF HE SAYS IT IS STILL NOT ENOUGH, THE ANSWER IS NOT A BIGGER NUMBER.** Every
 number is already at its stop. It is E19.
+
+---
+
+## E19 IS DONE — the shove carries once per brush solve step. 2026-08-31
+
+`docs/20-oil-from-zero.md` §17. Authorised by the artist after §16g measured the
+wall.
+
+**The fault:** `shoveStep` already compounded its fraction over travel, so HOW
+MUCH the tuft took hold of was per-distance. WHERE IT WENT was not - the deposit
+wrote one four-face ledger applied ONCE A BROWSER FRAME, so paint landed one cell
+away however far the brush went. Measured: smearStrength 1 -> 0.53 cells, 16 ->
+0.99, 64 -> 0.99.
+
+**THE FIX WAS MOSTLY ALREADY WRITTEN.** `level_fresh.wgsl` had solved the
+identical fault for levelling and left the rule in a comment - "it must run once
+per BRUSH SOLVE STEP, not once per browser frame... the sweep count follows the
+paint, and the per-sweep budget is divided by it". **That sweep loop already
+existed and already ran once per solve step**; the shove was just riding in the
+ledger for the first sweep and being cleared.
+
+- `deposit.wgsl` writes a per-cell **drag** - direction + SHARE of the film -
+  instead of a one-hop ledger of amounts. A share, because by the second sweep
+  the film is no longer what it was.
+- **`smear_sweep.wgsl` (new)** turns that drag into a ledger at the top of every
+  sweep, against the film as it stands then. `level_fresh` accumulates onto it as
+  before and the same two appliers move the sum - one conservative ledger still.
+- Per-sweep share `f = 1 - (1 - total)^(1/sweeps)`, which is deposit's own
+  `upBoth = 1 - pow(1 - r, dist)` idiom read backwards. **Amount unchanged,
+  distance follows travel.** At sweeps = 1 it is the IDENTITY, and every water
+  medium takes one sweep.
+
+**MEASURED AS A REAL A/B** - the three files reverted, rebuilt, measured,
+restored, measured again:
+
+| | pre-E19 | with E19 |
+|---|---|---|
+| watercolour, drag / film | **12.54 / 269.11** | **12.54 / 269.11** |
+| oil loaded, drag / film | 9.98 / 360.22 | 10.19 / 358.28 |
+| **oil smudging, drag** | **0.99 cells** | **2.25 cells** |
+
+**Watercolour identical on both numbers** - the safety property is measured, not
+argued. Smudge carries 2.3x further, 4.2x its original 0.53. Mass 100 %.
+Reproduced twice on every row. **Oil with a loaded brush also moved** (half a
+percent less film, two percent more drag) - expected, E19 is the shared smear and
+he authorised it on that basis.
+
+**E20, THE REMAINING CEILING.** The transport is diffusive: each step leaks a
+share one cell on, so paint LAGS the brush - 2.25 cells while the brush moved
+eight. UNVERIFIED arithmetic: with the share a cell may give capped at 0.9, the
+centre of mass cannot travel more than about **ln(1/0.1) = 2.3 cells** however
+many sweeps run, so **more sweeps will not help**. Going further means carrying
+paint ON THE TUFT - pick up at A, lay down at B. §16f measured the naive version
+of that: it hoovered 6.5 % of the sheet into the brush in one pass. Real work,
+not a dial.

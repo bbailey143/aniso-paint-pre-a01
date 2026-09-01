@@ -25,6 +25,7 @@ import { PIGMENTS } from '../color/pigment-palette';
 import commonWgsl from './shaders/fluid/common.wgsl?raw';
 import depositWgsl from './shaders/fluid/deposit.wgsl?raw';
 import levelFreshWgsl from './shaders/fluid/level_fresh.wgsl?raw';
+import smearSweepWgsl from './shaders/fluid/smear_sweep.wgsl?raw';
 import velWgsl from './shaders/fluid/update_velocities.wgsl?raw';
 import relaxWgsl from './shaders/fluid/relax_divergence.wgsl?raw';
 import outwardWgsl from './shaders/fluid/flow_outward.wgsl?raw';
@@ -378,6 +379,7 @@ export class FluidEngine {
 
   private paramsBuf: GPUBuffer;
   private fluxBuf: GPUBuffer;
+  private dragBuf: GPUBuffer;
   private freshBuf: GPUBuffer;
   private segBuf: GPUBuffer;
   private inkSegBuf: GPUBuffer;
@@ -493,6 +495,16 @@ export class FluidEngine {
       size: 28 * 4 + 8 * 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, label: 'fluid-params',
     });
+    /* E19. What the brush took hold of, per cell: a direction and a share of
+       the film. The deposit used to write a four-face ledger straight into
+       `fluxBuf` and it was applied once a browser frame, so paint landed one
+       cell away however far the brush had travelled. `smear_sweep` turns this
+       into a ledger once per brush solve step instead. */
+    this.dragBuf = device.createBuffer({
+      size: n * n * 4 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+           | GPUBufferUsage.COPY_SRC, label: 'drag',
+    });
     this.fluxBuf = device.createBuffer({
       size: n * n * 4 * 4,
       // COPY_DST so it can be cleared. The ledger is written by flux_compute and
@@ -597,6 +609,7 @@ export class FluidEngine {
     });
     this.pipes.deposit = mk(depositWgsl, 'deposit');
     this.pipes.levelFresh = mk(levelFreshWgsl, 'level_fresh');
+    this.pipes.smearSweep = mk(smearSweepWgsl, 'smear_sweep');
     this.pipes.vel = mk(velWgsl, 'update_velocities');
     this.pipes.relax = mk(relaxWgsl, 'relax_divergence');
     this.pipes.outward = mk(outwardWgsl, 'flow_outward');
@@ -1038,7 +1051,7 @@ export class FluidEngine {
         U, { buffer: this.segBuf }, { buffer: this.ctlBuf }, { buffer: this.mixBuf },
         this.wet0.src, this.wet1.src, this.wet2.src, this.wet5.src,
         this.wet0.dst, this.wet1.dst, this.wet2.dst, this.wet5.dst,
-        this.paper, { buffer: this.fluxBuf }, { buffer: this.pickupBuf },
+        this.paper, { buffer: this.dragBuf }, { buffer: this.pickupBuf },
         { buffer: this.freshBuf },
       ]);
       dpass.end();
@@ -1077,7 +1090,25 @@ export class FluidEngine {
       for (let sweep = 0; sweep < sweeps; sweep++) {
         ctl[11] = sweeps;
         ctl[12] = levelOverrides.share;
+        /* E19. The same count drives the shove, for the same reason: one sweep
+           over a frame carrying eight cells of travel is not the same as eight
+           sweeps over one cell each, and the paint has to end up where the
+           brush left it either way. The per-sweep share is divided out of this
+           inside the shader, so the AMOUNT that leaves a cell is unchanged and
+           only the DISTANCE follows the travel. */
+        ctl[13] = sweeps;
         device.queue.writeBuffer(this.ctlBuf, 0, ctl);
+
+        /* Re-derive the brush's shove against the film as it stands NOW.
+           It has to be re-derived rather than re-applied: applying the same
+           ledger twice moves twice the paint one cell, where what is wanted is
+           the same paint carried two cells. */
+        const mpass = denc.beginComputePass({ label: 'smear-sweep' });
+        this.dispatch(mpass, this.pipes.smearSweep, [
+          U, this.wet0.src, { buffer: this.dragBuf }, { buffer: this.ctlBuf },
+          { buffer: this.fluxBuf },
+        ]);
+        mpass.end();
         const lpass = denc.beginComputePass({ label: 'level-fresh' });
         this.dispatch(lpass, this.pipes.levelFresh, [
           U, this.wet0.src, { buffer: this.ctlBuf }, { buffer: this.freshBuf },
@@ -1104,9 +1135,10 @@ export class FluidEngine {
         ]);
         this.wet0.flip();
         spass.end();
-        /* The brush's shove is in the ledger for the FIRST sweep only; clearing
-           here stops later sweeps re-applying it, and leaves them carrying
-           levelling alone. flux_compute overwrites this buffer later in the
+        /* `level_fresh` ACCUMULATES onto whatever is in the ledger, so it has to
+           start each sweep from zero. The shove no longer needs clearing — it
+           is rewritten for every cell at the top of the next sweep — but the
+           levelling does. flux_compute overwrites this buffer later in the
            frame regardless, so clearing costs nothing downstream. */
         denc.clearBuffer(this.fluxBuf);
       }
